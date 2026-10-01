@@ -32,3 +32,7 @@ Two phases since the store layer can be fully implemented and verified
 independently (via OrderStoreSuite/OrderStorePostgresSuite) before the HTTP
 layer is wired on top of it. Each task follows the standard TDD lifecycle
 from workflow.md.
+
+## Phase: Review Fixes
+
+- [x] Task: Apply review suggestions `fdfc1e0`
