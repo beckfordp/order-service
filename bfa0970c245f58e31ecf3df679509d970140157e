@@ -1,9 +1,0 @@
-Task: Add OrderStatus sealed trait with fromString/asString + unit tests
-
-Summary: Introduced OrderStatus as a closed sealed-trait ADT (Pending, Reserved, ReservationFailed), matching OrderError's existing ADT style. fromString parses a raw String into Either[String, OrderStatus]; asString serializes back to the same lowercase wire strings used today ("pending"/"reserved"/"reservation_failed").
-
-Files:
-- src/main/scala/orderservice/OrderStatus.scala (new)
-- src/test/scala/orderservice/OrderStatusSuite.scala (new)
-
-Why: First step of hardening Order.status from a raw String to a closed type (track status-enum_20261001), per gluon/backlogs/order-service.md — codegen v1 has no enum type, so the field-spec used String as a stand-in.
