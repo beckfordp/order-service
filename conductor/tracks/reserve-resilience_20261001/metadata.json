@@ -1,0 +1,8 @@
+{
+  "track_id": "reserve-resilience_20261001",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-01T00:00:00Z",
+  "updated_at": "2026-10-01T00:00:00Z",
+  "description": "US-4.2: wire resilience middleware for the reserve call to inventory-service"
+}

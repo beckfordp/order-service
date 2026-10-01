@@ -2,6 +2,9 @@
 
 This file tracks all major tracks for the project.
 
+- [ ] **Track: US-4.2: wire resilience middleware for the reserve call to inventory-service**
+  *Link: [./tracks/reserve-resilience_20261001/](./tracks/reserve-resilience_20261001/)*
+
 ---
 
 ## Backlog
@@ -11,7 +14,6 @@ folder), so `/conductor:implement` cannot pick these up by accident. Reorder fre
 priorities change. When ready to work on one, run `/conductor:newTrack <title>` to go
 through the spec/plan questions and promote it into a real track above.
 
-- US-4.2: wire resilience middleware for the reserve call to inventory-service
 - US-5.2: consume inventory.stock-reserved / inventory.stock-reservation-failed, update order status
 - US-8.1: order history read endpoint + Redis cache
 
