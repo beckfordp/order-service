@@ -1,9 +1,0 @@
-Task: Add Flyway migration V2__add_order_status_check.sql (CHECK constraint on status)
-
-Summary: Added a Postgres CHECK constraint restricting order.status to 'pending', 'reserved', 'reservation_failed', enforced at the DB level independent of any Scala-side validation. Applies cleanly on top of V1.
-
-Files:
-- src/main/resources/db/migration/V2__add_order_status_check.sql (new)
-- src/test/scala/orderservice/MigrationsSuite.scala (extended: two new tests - rejects an invalid status, allows the three valid ones)
-
-Why: DB-level half of hardening Order.status (track status-enum_20261001) - Scala-side validation (OrderStatus ADT, eimap codec) alone wouldn't stop a write that bypasses the application layer.
