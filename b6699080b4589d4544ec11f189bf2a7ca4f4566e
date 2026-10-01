@@ -1,0 +1,10 @@
+Phase 1 verification report: Add FK constraint on order_items.order_id
+
+Automated tests: sbt scalafmtCheck test -> 65/65 passed, formatting clean.
+
+Manual verification: ran scripts/verify-order-items-fk.sh (committed in this commit) instead of an interactive walkthrough, per .claude/prompt-off. Brings up Postgres + a real sbt run instance (applying migrations on boot) and checks the live database directly:
+- the order_items_order_id_fkey FK constraint exists
+- inserting an order_item with an order_id not present in "order" is rejected with a foreign key violation
+- deleting an order cascades to delete its order_items rows (tested end-to-end: insert order + item, delete order, confirm item gone)
+
+First run caught a script bug (psql -t -A with INSERT...RETURNING left a stray 'INSERT 0 1' line in captured output) - fixed by generating UUIDs via a plain SELECT instead and using explicit inserts. All checks passed on the corrected run. Confirmation: no interactive user confirmation sought - .claude/prompt-off is set for this project, so the script's pass/fail is the verification signal.
