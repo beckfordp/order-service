@@ -3,6 +3,9 @@ package orderservice
 import cats.effect.IO
 import munit.CatsEffectSuite
 import pureconfig.ConfigSource
+import purerest.resilience.{CircuitBreakerConfig, ResilienceConfig, RetryConfig}
+
+import scala.concurrent.duration._
 
 class OrderServiceConfigSuite extends CatsEffectSuite {
 
@@ -17,6 +20,19 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       |  database = "order"
       |  user = "order"
       |  password = "order"
+      |}
+      |inventory-client {
+      |  base-url = "http://localhost:8081"
+      |  resilience {
+      |    retry {
+      |      max-retries = 3
+      |      base-delay = 100ms
+      |    }
+      |    circuit-breaker {
+      |      failure-threshold = 5
+      |      reset-timeout = 30s
+      |    }
+      |  }
       |}
       |""".stripMargin
 
@@ -36,6 +52,16 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
             database = "order",
             user = "order",
             password = "order"
+          ),
+          inventoryClient = InventoryClientConfig(
+            baseUrl = "http://localhost:8081",
+            resilience = ResilienceConfig(
+              retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
+              circuitBreaker = CircuitBreakerConfig(
+                failureThreshold = 5,
+                resetTimeout = 30.seconds
+              )
+            )
           )
         )
       )
@@ -52,6 +78,19 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
         |  port = 5432
         |  database = "order"
         |  user = "order"
+        |}
+        |inventory-client {
+        |  base-url = "http://localhost:8081"
+        |  resilience {
+        |    retry {
+        |      max-retries = 3
+        |      base-delay = 100ms
+        |    }
+        |    circuit-breaker {
+        |      failure-threshold = 5
+        |      reset-timeout = 30s
+        |    }
+        |  }
         |}
         |""".stripMargin
 
@@ -76,6 +115,17 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
           "order",
           "order",
           "order"
+        )
+      )
+      assertEquals(
+        config.inventoryClient,
+        InventoryClientConfig(
+          baseUrl = "http://localhost:8081",
+          resilience = ResilienceConfig(
+            retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
+            circuitBreaker =
+              CircuitBreakerConfig(failureThreshold = 5, resetTimeout = 30.seconds)
+          )
         )
       )
     }

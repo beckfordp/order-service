@@ -58,6 +58,11 @@ lazy val root = project
       "io.github.beckfordp" %% "purerestlib" % purerestlibVersion,
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
       "org.http4s" %% "http4s-ember-server" % http4sVersion,
+      // http4s-ember-client: outbound HTTP calls to other services (e.g. the
+      // synchronous stock-reservation call to inventory-service), wrapped in
+      // purerest's Resilience.middleware - see README's "Calling other
+      // services with resilience".
+      "org.http4s" %% "http4s-ember-client" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion,
       "org.http4s" %% "http4s-circe" % http4sVersion,
       "io.circe" %% "circe-generic" % circeVersion,
