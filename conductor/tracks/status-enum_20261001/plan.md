@@ -13,3 +13,7 @@
 Each task follows the standard TDD lifecycle from workflow.md (failing test
 → implement → refactor → commit → git note) during `/conductor:implement`.
 Kept as a single phase since this is one cohesive unit of work.
+
+## Phase: Review Fixes
+
+- [x] Task: Apply review suggestions `6f39291`
