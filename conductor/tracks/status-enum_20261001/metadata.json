@@ -1,0 +1,8 @@
+{
+  "track_id": "status-enum_20261001",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-10-01T00:00:00Z",
+  "updated_at": "2026-10-01T00:00:00Z",
+  "description": "Harden `status` from raw String to a real enum {pending, reserved, reservation_failed}"
+}
