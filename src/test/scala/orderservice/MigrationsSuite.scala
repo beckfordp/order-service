@@ -57,4 +57,67 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
       }
     }
   }
+
+  test(
+    "running migrations adds a CHECK constraint that rejects an invalid status"
+  ) {
+    withContainers { postgres =>
+      val config = PostgresConfig(
+        host = postgres.host,
+        port = postgres.mappedPort(5432),
+        database = postgres.databaseName,
+        user = postgres.username,
+        password = postgres.password
+      )
+
+      Migrations.run[IO](config).map { _ =>
+        val conn = DriverManager.getConnection(
+          postgres.jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val stmt = conn.createStatement()
+          intercept[java.sql.SQLException] {
+            stmt.executeUpdate(
+              "insert into \"order\" (id, customer_id, total_cents, status) " +
+                "values (gen_random_uuid(), 'cust-1', 100, 'bogus')"
+            )
+          }
+        } finally conn.close()
+      }
+    }
+  }
+
+  test(
+    "running migrations' CHECK constraint still allows the three valid statuses"
+  ) {
+    withContainers { postgres =>
+      val config = PostgresConfig(
+        host = postgres.host,
+        port = postgres.mappedPort(5432),
+        database = postgres.databaseName,
+        user = postgres.username,
+        password = postgres.password
+      )
+
+      Migrations.run[IO](config).map { _ =>
+        val conn = DriverManager.getConnection(
+          postgres.jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val stmt = conn.createStatement()
+          List("pending", "reserved", "reservation_failed").foreach {
+            status =>
+              stmt.executeUpdate(
+                "insert into \"order\" (id, customer_id, total_cents, status) " +
+                  s"values (gen_random_uuid(), 'cust-1', 100, '$status')"
+              )
+          }
+        } finally conn.close()
+      }
+    }
+  }
 }
