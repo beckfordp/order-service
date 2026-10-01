@@ -1,0 +1,8 @@
+{
+  "track_id": "order-items-fk_20261001",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-10-01T00:00:00Z",
+  "updated_at": "2026-10-01T00:00:00Z",
+  "description": "Add the FK constraint on order_items.order_id -> \"order\"(id), ON DELETE CASCADE"
+}
