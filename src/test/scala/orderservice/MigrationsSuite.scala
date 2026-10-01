@@ -120,4 +120,76 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
       }
     }
   }
+
+  test("running migrations creates the order_items table") {
+    withContainers { postgres =>
+      val config = PostgresConfig(
+        host = postgres.host,
+        port = postgres.mappedPort(5432),
+        database = postgres.databaseName,
+        user = postgres.username,
+        password = postgres.password
+      )
+
+      Migrations.run[IO](config).map { _ =>
+        val conn = DriverManager.getConnection(
+          postgres.jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val rs = conn
+            .createStatement()
+            .executeQuery(
+              "select column_name, data_type from information_schema.columns where table_name = 'order_items' order by ordinal_position"
+            )
+          val columns = Iterator
+            .unfold(())(_ =>
+              if (rs.next()) Some((rs.getString("column_name"), ())) else None
+            )
+            .toList
+          assertEquals(
+            columns,
+            List(
+              "id",
+              "order_id",
+              "sku",
+              "product_name",
+              "unit_price_cents",
+              "quantity"
+            )
+          )
+        } finally conn.close()
+      }
+    }
+  }
+
+  test(
+    "order_items.order_id has no FK constraint yet - an unrelated order_id is accepted"
+  ) {
+    withContainers { postgres =>
+      val config = PostgresConfig(
+        host = postgres.host,
+        port = postgres.mappedPort(5432),
+        database = postgres.databaseName,
+        user = postgres.username,
+        password = postgres.password
+      )
+
+      Migrations.run[IO](config).map { _ =>
+        val conn = DriverManager.getConnection(
+          postgres.jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val stmt = conn.createStatement()
+          stmt.executeUpdate(
+            "insert into order_items (id, order_id, sku, product_name, unit_price_cents, quantity) " +
+              "values (gen_random_uuid(), gen_random_uuid(), 'sku-1', 'Widget', 999, 2)"
+          )
+        } finally conn.close()
+      }
+    }
+  }
 }
