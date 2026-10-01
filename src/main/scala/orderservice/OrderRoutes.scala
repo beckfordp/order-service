@@ -246,9 +246,12 @@ object OrderRoutes {
         result <- validateItems(req.items) match {
           case Left(error) =>
             logger
-              .warn(Map("customer_id" -> req.customerId))(
-                "Invalid order items"
-              )
+              .warn(
+                Map(
+                  "customer_id" -> req.customerId,
+                  "reason" -> error.toString
+                )
+              )("Invalid order items")
               .as(Left(error): Either[OrderError, OrderResponse])
           case Right(items) =>
             for {
