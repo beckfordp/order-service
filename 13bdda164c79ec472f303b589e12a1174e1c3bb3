@@ -1,9 +1,0 @@
-Task: Add Flyway migration V3__create_order_items.sql; extend MigrationsSuite
-
-Summary: Added the order_items table (id, order_id, sku, product_name, unit_price_cents, quantity) as a hand-written Flyway migration - nested/collection fields aren't codegen-able, so line items sit outside the codegen'd order entity. No FK on order_id yet (deliberately deferred to a separate backlog item/track) and no created_at/updated_at timestamps (not requested in the spec). Two new MigrationsSuite tests: verifies the table's exact column set, and verifies an unrelated order_id is currently accepted (documenting the no-FK-yet state - this test will need to change once the FK track lands).
-
-Files:
-- src/main/resources/db/migration/V3__create_order_items.sql (new)
-- src/test/scala/orderservice/MigrationsSuite.scala (2 new tests)
-
-Why: First of the order_items backlog items (track order-items-table_20261001) - schema-only, Scala domain model/store deferred to the checkout track (US-3.1).
