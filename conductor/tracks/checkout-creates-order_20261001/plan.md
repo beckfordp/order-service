@@ -26,7 +26,7 @@ phases this time.
 - [x] Task: Add EmptyOrderItems and InvalidOrderItem(reason) to OrderError; add their errorOut variants; change createOrderEndpoint's error type from Unit to OrderError `1978853`
 - [x] Task: Update OrderRoutes server logic (create validates items before calling the store; get/update/delete adapted to the new store return shapes and OrderResponse construction) `1978853`
 - [x] Task: Update/extend OrderRoutesSuite for the new request/response shapes (POST with items happy path, empty-items 400, invalid-item 400, GET/PATCH/PUT responses include items, DELETE still cascades end-to-end via HTTP) `1978853`
-- [ ] Task: Conductor - User Manual Verification 'US-3.1 checkout creates an order' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'US-3.1 checkout creates an order' (Protocol in workflow.md) `fbe0df7`
 
 Two phases since the store layer can be fully implemented and verified
 independently (via OrderStoreSuite/OrderStorePostgresSuite) before the HTTP
