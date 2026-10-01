@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: Add the FK constraint on order_items.order_id**
+- [x] **Track: Add the FK constraint on order_items.order_id**
   *Link: [./tracks/order-items-fk_20261001/](./tracks/order-items-fk_20261001/)*
 
 ---
