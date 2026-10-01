@@ -42,7 +42,7 @@ object OrderResponse {
       entity.id,
       entity.customerId,
       entity.totalCents,
-      entity.status,
+      entity.status.asString,
       entity.createdAt,
       entity.updatedAt
     )
@@ -75,6 +75,27 @@ object OrderRoutes {
         ErrorResponse("Order not found")
       )
 
+  private val notFoundVariant: EndpointOutput.OneOfVariant[OrderNotFound.type] =
+    oneOfVariant(
+      statusCode(StatusCode.NotFound)
+        .and(jsonBody[ErrorResponse])
+        .map[OrderNotFound.type](_ => OrderNotFound)(_ =>
+          ErrorResponse("Order not found")
+        )
+    )
+
+  private val invalidStatusVariant: EndpointOutput.OneOfVariant[InvalidStatus] =
+    oneOfVariant(
+      statusCode(StatusCode.BadRequest)
+        .and(jsonBody[ErrorResponse])
+        .map[InvalidStatus](e => InvalidStatus(e.error))(e =>
+          ErrorResponse(s"Invalid order status: '${e.raw}'")
+        )
+    )
+
+  private val updateErrorOutput: EndpointOutput[OrderError] =
+    oneOf[OrderError](notFoundVariant, invalidStatusVariant)
+
   private val getOrderEndpoint: PublicEndpoint[
     String,
     OrderError,
@@ -96,7 +117,7 @@ object OrderRoutes {
       .in("orders" / path[String]("id"))
       .in(jsonBody[UpdateOrderRequest])
       .out(jsonBody[OrderResponse])
-      .errorOut(notFoundOutput)
+      .errorOut(updateErrorOutput)
 
   private val replaceOrderEndpoint: PublicEndpoint[
     (String, UpdateOrderRequest),
@@ -108,7 +129,7 @@ object OrderRoutes {
       .in("orders" / path[String]("id"))
       .in(jsonBody[UpdateOrderRequest])
       .out(jsonBody[OrderResponse])
-      .errorOut(notFoundOutput)
+      .errorOut(updateErrorOutput)
 
   private val deleteOrderEndpoint
       : PublicEndpoint[String, OrderError, Unit, Any] =
@@ -183,15 +204,24 @@ object OrderRoutes {
           "order_id" -> id
         )
       )("Received request")
-      result <- store.update(id, req.status).flatMap {
-        case Some(entity) =>
+      result <- OrderStatus.fromString(req.status) match {
+        case Left(_) =>
           logger
-            .info(Map("order_id" -> id))("Request completed")
-            .as(Right(OrderResponse(entity)))
-        case None =>
-          logger
-            .warn(Map("order_id" -> id))("Order not found")
-            .as(Left(OrderNotFound))
+            .warn(Map("order_id" -> id, "status" -> req.status))(
+              "Invalid status"
+            )
+            .as(Left(InvalidStatus(req.status)))
+        case Right(status) =>
+          store.update(id, status).flatMap {
+            case Some(entity) =>
+              logger
+                .info(Map("order_id" -> id))("Request completed")
+                .as(Right(OrderResponse(entity)))
+            case None =>
+              logger
+                .warn(Map("order_id" -> id))("Order not found")
+                .as(Left(OrderNotFound))
+          }
       }
     } yield result
 

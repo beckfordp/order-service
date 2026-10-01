@@ -23,7 +23,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       def get(id: String): IO[Option[Order]] = IO.pure(None)
       def update(
           id: String,
-          status: String
+          status: OrderStatus
       ): IO[Option[Order]] =
         IO.raiseError(error)
       def delete(id: String): IO[Boolean] = IO.raiseError(error)
@@ -236,6 +236,97 @@ class OrderRoutesSuite extends CatsEffectSuite {
         body.asObject.exists(_.contains("error")),
         s"expected a JSON error body, got: $body"
       )
+    }
+  }
+
+  test(
+    "PATCH /orders/{id} returns 400 with a JSON error body for an invalid status, and persists nothing"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
+      postResponse <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(
+          CreateOrderRequest("cust-123", 4999)
+        )
+      )
+      created <- postResponse.as[OrderResponse]
+      patchResponse <- routes.orNotFound.run(
+        Request[IO](Method.PATCH, uri"/orders" / created.id)
+          .withEntity(UpdateOrderRequest("bogus"))
+      )
+      body <- patchResponse.as[io.circe.Json]
+      getResponse <- routes.orNotFound.run(
+        Request[IO](Method.GET, uri"/orders" / created.id)
+      )
+      unchanged <- getResponse.as[OrderResponse]
+    } yield {
+      assertEquals(patchResponse.status, Status.BadRequest)
+      assert(
+        body.asObject.exists(_.contains("error")),
+        s"expected a JSON error body, got: $body"
+      )
+      assertEquals(unchanged.status, "pending")
+    }
+  }
+
+  test(
+    "PATCH /orders/{id} logs a WARN for an invalid status"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      testLogger = StructuredTestingLogger.impl[IO]()
+      routes = OrderRoutes.routes[IO](store, testLogger)
+      postResponse <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(
+          CreateOrderRequest("cust-123", 4999)
+        )
+      )
+      created <- postResponse.as[OrderResponse]
+      _ <- testLogger.logged // drain POST's own log lines before the PATCH
+      patchResponse <- routes.orNotFound.run(
+        Request[IO](Method.PATCH, uri"/orders" / created.id)
+          .withEntity(UpdateOrderRequest("bogus"))
+      )
+      logged <- testLogger.logged
+    } yield {
+      assertEquals(patchResponse.status, Status.BadRequest)
+      val warns = logged.collect { case m: WARN => m }
+      assert(
+        warns.exists(m => m.message.toLowerCase.contains("invalid status")),
+        s"expected an 'invalid status' WARN line, got: $warns"
+      )
+    }
+  }
+
+  test(
+    "PUT /orders/{id} returns 400 with a JSON error body for an invalid status, and persists nothing"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
+      postResponse <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(
+          CreateOrderRequest("cust-123", 4999)
+        )
+      )
+      created <- postResponse.as[OrderResponse]
+      putResponse <- routes.orNotFound.run(
+        Request[IO](Method.PUT, uri"/orders" / created.id)
+          .withEntity(UpdateOrderRequest("bogus"))
+      )
+      body <- putResponse.as[io.circe.Json]
+      getResponse <- routes.orNotFound.run(
+        Request[IO](Method.GET, uri"/orders" / created.id)
+      )
+      unchanged <- getResponse.as[OrderResponse]
+    } yield {
+      assertEquals(putResponse.status, Status.BadRequest)
+      assert(
+        body.asObject.exists(_.contains("error")),
+        s"expected a JSON error body, got: $body"
+      )
+      assertEquals(unchanged.status, "pending")
     }
   }
 

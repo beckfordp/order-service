@@ -34,14 +34,15 @@ curl -X POST http://localhost:8080/orders \
 # Read it back (substitute the id from the response above)
 curl http://localhost:8080/orders/<id>
 
-# Partially update it (quantity/status)
+# Partially update it (status is the only client-writable field on update;
+# valid values: pending, reserved, reservation_failed)
 curl -X PATCH http://localhost:8080/orders/<id> \
-  -H "Content-Type: application/json" -d '{"quantity":5,"status":"shipped"}'
+  -H "Content-Type: application/json" -d '{"status":"reserved"}'
 
 # Or fully replace it (same required fields as PATCH — this resource has no
 # other client-writable ones — but PUT is idempotent full-replace semantics)
 curl -X PUT http://localhost:8080/orders/<id> \
-  -H "Content-Type: application/json" -d '{"quantity":5,"status":"shipped"}'
+  -H "Content-Type: application/json" -d '{"status":"reserved"}'
 
 # Delete it
 curl -X DELETE http://localhost:8080/orders/<id>

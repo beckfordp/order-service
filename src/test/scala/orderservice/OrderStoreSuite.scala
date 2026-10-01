@@ -39,7 +39,7 @@ class OrderStoreSuite extends CatsEffectSuite {
     for {
       store <- OrderStore.inMemory[IO]
       created <- store.create("cust-123", 4999)
-      updated <- store.update(created.id, "pending")
+      updated <- store.update(created.id, OrderStatus.Reserved)
     } yield {
       assertEquals(updated.map(_.id), Some(created.id))
       assert(
@@ -52,7 +52,7 @@ class OrderStoreSuite extends CatsEffectSuite {
   test("update returns None for an unknown id") {
     for {
       store <- OrderStore.inMemory[IO]
-      result <- store.update("unknown-id", "pending")
+      result <- store.update("unknown-id", OrderStatus.Pending)
     } yield assertEquals(result, None)
   }
 

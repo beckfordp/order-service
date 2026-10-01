@@ -103,7 +103,7 @@ class OrderStorePostgresSuite
         .use { store =>
           for {
             created <- store.create("cust-123", 4999)
-            updated <- store.update(created.id, "pending")
+            updated <- store.update(created.id, OrderStatus.Reserved)
           } yield {
             assertEquals(updated.map(_.id), Some(created.id))
             assert(
@@ -122,7 +122,7 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           store
-            .update(java.util.UUID.randomUUID().toString, "pending")
+            .update(java.util.UUID.randomUUID().toString, OrderStatus.Pending)
             .map(assertEquals(_, None))
         }
     }
@@ -134,7 +134,9 @@ class OrderStorePostgresSuite
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
-          store.update("not-a-uuid", "pending").map(assertEquals(_, None))
+          store
+            .update("not-a-uuid", OrderStatus.Pending)
+            .map(assertEquals(_, None))
         }
     }
   }
@@ -301,7 +303,7 @@ class OrderStorePostgresSuite
             ready <- store.ping
             created <- store.create("cust-123", 4999)
             read1 <- store.get(created.id)
-            updated <- store.update(created.id, "pending")
+            updated <- store.update(created.id, OrderStatus.Reserved)
             read2 <- store.get(created.id)
             deleted <- store.delete(created.id)
             read3 <- store.get(created.id)
@@ -310,7 +312,7 @@ class OrderStorePostgresSuite
             assertEquals(read1, Some(created))
             assertEquals(updated.map(_.customerId), Some("cust-123"))
             assertEquals(updated.map(_.totalCents), Some(4999))
-            assertEquals(updated.map(_.status), Some("pending"))
+            assertEquals(updated.map(_.status), Some(OrderStatus.Reserved))
             assertEquals(read2, updated)
             assert(deleted, "expected delete to report the entity existed")
             assertEquals(read3, None)

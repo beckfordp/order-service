@@ -6,7 +6,7 @@ import cats.syntax.all._
 import fs2.io.net.Network
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.metrics.Meter
-import skunk.Session
+import skunk.{Codec, Session}
 import skunk.codec.all._
 import skunk.implicits._
 
@@ -18,7 +18,7 @@ final case class Order(
     id: String,
     customerId: String,
     totalCents: Int,
-    status: String,
+    status: OrderStatus,
     createdAt: java.time.Instant,
     updatedAt: java.time.Instant
 )
@@ -26,14 +26,21 @@ final case class Order(
 trait OrderStore[F[_]] {
   def create(customerId: String, totalCents: Int): F[Order]
   def get(id: String): F[Option[Order]]
-  def update(id: String, status: String): F[Option[Order]]
+  def update(id: String, status: OrderStatus): F[Option[Order]]
   def delete(id: String): F[Boolean]
   def ping: F[Boolean]
 }
 
 object OrderStore {
 
-  private val defaultStatus = "pending"
+  private val defaultStatus = OrderStatus.Pending
+
+  // Column stays plain `text` at the DB level (hardened by a CHECK constraint,
+  // not a native Postgres enum type - see V2__add_order_status_check.sql); this
+  // eimap handles the Scala<->text mapping and surfaces a decode failure for
+  // any value outside the closed OrderStatus set.
+  private val orderStatus: Codec[OrderStatus] =
+    text.eimap(OrderStatus.fromString)(_.asString)
 
   def inMemory[F[_]: Sync]: F[OrderStore[F]] =
     Ref.of[F, Map[String, Order]](Map.empty).map { ref =>
@@ -50,7 +57,7 @@ object OrderStore {
 
         def update(
             id: String,
-            status: String
+            status: OrderStatus
         ): F[Option[Order]] =
           for {
             now <- Sync[F].realTimeInstant
@@ -79,35 +86,35 @@ object OrderStore {
     }
 
   private val insertOrder: skunk.Query[
-    (UUID, String, Int, String),
+    (UUID, String, Int, OrderStatus),
     (OffsetDateTime, OffsetDateTime)
   ] =
     sql"""
       INSERT INTO "order" (id, customer_id, total_cents, status)
-      VALUES ($uuid, $text, $int4, $text)
+      VALUES ($uuid, $text, $int4, $orderStatus)
       RETURNING created_at, updated_at
     """.query(timestamptz *: timestamptz)
 
   private val selectOrder: skunk.Query[
     UUID,
-    (String, Int, String, OffsetDateTime, OffsetDateTime)
+    (String, Int, OrderStatus, OffsetDateTime, OffsetDateTime)
   ] =
     sql"""
       SELECT customer_id, total_cents, status, created_at, updated_at
       FROM "order"
       WHERE id = $uuid
-    """.query(text *: int4 *: text *: timestamptz *: timestamptz)
+    """.query(text *: int4 *: orderStatus *: timestamptz *: timestamptz)
 
   private val updateOrder: skunk.Query[
-    (String, UUID),
-    (String, Int, String, OffsetDateTime, OffsetDateTime)
+    (OrderStatus, UUID),
+    (String, Int, OrderStatus, OffsetDateTime, OffsetDateTime)
   ] =
     sql"""
       UPDATE "order"
-      SET status = $text, updated_at = now()
+      SET status = $orderStatus, updated_at = now()
       WHERE id = $uuid
       RETURNING customer_id, total_cents, status, created_at, updated_at
-    """.query(text *: int4 *: text *: timestamptz *: timestamptz)
+    """.query(text *: int4 *: orderStatus *: timestamptz *: timestamptz)
 
   private val deleteOrder: skunk.Query[UUID, UUID] =
     sql"""
@@ -221,7 +228,7 @@ object OrderStore {
 
               def update(
                   id: String,
-                  status: String
+                  status: OrderStatus
               ): F[Option[Order]] =
                 scala.util.Try(UUID.fromString(id)).toOption match {
                   case None       => Sync[F].pure(None)
