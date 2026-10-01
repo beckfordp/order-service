@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: Add an order_items table by hand**
-  *Link: [./tracks/order-items-table_20261001/](./tracks/order-items-table_20261001/)*
-
 ---
 
 ## Backlog
