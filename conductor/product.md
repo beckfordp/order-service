@@ -24,11 +24,14 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   both the Scala and DB level: a `text.eimap`-based Skunk codec plus a
   Postgres `CHECK` constraint. The JSON wire format is unchanged — still a
   lowercase string. PATCH/PUT reject any other value with `400`)
-- **OrderItem** (planned, hand-added — not codegen'd) — line items
-  snapshotted at order-create time (`sku`/`product_name`/`unit_price_cents`),
-  FK `order_items.order_id` → `"order"(id)` `ON DELETE CASCADE` (same
-  database, real constraint); no FK to catalog-service — different service,
-  different database, logical reference + snapshot only
+- **OrderItem** (hand-added — not codegen'd) — the `order_items` table
+  exists (`id`, `order_id`, `sku`, `product_name`, `unit_price_cents`,
+  `quantity`, all snapshotted at order-create time); still pending: a Scala
+  domain model/store (deferred to the checkout track, US-3.1) and the FK
+  `order_items.order_id` → `"order"(id)` `ON DELETE CASCADE` (a separate
+  backlog item — `order_id` has no DB-level constraint yet); no FK to
+  catalog-service either way — different service, different database,
+  logical reference + snapshot only
 
 ## User stories in scope (gluon/docs/user-stories.md)
 - US-3.1 — checkout creates an order
