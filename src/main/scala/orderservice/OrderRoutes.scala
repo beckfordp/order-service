@@ -68,13 +68,6 @@ object OrderRoutes {
       .out(statusCode(StatusCode.Created))
       .out(jsonBody[OrderResponse])
 
-  private val notFoundOutput: EndpointOutput[OrderError] =
-    statusCode(StatusCode.NotFound)
-      .and(jsonBody[ErrorResponse])
-      .map[OrderError](_ => OrderNotFound)(_ =>
-        ErrorResponse("Order not found")
-      )
-
   private val notFoundVariant: EndpointOutput.OneOfVariant[OrderNotFound.type] =
     oneOfVariant(
       statusCode(StatusCode.NotFound)
@@ -93,7 +86,10 @@ object OrderRoutes {
         )
     )
 
-  private val updateErrorOutput: EndpointOutput[OrderError] =
+  // Shared by all four error-returning endpoints below - get/delete only ever
+  // produce the notFound variant, but reusing one mapping keeps there from
+  // being two places to update if the "not found" shape ever changes.
+  private val orderErrorOutput: EndpointOutput[OrderError] =
     oneOf[OrderError](notFoundVariant, invalidStatusVariant)
 
   private val getOrderEndpoint: PublicEndpoint[
@@ -105,7 +101,7 @@ object OrderRoutes {
     endpoint.get
       .in("orders" / path[String]("id"))
       .out(jsonBody[OrderResponse])
-      .errorOut(notFoundOutput)
+      .errorOut(orderErrorOutput)
 
   private val updateOrderEndpoint: PublicEndpoint[
     (String, UpdateOrderRequest),
@@ -117,7 +113,7 @@ object OrderRoutes {
       .in("orders" / path[String]("id"))
       .in(jsonBody[UpdateOrderRequest])
       .out(jsonBody[OrderResponse])
-      .errorOut(updateErrorOutput)
+      .errorOut(orderErrorOutput)
 
   private val replaceOrderEndpoint: PublicEndpoint[
     (String, UpdateOrderRequest),
@@ -129,14 +125,14 @@ object OrderRoutes {
       .in("orders" / path[String]("id"))
       .in(jsonBody[UpdateOrderRequest])
       .out(jsonBody[OrderResponse])
-      .errorOut(updateErrorOutput)
+      .errorOut(orderErrorOutput)
 
   private val deleteOrderEndpoint
       : PublicEndpoint[String, OrderError, Unit, Any] =
     endpoint.delete
       .in("orders" / path[String]("id"))
       .out(statusCode(StatusCode.NoContent))
-      .errorOut(notFoundOutput)
+      .errorOut(orderErrorOutput)
 
   def serverEndpoint[F[_]: Async](
       store: OrderStore[F],

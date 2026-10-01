@@ -50,6 +50,10 @@ echo "   OK: postgres starting"
 
 echo
 echo "2. Starting order-service (sbt run) in the background..."
+if [ -z "${GITHUB_TOKEN:-}" ] || [ -z "${GITHUB_ACTOR:-}" ]; then
+  echo "WARN: GITHUB_TOKEN / GITHUB_ACTOR not set - resolving purerestlib from" >&2
+  echo "      GitHub Packages will fail without a read:packages token." >&2
+fi
 sbt run >/tmp/order-service-verify.log 2>&1 &
 SBT_PID=$!
 wait_ready
