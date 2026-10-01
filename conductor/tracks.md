@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: US-3.1: checkout creates an order**
+- [x] **Track: US-3.1: checkout creates an order**
   *Link: [./tracks/checkout-creates-order_20261001/](./tracks/checkout-creates-order_20261001/)*
 
 ---
