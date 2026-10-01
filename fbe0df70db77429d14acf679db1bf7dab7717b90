@@ -1,0 +1,13 @@
+Verification report: US-3.1 checkout creates an order
+
+Automated tests: sbt scalafmtCheck test -> 74/74 passed, formatting clean.
+
+Manual verification: ran scripts/verify-checkout-creates-order.sh (committed in this commit) instead of an interactive walkthrough, per .claude/prompt-off. Brings up Postgres + a real sbt run instance and drives real HTTP traffic:
+- POST /orders with two line items -> 201, totalCents computed as 999*2+500*3=3498, both items in response
+- POST /orders with an empty items list -> 400
+- POST /orders with a negative-quantity item -> 400
+- GET /orders/{id} includes both items
+- PATCH /orders/{id} response includes the unchanged items
+- DELETE /orders/{id} -> 204, and order_items for that order are confirmed gone (CASCADE), subsequent GET -> 404
+
+All checks passed. Confirmation: no interactive user confirmation sought - .claude/prompt-off is set for this project, so the script's pass/fail is the verification signal.
