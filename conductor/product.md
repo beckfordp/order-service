@@ -26,12 +26,13 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   lowercase string. PATCH/PUT reject any other value with `400`)
 - **OrderItem** (hand-added — not codegen'd) — the `order_items` table
   exists (`id`, `order_id`, `sku`, `product_name`, `unit_price_cents`,
-  `quantity`, all snapshotted at order-create time); still pending: a Scala
-  domain model/store (deferred to the checkout track, US-3.1) and the FK
-  `order_items.order_id` → `"order"(id)` `ON DELETE CASCADE` (a separate
-  backlog item — `order_id` has no DB-level constraint yet); no FK to
-  catalog-service either way — different service, different database,
-  logical reference + snapshot only
+  `quantity`, all snapshotted at order-create time), with
+  `order_items.order_id` → `"order"(id)` `ON DELETE CASCADE` enforced as a
+  real Postgres FK (same database as `order`); still pending: a Scala
+  domain model/store, deferred to the checkout track (US-3.1), which will
+  be the first code to actually write rows into this table; no FK to
+  catalog-service — different service, different database, logical
+  reference + snapshot only
 
 ## User stories in scope (gluon/docs/user-stories.md)
 - US-3.1 — checkout creates an order
