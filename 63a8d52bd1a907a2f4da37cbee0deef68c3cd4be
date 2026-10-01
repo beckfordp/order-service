@@ -1,0 +1,9 @@
+Task: Add Flyway migration V4__add_order_items_fk.sql; update MigrationsSuite
+
+Summary: Added the FK constraint order_items_order_id_fkey (order_items.order_id -> "order"(id), ON DELETE CASCADE), closing out the deferral from the previous order_items track. Replaced the now-obsolete 'no FK yet, unrelated order_id accepted' test with its opposite (now rejected with a SQLException), and added a new test proving actual CASCADE-delete behavior (insert order + order_item, delete the order, confirm the order_item row is gone too) rather than just checking the constraint exists.
+
+Files:
+- src/main/resources/db/migration/V4__add_order_items_fk.sql (new)
+- src/test/scala/orderservice/MigrationsSuite.scala (1 test replaced, 1 new test)
+
+Why: Last of the order_items schema backlog items (track order-items-fk_20261001) before US-3.1 (checkout creates an order) can start writing real rows into both tables.
