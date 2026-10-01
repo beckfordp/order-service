@@ -165,7 +165,7 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   test(
-    "order_items.order_id has no FK constraint yet - an unrelated order_id is accepted"
+    "order_items.order_id has a FK constraint - an unrelated order_id is rejected"
   ) {
     withContainers { postgres =>
       val config = PostgresConfig(
@@ -184,10 +184,53 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
         )
         try {
           val stmt = conn.createStatement()
+          intercept[java.sql.SQLException] {
+            stmt.executeUpdate(
+              "insert into order_items (id, order_id, sku, product_name, unit_price_cents, quantity) " +
+                "values (gen_random_uuid(), gen_random_uuid(), 'sku-1', 'Widget', 999, 2)"
+            )
+          }
+        } finally conn.close()
+      }
+    }
+  }
+
+  test(
+    "deleting an order cascades to delete its order_items rows"
+  ) {
+    withContainers { postgres =>
+      val config = PostgresConfig(
+        host = postgres.host,
+        port = postgres.mappedPort(5432),
+        database = postgres.databaseName,
+        user = postgres.username,
+        password = postgres.password
+      )
+
+      Migrations.run[IO](config).map { _ =>
+        val conn = DriverManager.getConnection(
+          postgres.jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val stmt = conn.createStatement()
+          val orderId = java.util.UUID.randomUUID()
+          val itemId = java.util.UUID.randomUUID()
+          stmt.executeUpdate(
+            s"insert into \"order\" (id, customer_id, total_cents, status) " +
+              s"values ('$orderId', 'cust-1', 100, 'pending')"
+          )
           stmt.executeUpdate(
             "insert into order_items (id, order_id, sku, product_name, unit_price_cents, quantity) " +
-              "values (gen_random_uuid(), gen_random_uuid(), 'sku-1', 'Widget', 999, 2)"
+              s"values ('$itemId', '$orderId', 'sku-1', 'Widget', 999, 2)"
           )
+          stmt.executeUpdate(s"delete from \"order\" where id = '$orderId'")
+          val rs = stmt.executeQuery(
+            s"select count(*) from order_items where id = '$itemId'"
+          )
+          rs.next()
+          assertEquals(rs.getInt(1), 0)
         } finally conn.close()
       }
     }
