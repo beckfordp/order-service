@@ -13,7 +13,21 @@ import sttp.tapir.json.circe._
 import sttp.tapir.server.ServerEndpoint
 import sttp.tapir.server.http4s.Http4sServerInterpreter
 
-final case class CreateOrderRequest(customerId: String, totalCents: Int)
+final case class CreateOrderItemRequest(
+    sku: String,
+    productName: String,
+    unitPriceCents: Int,
+    quantity: Int
+)
+
+object CreateOrderItemRequest {
+  implicit val codec: Codec[CreateOrderItemRequest] = deriveCodec
+}
+
+final case class CreateOrderRequest(
+    customerId: String,
+    items: List[CreateOrderItemRequest]
+)
 
 object CreateOrderRequest {
   implicit val codec: Codec[CreateOrderRequest] = deriveCodec
@@ -25,11 +39,33 @@ object UpdateOrderRequest {
   implicit val codec: Codec[UpdateOrderRequest] = deriveCodec
 }
 
+final case class OrderItemResponse(
+    id: String,
+    sku: String,
+    productName: String,
+    unitPriceCents: Int,
+    quantity: Int
+)
+
+object OrderItemResponse {
+  implicit val codec: Codec[OrderItemResponse] = deriveCodec
+
+  def apply(item: OrderItem): OrderItemResponse =
+    OrderItemResponse(
+      item.id,
+      item.sku,
+      item.productName,
+      item.unitPriceCents,
+      item.quantity
+    )
+}
+
 final case class OrderResponse(
     id: String,
     customerId: String,
     totalCents: Int,
     status: String,
+    items: List[OrderItemResponse],
     createdAt: java.time.Instant,
     updatedAt: java.time.Instant
 )
@@ -37,12 +73,13 @@ final case class OrderResponse(
 object OrderResponse {
   implicit val codec: Codec[OrderResponse] = deriveCodec
 
-  def apply(entity: Order): OrderResponse =
+  def apply(entity: Order, items: List[OrderItem]): OrderResponse =
     OrderResponse(
       entity.id,
       entity.customerId,
       entity.totalCents,
       entity.status.asString,
+      items.map(OrderItemResponse(_)),
       entity.createdAt,
       entity.updatedAt
     )
@@ -55,18 +92,6 @@ object ErrorResponse {
 }
 
 object OrderRoutes {
-
-  private val createOrderEndpoint: PublicEndpoint[
-    CreateOrderRequest,
-    Unit,
-    OrderResponse,
-    Any
-  ] =
-    endpoint.post
-      .in("orders")
-      .in(jsonBody[CreateOrderRequest])
-      .out(statusCode(StatusCode.Created))
-      .out(jsonBody[OrderResponse])
 
   private val notFoundVariant: EndpointOutput.OneOfVariant[OrderNotFound.type] =
     oneOfVariant(
@@ -86,11 +111,49 @@ object OrderRoutes {
         )
     )
 
-  // Shared by all four error-returning endpoints below - get/delete only ever
-  // produce the notFound variant, but reusing one mapping keeps there from
-  // being two places to update if the "not found" shape ever changes.
+  private val emptyOrderItemsVariant
+      : EndpointOutput.OneOfVariant[EmptyOrderItems.type] =
+    oneOfVariant(
+      statusCode(StatusCode.BadRequest)
+        .and(jsonBody[ErrorResponse])
+        .map[EmptyOrderItems.type](_ => EmptyOrderItems)(_ =>
+          ErrorResponse("Order must have at least one item")
+        )
+    )
+
+  private val invalidOrderItemVariant
+      : EndpointOutput.OneOfVariant[InvalidOrderItem] =
+    oneOfVariant(
+      statusCode(StatusCode.BadRequest)
+        .and(jsonBody[ErrorResponse])
+        .map[InvalidOrderItem](e => InvalidOrderItem(e.error))(e =>
+          ErrorResponse(e.reason)
+        )
+    )
+
+  // Shared by all five error-returning endpoints below - most only ever
+  // produce a subset of these variants, but reusing one mapping keeps there
+  // from being multiple places to update if a shape ever changes.
   private val orderErrorOutput: EndpointOutput[OrderError] =
-    oneOf[OrderError](notFoundVariant, invalidStatusVariant)
+    oneOf[OrderError](
+      notFoundVariant,
+      invalidStatusVariant,
+      emptyOrderItemsVariant,
+      invalidOrderItemVariant
+    )
+
+  private val createOrderEndpoint: PublicEndpoint[
+    CreateOrderRequest,
+    OrderError,
+    OrderResponse,
+    Any
+  ] =
+    endpoint.post
+      .in("orders")
+      .in(jsonBody[CreateOrderRequest])
+      .out(statusCode(StatusCode.Created))
+      .out(jsonBody[OrderResponse])
+      .errorOut(orderErrorOutput)
 
   private val getOrderEndpoint: PublicEndpoint[
     String,
@@ -134,11 +197,45 @@ object OrderRoutes {
       .out(statusCode(StatusCode.NoContent))
       .errorOut(orderErrorOutput)
 
+  /** Validates checkout's line items before anything is persisted: at least one
+    * item is required, and each item's quantity/price must be sane.
+    * Short-circuits on the first violation (not a full accumulation of every
+    * bad item) - good enough for a 400 the client has to fix anyway.
+    */
+  private def validateItems(
+      items: List[CreateOrderItemRequest]
+  ): Either[OrderError, List[NewOrderItem]] =
+    if (items.isEmpty) Left(EmptyOrderItems)
+    else
+      items.traverse { item =>
+        if (item.quantity <= 0)
+          Left(
+            InvalidOrderItem(
+              s"quantity must be positive, got ${item.quantity} for sku '${item.sku}'"
+            )
+          )
+        else if (item.unitPriceCents < 0)
+          Left(
+            InvalidOrderItem(
+              s"unitPriceCents must be non-negative, got ${item.unitPriceCents} for sku '${item.sku}'"
+            )
+          )
+        else
+          Right(
+            NewOrderItem(
+              item.sku,
+              item.productName,
+              item.unitPriceCents,
+              item.quantity
+            )
+          )
+      }
+
   def serverEndpoint[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =
-    createOrderEndpoint.serverLogicSuccess[F] { req =>
+    createOrderEndpoint.serverLogic[F] { req =>
       for {
         _ <- logger.info(
           Map(
@@ -146,14 +243,28 @@ object OrderRoutes {
             "path" -> "/orders"
           )
         )("Received request")
-        entity <- store.create(req.customerId, req.totalCents).onError {
-          case error =>
-            logger.error(Map.empty, error)("Persisting the order failed")
+        result <- validateItems(req.items) match {
+          case Left(error) =>
+            logger
+              .warn(Map("customer_id" -> req.customerId))(
+                "Invalid order items"
+              )
+              .as(Left(error): Either[OrderError, OrderResponse])
+          case Right(items) =>
+            for {
+              created <- store.create(req.customerId, items).onError {
+                case error =>
+                  logger.error(Map.empty, error)("Persisting the order failed")
+              }
+              (order, orderItems) = created
+              _ <- logger.info(
+                Map("order_id" -> order.id)
+              )("Request completed")
+            } yield Right(
+              OrderResponse(order, orderItems)
+            ): Either[OrderError, OrderResponse]
         }
-        _ <- logger.info(
-          Map("order_id" -> entity.id)
-        )("Request completed")
-      } yield OrderResponse(entity)
+      } yield result
     }
 
   def getOrderServerEndpoint[F[_]: Async](
@@ -168,10 +279,10 @@ object OrderRoutes {
           "Received request"
         )
         result <- store.get(id).flatMap {
-          case Some(entity) =>
+          case Some((order, items)) =>
             logger
               .info(Map("order_id" -> id))("Request completed")
-              .as(Right(OrderResponse(entity)))
+              .as(Right(OrderResponse(order, items)))
           case None =>
             logger
               .warn(Map("order_id" -> id))("Order not found")
@@ -209,10 +320,10 @@ object OrderRoutes {
             .as(Left(InvalidStatus(req.status)))
         case Right(status) =>
           store.update(id, status).flatMap {
-            case Some(entity) =>
+            case Some((order, items)) =>
               logger
                 .info(Map("order_id" -> id))("Request completed")
-                .as(Right(OrderResponse(entity)))
+                .as(Right(OrderResponse(order, items)))
             case None =>
               logger
                 .warn(Map("order_id" -> id))("Order not found")

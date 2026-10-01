@@ -16,31 +16,110 @@ import purerest.tracing.{ServerTracing, Tracing}
 
 class OrderRoutesSuite extends CatsEffectSuite {
 
+  private val createRequest = CreateOrderRequest(
+    "cust-123",
+    List(CreateOrderItemRequest("sku-1", "Widget", 999, 5))
+  )
+
   private def failingStore(error: Throwable): OrderStore[IO] =
     new OrderStore[IO] {
-      def create(customerId: String, totalCents: Int): IO[Order] =
+      def create(
+          customerId: String,
+          items: List[NewOrderItem]
+      ): IO[(Order, List[OrderItem])] =
         IO.raiseError(error)
-      def get(id: String): IO[Option[Order]] = IO.pure(None)
+      def get(id: String): IO[Option[(Order, List[OrderItem])]] =
+        IO.pure(None)
       def update(
           id: String,
           status: OrderStatus
-      ): IO[Option[Order]] =
+      ): IO[Option[(Order, List[OrderItem])]] =
         IO.raiseError(error)
       def delete(id: String): IO[Boolean] = IO.raiseError(error)
       def ping: IO[Boolean] = IO.raiseError(error)
     }
 
-  test("POST /orders returns 201 with the created entity") {
+  test("POST /orders returns 201 with the created entity and its items") {
     for {
       store <- OrderStore.inMemory[IO]
       routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
-      request = Request[IO](Method.POST, uri"/orders")
-        .withEntity(CreateOrderRequest("cust-123", 4999))
+      request = Request[IO](Method.POST, uri"/orders").withEntity(
+        createRequest
+      )
       response <- routes.orNotFound.run(request)
       entity <- response.as[OrderResponse]
     } yield {
       assertEquals(response.status, Status.Created)
       assert(entity.id.nonEmpty)
+      assertEquals(entity.totalCents, 999 * 5)
+      assertEquals(entity.items.map(_.sku), List("sku-1"))
+    }
+  }
+
+  test(
+    "POST /orders returns 400 with a JSON error body for an empty items list, and persists nothing"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
+      request = Request[IO](Method.POST, uri"/orders")
+        .withEntity(CreateOrderRequest("cust-123", Nil))
+      response <- routes.orNotFound.run(request)
+      body <- response.as[io.circe.Json]
+    } yield {
+      assertEquals(response.status, Status.BadRequest)
+      assert(
+        body.asObject.exists(_.contains("error")),
+        s"expected a JSON error body, got: $body"
+      )
+    }
+  }
+
+  test(
+    "POST /orders returns 400 with a JSON error body for an item with non-positive quantity"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
+      request = Request[IO](Method.POST, uri"/orders")
+        .withEntity(
+          CreateOrderRequest(
+            "cust-123",
+            List(CreateOrderItemRequest("sku-1", "Widget", 999, 0))
+          )
+        )
+      response <- routes.orNotFound.run(request)
+      body <- response.as[io.circe.Json]
+    } yield {
+      assertEquals(response.status, Status.BadRequest)
+      assert(
+        body.asObject.exists(_.contains("error")),
+        s"expected a JSON error body, got: $body"
+      )
+    }
+  }
+
+  test(
+    "POST /orders returns 400 with a JSON error body for an item with a negative unitPriceCents"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
+      request = Request[IO](Method.POST, uri"/orders")
+        .withEntity(
+          CreateOrderRequest(
+            "cust-123",
+            List(CreateOrderItemRequest("sku-1", "Widget", -1, 1))
+          )
+        )
+      response <- routes.orNotFound.run(request)
+      body <- response.as[io.circe.Json]
+    } yield {
+      assertEquals(response.status, Status.BadRequest)
+      assert(
+        body.asObject.exists(_.contains("error")),
+        s"expected a JSON error body, got: $body"
+      )
     }
   }
 
@@ -49,9 +128,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       store <- OrderStore.inMemory[IO]
       routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       getResponse <- routes.orNotFound.run(
@@ -61,6 +138,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
     } yield {
       assertEquals(getResponse.status, Status.Ok)
       assertEquals(fetched, created)
+      assertEquals(fetched.items.map(_.sku), List("sku-1"))
     }
   }
 
@@ -90,8 +168,9 @@ class OrderRoutesSuite extends CatsEffectSuite {
       store <- OrderStore.inMemory[IO]
       testLogger = StructuredTestingLogger.impl[IO]()
       routes = OrderRoutes.routes[IO](store, testLogger)
-      request = Request[IO](Method.POST, uri"/orders")
-        .withEntity(CreateOrderRequest("cust-123", 4999))
+      request = Request[IO](Method.POST, uri"/orders").withEntity(
+        createRequest
+      )
       response <- routes.orNotFound.run(request)
       entity <- response.as[OrderResponse]
       logged <- testLogger.logged
@@ -121,8 +200,9 @@ class OrderRoutesSuite extends CatsEffectSuite {
     for {
       testLogger <- IO.pure(StructuredTestingLogger.impl[IO]())
       routes = OrderRoutes.routes[IO](failingStore(boom), testLogger)
-      request = Request[IO](Method.POST, uri"/orders")
-        .withEntity(CreateOrderRequest("cust-123", 4999))
+      request = Request[IO](Method.POST, uri"/orders").withEntity(
+        createRequest
+      )
       response <- routes.orNotFound.run(request)
       logged <- testLogger.logged
     } yield {
@@ -143,9 +223,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       testLogger = StructuredTestingLogger.impl[IO]()
       routes = OrderRoutes.routes[IO](store, testLogger)
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       _ <- testLogger.logged // drain POST's own log lines before the GET
@@ -198,14 +276,12 @@ class OrderRoutesSuite extends CatsEffectSuite {
     }
   }
 
-  test("PATCH /orders/{id} returns 200 with the updated entity") {
+  test("PATCH /orders/{id} returns 200 with the updated entity and its items") {
     for {
       store <- OrderStore.inMemory[IO]
       routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       patchResponse <- routes.orNotFound.run(
@@ -216,6 +292,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
     } yield {
       assertEquals(patchResponse.status, Status.Ok)
       assertEquals(updated.id, created.id)
+      assertEquals(updated.items, created.items)
     }
   }
 
@@ -246,9 +323,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       store <- OrderStore.inMemory[IO]
       routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       patchResponse <- routes.orNotFound.run(
@@ -278,9 +353,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       testLogger = StructuredTestingLogger.impl[IO]()
       routes = OrderRoutes.routes[IO](store, testLogger)
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       _ <- testLogger.logged // drain POST's own log lines before the PATCH
@@ -306,9 +379,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       store <- OrderStore.inMemory[IO]
       routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       putResponse <- routes.orNotFound.run(
@@ -338,9 +409,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       testLogger = StructuredTestingLogger.impl[IO]()
       routes = OrderRoutes.routes[IO](store, testLogger)
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       _ <- testLogger.logged // drain POST's own log lines before the PATCH
@@ -400,9 +469,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       store <- OrderStore.inMemory[IO]
       routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       deleteResponse <- routes.orNotFound.run(
@@ -444,9 +511,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       testLogger = StructuredTestingLogger.impl[IO]()
       routes = OrderRoutes.routes[IO](store, testLogger)
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       _ <- testLogger.logged // drain POST's own log lines before the DELETE
@@ -497,14 +562,12 @@ class OrderRoutesSuite extends CatsEffectSuite {
     }
   }
 
-  test("PUT /orders/{id} returns 200 with the replaced entity") {
+  test("PUT /orders/{id} returns 200 with the replaced entity and its items") {
     for {
       store <- OrderStore.inMemory[IO]
       routes = OrderRoutes.routes[IO](store, NoOpLogger[IO])
       postResponse <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(
-          CreateOrderRequest("cust-123", 4999)
-        )
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       created <- postResponse.as[OrderResponse]
       putResponse <- routes.orNotFound.run(
@@ -515,6 +578,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
     } yield {
       assertEquals(putResponse.status, Status.Ok)
       assertEquals(replaced.id, created.id)
+      assertEquals(replaced.items, created.items)
     }
   }
 
@@ -547,8 +611,9 @@ class OrderRoutesSuite extends CatsEffectSuite {
         routes = ServerTracing.middleware(testTracer.tracer)(
           OrderRoutes.routes[IO](store, NoOpLogger[IO])
         )
-        request = Request[IO](Method.POST, uri"/orders")
-          .withEntity(CreateOrderRequest("cust-123", 4999))
+        request = Request[IO](Method.POST, uri"/orders").withEntity(
+          createRequest
+        )
         response <- routes.orNotFound.run(request)
         spans <- testTracer.finishedSpans
       } yield {

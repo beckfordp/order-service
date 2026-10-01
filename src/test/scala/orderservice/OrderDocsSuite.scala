@@ -18,7 +18,12 @@ class OrderDocsSuite extends CatsEffectSuite {
       endpoint = OrderRoutes.serverEndpoint[IO](store, NoOpLogger[IO])
       routes = Docs.routes[IO]("Order Service", "1.0", List(endpoint))
       request = Request[IO](Method.POST, uri"/orders")
-        .withEntity(CreateOrderRequest("cust-123", 4999))
+        .withEntity(
+          CreateOrderRequest(
+            "cust-123",
+            List(CreateOrderItemRequest("sku-1", "Widget", 999, 5))
+          )
+        )
       response <- routes.orNotFound.run(request)
       entity <- response.as[OrderResponse]
       docsResponse <- routes.orNotFound.run(

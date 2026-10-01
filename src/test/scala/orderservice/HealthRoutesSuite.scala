@@ -9,26 +9,32 @@ class HealthRoutesSuite extends CatsEffectSuite {
 
   private val readyStore: OrderStore[IO] =
     new OrderStore[IO] {
-      def create(customerId: String, totalCents: Int): IO[Order] =
+      def create(
+          customerId: String,
+          items: List[NewOrderItem]
+      ): IO[(Order, List[OrderItem])] =
         IO.raiseError(new NotImplementedError())
-      def get(id: String): IO[Option[Order]] = IO.pure(None)
+      def get(id: String): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def update(
           id: String,
           status: OrderStatus
-      ): IO[Option[Order]] = IO.pure(None)
+      ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def delete(id: String): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(true)
     }
 
   private val notReadyStore: OrderStore[IO] =
     new OrderStore[IO] {
-      def create(customerId: String, totalCents: Int): IO[Order] =
+      def create(
+          customerId: String,
+          items: List[NewOrderItem]
+      ): IO[(Order, List[OrderItem])] =
         IO.raiseError(new NotImplementedError())
-      def get(id: String): IO[Option[Order]] = IO.pure(None)
+      def get(id: String): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def update(
           id: String,
           status: OrderStatus
-      ): IO[Option[Order]] = IO.pure(None)
+      ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def delete(id: String): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(false)
     }

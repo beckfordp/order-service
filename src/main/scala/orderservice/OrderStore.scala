@@ -23,10 +23,32 @@ final case class Order(
     updatedAt: java.time.Instant
 )
 
+final case class NewOrderItem(
+    sku: String,
+    productName: String,
+    unitPriceCents: Int,
+    quantity: Int
+)
+
+final case class OrderItem(
+    id: String,
+    orderId: String,
+    sku: String,
+    productName: String,
+    unitPriceCents: Int,
+    quantity: Int
+)
+
 trait OrderStore[F[_]] {
-  def create(customerId: String, totalCents: Int): F[Order]
-  def get(id: String): F[Option[Order]]
-  def update(id: String, status: OrderStatus): F[Option[Order]]
+  def create(
+      customerId: String,
+      items: List[NewOrderItem]
+  ): F[(Order, List[OrderItem])]
+  def get(id: String): F[Option[(Order, List[OrderItem])]]
+  def update(
+      id: String,
+      status: OrderStatus
+  ): F[Option[(Order, List[OrderItem])]]
   def delete(id: String): F[Boolean]
   def ping: F[Boolean]
 }
@@ -43,46 +65,76 @@ object OrderStore {
     text.eimap(OrderStatus.fromString)(_.asString)
 
   def inMemory[F[_]: Sync]: F[OrderStore[F]] =
-    Ref.of[F, Map[String, Order]](Map.empty).map { ref =>
-      new OrderStore[F] {
-        def create(customerId: String, totalCents: Int): F[Order] =
-          for {
-            id <- Sync[F].delay(java.util.UUID.randomUUID().toString)
-            now <- Sync[F].realTimeInstant
-            entity = Order(id, customerId, totalCents, defaultStatus, now, now)
-            _ <- ref.update(_ + (id -> entity))
-          } yield entity
-
-        def get(id: String): F[Option[Order]] = ref.get.map(_.get(id))
-
-        def update(
-            id: String,
-            status: OrderStatus
-        ): F[Option[Order]] =
-          for {
-            now <- Sync[F].realTimeInstant
-            updated <- ref.modify { entities =>
-              entities.get(id) match {
-                case None           => (entities, None)
-                case Some(existing) =>
-                  val next =
-                    existing.copy(
-                      status = status,
-                      updatedAt = now
-                    )
-                  (entities + (id -> next), Some(next))
-              }
+    for {
+      ordersRef <- Ref.of[F, Map[String, Order]](Map.empty)
+      itemsRef <- Ref.of[F, Map[String, List[OrderItem]]](Map.empty)
+    } yield new OrderStore[F] {
+      def create(
+          customerId: String,
+          items: List[NewOrderItem]
+      ): F[(Order, List[OrderItem])] =
+        for {
+          id <- Sync[F].delay(java.util.UUID.randomUUID().toString)
+          now <- Sync[F].realTimeInstant
+          totalCents = items.map(i => i.unitPriceCents * i.quantity).sum
+          entity = Order(id, customerId, totalCents, defaultStatus, now, now)
+          persistedItems <- items.traverse { item =>
+            Sync[F].delay(java.util.UUID.randomUUID().toString).map { itemId =>
+              OrderItem(
+                itemId,
+                id,
+                item.sku,
+                item.productName,
+                item.unitPriceCents,
+                item.quantity
+              )
             }
-          } yield updated
+          }
+          _ <- ordersRef.update(_ + (id -> entity))
+          _ <- itemsRef.update(_ + (id -> persistedItems))
+        } yield (entity, persistedItems)
 
-        def delete(id: String): F[Boolean] =
-          ref.modify { entities =>
+      def get(id: String): F[Option[(Order, List[OrderItem])]] =
+        for {
+          orders <- ordersRef.get
+          items <- itemsRef.get
+        } yield orders.get(id).map(order => (order, items.getOrElse(id, Nil)))
+
+      def update(
+          id: String,
+          status: OrderStatus
+      ): F[Option[(Order, List[OrderItem])]] =
+        for {
+          now <- Sync[F].realTimeInstant
+          updated <- ordersRef.modify { entities =>
+            entities.get(id) match {
+              case None           => (entities, None)
+              case Some(existing) =>
+                val next =
+                  existing.copy(
+                    status = status,
+                    updatedAt = now
+                  )
+                (entities + (id -> next), Some(next))
+            }
+          }
+          result <- updated match {
+            case None        => Sync[F].pure(None)
+            case Some(order) =>
+              itemsRef.get.map(items => Some((order, items.getOrElse(id, Nil))))
+          }
+        } yield result
+
+      def delete(id: String): F[Boolean] =
+        for {
+          existed <- ordersRef.modify { entities =>
             if (entities.contains(id)) (entities - id, true)
             else (entities, false)
           }
+          _ <- itemsRef.update(_ - id)
+        } yield existed
 
-        def ping: F[Boolean] = Sync[F].pure(true)
-      }
+      def ping: F[Boolean] = Sync[F].pure(true)
     }
 
   private val insertOrder: skunk.Query[
@@ -122,6 +174,22 @@ object OrderStore {
       WHERE id = $uuid
       RETURNING id
     """.query(uuid)
+
+  private val insertOrderItem
+      : skunk.Command[(UUID, UUID, String, String, Int, Int)] =
+    sql"""
+      INSERT INTO order_items (id, order_id, sku, product_name, unit_price_cents, quantity)
+      VALUES ($uuid, $uuid, $text, $text, $int4, $int4)
+    """.command
+
+  private val selectOrderItems
+      : skunk.Query[UUID, (UUID, String, String, Int, Int)] =
+    sql"""
+      SELECT id, sku, product_name, unit_price_cents, quantity
+      FROM order_items
+      WHERE order_id = $uuid
+      ORDER BY sku
+    """.query(uuid *: text *: text *: int4 *: int4)
 
   private val pingQuery: skunk.Query[skunk.Void, Int] = sql"SELECT 1".query(
     int4
@@ -172,32 +240,86 @@ object OrderStore {
                 a <- result.liftTo[F]
               } yield a
 
+            def fetchItems(id: String, uuid: UUID): F[List[OrderItem]] =
+              timed("select_items") {
+                pool.use { session => session.execute(selectOrderItems)(uuid) }
+              }.map(_.map {
+                case (itemId, sku, productName, unitPriceCents, quantity) =>
+                  OrderItem(
+                    itemId.toString,
+                    id,
+                    sku,
+                    productName,
+                    unitPriceCents,
+                    quantity
+                  )
+              })
+
             new OrderStore[F] {
-              def create(customerId: String, totalCents: Int): F[Order] =
-                for {
-                  id <- Sync[F].delay(UUID.randomUUID())
-                  timestamps <- timed("insert") {
-                    pool.use { session =>
-                      session
-                        .prepare(insertOrder)
-                        .flatMap(
-                          _.unique((id, customerId, totalCents, defaultStatus))
+              def create(
+                  customerId: String,
+                  items: List[NewOrderItem]
+              ): F[(Order, List[OrderItem])] = {
+                val totalCents =
+                  items.map(i => i.unitPriceCents * i.quantity).sum
+                timed("insert") {
+                  pool.use { session =>
+                    session.transaction.use { _ =>
+                      for {
+                        id <- Sync[F].delay(UUID.randomUUID())
+                        timestamps <- session
+                          .prepare(insertOrder)
+                          .flatMap(
+                            _.unique(
+                              (id, customerId, totalCents, defaultStatus)
+                            )
+                          )
+                        persistedItems <- items.traverse { item =>
+                          for {
+                            itemId <- Sync[F].delay(UUID.randomUUID())
+                            _ <- session
+                              .prepare(insertOrderItem)
+                              .flatMap(
+                                _.execute(
+                                  (
+                                    itemId,
+                                    id,
+                                    item.sku,
+                                    item.productName,
+                                    item.unitPriceCents,
+                                    item.quantity
+                                  )
+                                )
+                              )
+                          } yield OrderItem(
+                            itemId.toString,
+                            id.toString,
+                            item.sku,
+                            item.productName,
+                            item.unitPriceCents,
+                            item.quantity
+                          )
+                        }
+                      } yield {
+                        val (createdAt, updatedAt) = timestamps
+                        (
+                          Order(
+                            id.toString,
+                            customerId,
+                            totalCents,
+                            defaultStatus,
+                            createdAt.toInstant,
+                            updatedAt.toInstant
+                          ),
+                          persistedItems
                         )
+                      }
                     }
                   }
-                } yield {
-                  val (createdAt, updatedAt) = timestamps
-                  Order(
-                    id.toString,
-                    customerId,
-                    totalCents,
-                    defaultStatus,
-                    createdAt.toInstant,
-                    updatedAt.toInstant
-                  )
                 }
+              }
 
-              def get(id: String): F[Option[Order]] =
+              def get(id: String): F[Option[(Order, List[OrderItem])]] =
                 scala.util.Try(UUID.fromString(id)).toOption match {
                   case None       => Sync[F].pure(None)
                   case Some(uuid) =>
@@ -207,29 +329,40 @@ object OrderStore {
                           session.prepare(selectOrder).flatMap(_.option(uuid))
                         }
                       }
-                    } yield row.map {
-                      case (
-                            customerId,
-                            totalCents,
-                            status,
-                            createdAt,
-                            updatedAt
-                          ) =>
-                        Order(
-                          id,
-                          customerId,
-                          totalCents,
-                          status,
-                          createdAt.toInstant,
-                          updatedAt.toInstant
-                        )
-                    }
+                      result <- row match {
+                        case None => Sync[F].pure(None)
+                        case Some(
+                              (
+                                customerId,
+                                totalCents,
+                                status,
+                                createdAt,
+                                updatedAt
+                              )
+                            ) =>
+                          fetchItems(id, uuid).map { items =>
+                            Some(
+                              (
+                                Order(
+                                  id,
+                                  customerId,
+                                  totalCents,
+                                  status,
+                                  createdAt.toInstant,
+                                  updatedAt.toInstant
+                                ),
+                                items
+                              )
+                            )
+                          }
+                      }
+                    } yield result
                 }
 
               def update(
                   id: String,
                   status: OrderStatus
-              ): F[Option[Order]] =
+              ): F[Option[(Order, List[OrderItem])]] =
                 scala.util.Try(UUID.fromString(id)).toOption match {
                   case None       => Sync[F].pure(None)
                   case Some(uuid) =>
@@ -241,23 +374,34 @@ object OrderStore {
                             .flatMap(_.option((status, uuid)))
                         }
                       }
-                    } yield row.map {
-                      case (
-                            customerId,
-                            totalCents,
-                            status,
-                            createdAt,
-                            updatedAt
-                          ) =>
-                        Order(
-                          id,
-                          customerId,
-                          totalCents,
-                          status,
-                          createdAt.toInstant,
-                          updatedAt.toInstant
-                        )
-                    }
+                      result <- row match {
+                        case None => Sync[F].pure(None)
+                        case Some(
+                              (
+                                customerId,
+                                totalCents,
+                                newStatus,
+                                createdAt,
+                                updatedAt
+                              )
+                            ) =>
+                          fetchItems(id, uuid).map { items =>
+                            Some(
+                              (
+                                Order(
+                                  id,
+                                  customerId,
+                                  totalCents,
+                                  newStatus,
+                                  createdAt.toInstant,
+                                  updatedAt.toInstant
+                                ),
+                                items
+                              )
+                            )
+                          }
+                      }
+                    } yield result
                 }
 
               def delete(id: String): F[Boolean] =

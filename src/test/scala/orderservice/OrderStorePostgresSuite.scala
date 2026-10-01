@@ -9,6 +9,7 @@ import org.testcontainers.utility.DockerImageName
 import org.typelevel.otel4s.metrics.Meter
 import purerest.metrics.Metrics
 
+import java.sql.DriverManager
 import scala.jdk.CollectionConverters._
 
 class OrderStorePostgresSuite
@@ -29,14 +30,51 @@ class OrderStorePostgresSuite
       password = postgres.password
     )
 
+  private val oneItem =
+    List(NewOrderItem("sku-1", "Widget", 999, 2))
+
+  private val twoItems =
+    List(
+      NewOrderItem("sku-1", "Widget", 999, 2),
+      NewOrderItem("sku-2", "Gadget", 500, 3)
+    )
+
   test("create persists an entity and returns it with a generated id") {
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
-          store.create("cust-123", 4999).map { entity =>
-            assert(entity.id.nonEmpty)
+          store.create("cust-123", oneItem).map { case (order, _) =>
+            assert(order.id.nonEmpty)
+          }
+        }
+    }
+  }
+
+  test("create computes totalCents from the items") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          store.create("cust-123", twoItems).map { case (order, _) =>
+            assertEquals(order.totalCents, 999 * 2 + 500 * 3)
+          }
+        }
+    }
+  }
+
+  test("create persists the items, each with a generated id") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          store.create("cust-123", twoItems).map { case (order, items) =>
+            assertEquals(items.map(_.sku), List("sku-1", "sku-2"))
+            assert(items.forall(_.id.nonEmpty))
+            assert(items.forall(_.orderId == order.id))
           }
         }
     }
@@ -50,22 +88,59 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            first <- store.create("cust-123", 4999)
-            second <- store.create("cust-123", 4999)
+            (first, _) <- store.create("cust-123", oneItem)
+            (second, _) <- store.create("cust-123", oneItem)
           } yield assertNotEquals(first.id, second.id)
         }
     }
   }
 
-  test("get returns the persisted entity") {
+  test(
+    "a failing item insert rolls back the whole transaction - no order row is left behind"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val badItems = List(
+        NewOrderItem("sku-1", "Widget", 999, 2),
+        NewOrderItem("sku-2", "Bad Item", 500, -1) // violates quantity > 0
+      )
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          store.create("cust-rollback", badItems).attempt.map { result =>
+            assert(
+              result.isLeft,
+              s"expected the create to fail, got: $result"
+            )
+          }
+        } *> IO {
+        val conn = DriverManager.getConnection(
+          postgres.jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val rs = conn
+            .createStatement()
+            .executeQuery(
+              "select count(*) from \"order\" where customer_id = 'cust-rollback'"
+            )
+          rs.next()
+          assertEquals(rs.getInt(1), 0)
+        } finally conn.close()
+      }
+    }
+  }
+
+  test("get returns the persisted entity and its items") {
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            created <- store.create("cust-123", 4999)
-            found <- store.get(created.id)
+            created <- store.create("cust-123", twoItems)
+            found <- store.get(created._1.id)
           } yield assertEquals(found, Some(created))
         }
     }
@@ -95,19 +170,20 @@ class OrderStorePostgresSuite
     }
   }
 
-  test("update returns the updated entity and returns it") {
+  test("update returns the updated entity and preserves its items") {
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            created <- store.create("cust-123", 4999)
+            (created, items) <- store.create("cust-123", twoItems)
             updated <- store.update(created.id, OrderStatus.Reserved)
           } yield {
-            assertEquals(updated.map(_.id), Some(created.id))
+            assertEquals(updated.map(_._1.id), Some(created.id))
+            assertEquals(updated.map(_._2), Some(items))
             assert(
-              updated.exists(!_.updatedAt.isBefore(created.updatedAt)),
+              updated.exists(!_._1.updatedAt.isBefore(created.updatedAt)),
               s"expected updatedAt not to move backwards, got: $updated"
             )
           }
@@ -141,14 +217,16 @@ class OrderStorePostgresSuite
     }
   }
 
-  test("delete removes the entity and returns true, and get then returns None") {
+  test(
+    "delete removes the entity and CASCADEs to remove its items, and get then returns None"
+  ) {
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            created <- store.create("cust-123", 4999)
+            (created, _) <- store.create("cust-123", twoItems)
             deleted <- store.delete(created.id)
             found <- store.get(created.id)
           } yield {
@@ -216,8 +294,8 @@ class OrderStorePostgresSuite
             .postgres[IO](config, testMeter.meter)
             .use { store =>
               for {
-                created <- store.create("cust-123", 4999)
-                _ <- store.get(created.id)
+                created <- store.create("cust-123", oneItem)
+                _ <- store.get(created._1.id)
                 metrics <- testMeter.collectMetrics
               } yield {
                 val data =
@@ -259,7 +337,7 @@ class OrderStorePostgresSuite
             .postgres[IO](unreachableConfig, testMeter.meter)
             .use { store =>
               for {
-                result <- store.create("cust-123", 4999).attempt
+                result <- store.create("cust-123", oneItem).attempt
                 metrics <- testMeter.collectMetrics
               } yield {
                 assert(
@@ -301,18 +379,18 @@ class OrderStorePostgresSuite
         .use { store =>
           for {
             ready <- store.ping
-            created <- store.create("cust-123", 4999)
-            read1 <- store.get(created.id)
-            updated <- store.update(created.id, OrderStatus.Reserved)
-            read2 <- store.get(created.id)
-            deleted <- store.delete(created.id)
-            read3 <- store.get(created.id)
+            created <- store.create("cust-123", oneItem)
+            read1 <- store.get(created._1.id)
+            updated <- store.update(created._1.id, OrderStatus.Reserved)
+            read2 <- store.get(created._1.id)
+            deleted <- store.delete(created._1.id)
+            read3 <- store.get(created._1.id)
           } yield {
             assert(ready, "expected the database to be ready")
             assertEquals(read1, Some(created))
-            assertEquals(updated.map(_.customerId), Some("cust-123"))
-            assertEquals(updated.map(_.totalCents), Some(4999))
-            assertEquals(updated.map(_.status), Some(OrderStatus.Reserved))
+            assertEquals(updated.map(_._1.customerId), Some("cust-123"))
+            assertEquals(updated.map(_._1.totalCents), Some(999 * 2))
+            assertEquals(updated.map(_._1.status), Some(OrderStatus.Reserved))
             assertEquals(read2, updated)
             assert(deleted, "expected delete to report the entity existed")
             assertEquals(read3, None)
