@@ -1,0 +1,11 @@
+Task: Add http4s-ember-client dependency; add inventory-client application.conf block and OrderServiceConfig field
+
+Summary: Added http4s-ember-client dependency (order-service's first outbound HTTP call - previously only ever served HTTP). Added InventoryClientConfig (baseUrl + purerest's ResilienceConfig, reusing the retry/circuit-breaker shape from ClientResilienceExampleSuite) and wired it as a new field on OrderServiceConfig, loaded from a new inventory-client block in application.conf (base URL defaults to inventory-service's local docker-compose port, overridable via INVENTORY_SERVICE_URL).
+
+Files:
+- build.sbt (new dependency)
+- src/main/resources/application.conf (new inventory-client block)
+- src/main/scala/orderservice/OrderServiceConfig.scala (InventoryClientConfig, ConfigReader givens for purerest's resilience types, new field)
+- src/test/scala/orderservice/OrderServiceConfigSuite.scala (extended for the new field)
+
+Why: First step of US-4.2 (track reserve-resilience_20261001) - the config and dependency the resilience-wrapped InventoryClient (next task) will be built on.
