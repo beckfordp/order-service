@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: Harden `status` from raw String to a real enum {pending, reserved, reservation_failed}**
-  *Link: [./tracks/status-enum_20261001/](./tracks/status-enum_20261001/)*
-
 ---
 
 ## Backlog
