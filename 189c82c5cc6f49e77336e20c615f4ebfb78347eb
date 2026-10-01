@@ -1,0 +1,14 @@
+Tasks: Add InvalidStatus to OrderError + errorOut wiring; add Skunk orderStatus codec and update OrderStore to use OrderStatus; update OrderRoutes PATCH/PUT to validate via OrderStatus.fromString
+
+Summary: Order.status, OrderStore.update's parameter, and the Skunk insert/select/update queries all now use the OrderStatus ADT instead of raw String, via a new text.eimap-based Codec[OrderStatus] (column stays plain text, validated by V2's CHECK constraint + this codec). PATCH/PUT parse the request's status string through OrderStatus.fromString before touching the store; an invalid value short-circuits to a new InvalidStatus(raw) OrderError, mapped to 400 via a new oneOf-based errorOut (alongside the existing 404 OrderNotFound mapping) - nothing is persisted on an invalid value. OrderResponse continues to serialize status as a plain String (via OrderStatus.asString), so the external JSON wire format is unchanged. Combined into one commit (rather than the three separate tasks in plan.md) because Scala's whole-module compilation means OrderStore's signature change and all its call sites (OrderRoutes, OrderStoreSuite, OrderStorePostgresSuite, OrderRoutesSuite's failingStore, HealthRoutesSuite's stub stores) have to land together to compile at all.
+
+Files:
+- src/main/scala/orderservice/OrderError.scala (InvalidStatus case added)
+- src/main/scala/orderservice/OrderRoutes.scala (errorOut wiring + updateLogic validation)
+- src/main/scala/orderservice/OrderStore.scala (Order.status, OrderStore.update, Skunk codec/queries)
+- src/test/scala/orderservice/OrderRoutesSuite.scala (3 new tests: PATCH 400, WARN log, PUT 400; failingStore signature)
+- src/test/scala/orderservice/HealthRoutesSuite.scala (stub store signatures)
+- src/test/scala/orderservice/OrderStoreSuite.scala, OrderStorePostgresSuite.scala (call-site + assertion updates)
+- README.md (fixed stale 'shipped' status example, now invalid under the closed enum)
+
+Why: Core of track status-enum_20261001 - hardening the field-spec's String stand-in for status into a real closed type, enforced both in Scala and at the DB (CHECK constraint from the prior commit).
