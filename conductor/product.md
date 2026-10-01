@@ -19,9 +19,11 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 
 ## Domain model
 - **Order** (generated) — `customerId` (create-only), `totalCents`
-  (create-only), `status` (server-defaulted `"pending"`; a `String`
-  stand-in for now — codegen v1 has no enum type, so hardening this to a
-  real enum (`pending`/`reserved`/`reservation_failed`) is a backlog item)
+  (create-only), `status` (server-defaulted `"pending"`; hardened to a
+  closed `OrderStatus` ADT — `Pending`/`Reserved`/`ReservationFailed` — at
+  both the Scala and DB level: a `text.eimap`-based Skunk codec plus a
+  Postgres `CHECK` constraint. The JSON wire format is unchanged — still a
+  lowercase string. PATCH/PUT reject any other value with `400`)
 - **OrderItem** (planned, hand-added — not codegen'd) — line items
   snapshotted at order-create time (`sku`/`product_name`/`unit_price_cents`),
   FK `order_items.order_id` → `"order"(id)` `ON DELETE CASCADE` (same
