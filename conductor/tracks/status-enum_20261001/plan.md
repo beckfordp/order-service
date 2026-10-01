@@ -2,7 +2,7 @@
 
 ## Phase 1: Harden Order.status to OrderStatus ADT
 
-- [ ] Task: Add `OrderStatus` sealed trait (Pending/Reserved/ReservationFailed) with `fromString`/`asString` + unit tests
+- [x] Task: Add `OrderStatus` sealed trait (Pending/Reserved/ReservationFailed) with `fromString`/`asString` + unit tests `bfa0970`
 - [ ] Task: Add `InvalidStatus(raw)` case to `OrderError`; wire a new errorOut mapping in OrderRoutes (alongside the existing notFoundOutput)
 - [ ] Task: Add Flyway migration `V2__add_order_status_check.sql` (CHECK constraint on status); verify it applies cleanly on top of V1
 - [ ] Task: Add Skunk `orderStatus` eimap codec; update `Order`, `OrderStore` (in-memory + postgres) to use `OrderStatus` instead of raw String
