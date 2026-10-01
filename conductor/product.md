@@ -18,19 +18,19 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 `gluon/backlogs/order-service.md`.
 
 ## Domain model
-- **Order** (generated) — `customerId` (create-only), `totalCents`
-  (create-only), `status` (server-defaulted `"pending"`; hardened to a
-  closed `OrderStatus` ADT — `Pending`/`Reserved`/`ReservationFailed` — at
-  both the Scala and DB level: a `text.eimap`-based Skunk codec plus a
-  Postgres `CHECK` constraint. The JSON wire format is unchanged — still a
-  lowercase string. PATCH/PUT reject any other value with `400`)
-- **OrderItem** (hand-added — not codegen'd) — the `order_items` table
-  exists (`id`, `order_id`, `sku`, `product_name`, `unit_price_cents`,
-  `quantity`, all snapshotted at order-create time), with
-  `order_items.order_id` → `"order"(id)` `ON DELETE CASCADE` enforced as a
-  real Postgres FK (same database as `order`); still pending: a Scala
-  domain model/store, deferred to the checkout track (US-3.1), which will
-  be the first code to actually write rows into this table; no FK to
+- **Order** — `customerId` (create-only), `totalCents` (computed server-side
+  from its items' `quantity × unitPriceCents`, summed — not client-supplied),
+  `status` (server-defaulted `"pending"`; hardened to a closed `OrderStatus`
+  ADT — `Pending`/`Reserved`/`ReservationFailed` — at both the Scala and DB
+  level: a `text.eimap`-based Skunk codec plus a Postgres `CHECK` constraint.
+  PATCH/PUT reject any other value with `400`)
+- **OrderItem** (hand-added — not codegen'd) — `id`, `orderId`, `sku`,
+  `productName`, `unitPriceCents`, `quantity`, all snapshotted at
+  order-create time; `order_items.order_id` → `"order"(id)`
+  `ON DELETE CASCADE` enforced as a real Postgres FK (same database as
+  `order`). Checkout (`POST /orders`) requires at least one item and rejects
+  a non-positive `quantity`/negative `unitPriceCents` with `400`; an order
+  and all its items are persisted atomically in one DB transaction. No FK to
   catalog-service — different service, different database, logical
   reference + snapshot only
 
