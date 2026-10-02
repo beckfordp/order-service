@@ -1,0 +1,16 @@
+Task: Add OrderStore.listByCustomer
+
+Summary: new trait method listByCustomer(customerId): F[List[(Order, List[OrderItem])]], returning that customer's orders newest-first by createdAt, in both in-memory and Postgres impls. Added to the three test-stub OrderStore implementations forced by the new trait method (HealthRoutesSuite's two stores, OrderRoutesSuite's failingStore).
+
+Files changed:
+- src/main/scala/orderservice/OrderStore.scala
+- src/test/scala/orderservice/OrderStoreSuite.scala (3 new tests)
+- src/test/scala/orderservice/OrderStorePostgresSuite.scala (3 new tests)
+- src/test/scala/orderservice/HealthRoutesSuite.scala
+- src/test/scala/orderservice/OrderRoutesSuite.scala
+
+Debugging note: the first Postgres test run failed because TestContainerForAll shares one Postgres instance across every test in the suite - a fixed customerId like "cust-123" picked up unrelated orders created by other tests. Fixed by using a unique UUID customerId per test.
+
+Why: Phase 1 of US-8.1 - the read-side query the GET /orders list endpoint (Phase 3) will call on a cache miss.
+
+Result: sbt scalafmtCheck test -> 101/101 passed.
