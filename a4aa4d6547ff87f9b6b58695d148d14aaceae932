@@ -1,0 +1,5 @@
+Final verification report: Phase 1 - Kafka config + atomic per-item status update
+
+Automated tests: sbt scalafmtCheck test -> 91/91 passed, formatting clean (includes OrderStorePostgresSuite's real-Postgres-backed updateStatusByItemId tests via Testcontainers).
+
+Manual verification: ran scripts/verify-kafka-config.sh - confirmed order-service boots cleanly against the new required kafka config block (the one thing not already covered by the test suite's own self-constructed HOCON). All checks passed.
