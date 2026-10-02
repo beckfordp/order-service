@@ -6,11 +6,11 @@
 - [x] Task: Add `OrderStore.updateStatusByItemId(orderItemId: String, newStatus: OrderStatus): F[Boolean]` (atomic conditional UPDATE joining through `order_items.id`, both in-memory and Postgres impls); unit tests covering: matching `Pending` order flips, unknown item id no-ops, non-`Pending` order no-ops `b096f40`
 - [x] Task: Conductor - User Manual Verification 'Kafka config + atomic per-item status update' (Protocol in workflow.md) `a4aa4d6`
 
-## Phase 2: Wire orderItemId into the synchronous reserve call
+## Phase 2: Wire orderItemId into the synchronous reserve call [checkpoint: 3c5a741]
 
 - [x] Task: Add `orderItemId: String` param to `InventoryClient.reserve`; reorder `OrderRoutes`' checkout to call `store.create` before `reserveAll`, passing each persisted `OrderItem.id` as the correlation id; update `Main.scala`'s wiring `e29e93f`
 - [x] Task: Update `InventoryClientSuite`/`OrderRoutesSuite`/`OrderDocsSuite` call sites forced by the signature changes `7ba7e90`
-- [ ] Task: Conductor - User Manual Verification 'Wire orderItemId into the synchronous reserve call' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Wire orderItemId into the synchronous reserve call' (Protocol in workflow.md) `3c5a741`
 
 ## Phase 3: Kafka consumer (the actual US-5.2 behavior)
 
