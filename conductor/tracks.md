@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: US-5.4: publish order.status-changed (reservation_failed) when a reservation fails**
-  *Link: [./tracks/order-status-changed_20261002/](./tracks/order-status-changed_20261002/)*
-
 ---
 
 ## Backlog
@@ -13,6 +10,7 @@ Title-only placeholders for future tracks — not yet detailed (no spec/plan, no
 folder), so `/conductor:implement` cannot pick these up by accident. Reorder freely as
 priorities change. When ready to work on one, run `/conductor:newTrack <title>` to go
 through the spec/plan questions and promote it into a real track above.
+
 - US-6.3: consume payment.settled / payment.failed, update order status to confirmed / payment_failed, publish order.status-changed (new OrderStatus cases + DB migration needed; depends on payment-service's US-6.1 actually publishing, but can be built/tested now against synthetic events per the usual stub/fan-out pattern)
 - fix: reservation-failure response falls back to stale `pending` status if OrderStore.update races to None (US-4.2 review finding)
 - future: surface StockEventConsumer startup/fiber failure (e.g. Kafka unreachable) via /health/ready or a distinct error log, instead of the server silently running with no consumer (US-5.2 review finding)
