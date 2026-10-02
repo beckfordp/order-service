@@ -1,0 +1,10 @@
+Task: Add GET /orders list endpoint, wire cache-aside, update Main.scala
+
+Summary: new listOrdersEndpoint (GET /orders?customerId=<required>) and listOrdersServerEndpoint - cache-aside: historyCache.get hit returns the cached List[OrderResponse] as-is; a miss calls store.listByCustomer, caches the result via historyCache.set, returns it. OrderRoutes.routes gains a required historyCache: OrderHistoryCache[F] param, wired through to the real Redis-backed cache in Main.scala (OrderHistoryCache.resource nested alongside the existing EmberClientBuilder/store resources). Added a noOpHistoryCache stub (always-miss, never-caches) to OrderRoutesSuite for the 27 existing tests unrelated to history/caching - dedicated OrderHistoryCache behavior is Phase 2's own OrderHistoryCacheSuite's job, and Task 2 (next) covers the route's own cache-hit/miss wiring specifically.
+
+Files changed:
+- src/main/scala/orderservice/OrderRoutes.scala
+- src/main/scala/orderservice/Main.scala
+- src/test/scala/orderservice/OrderRoutesSuite.scala
+
+Result: sbt scalafmtCheck test -> 104/104 passed.
