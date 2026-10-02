@@ -10,15 +10,15 @@
 
 ## Phase 2: Wire both failure paths (sync OrderRoutes + async StockEventConsumer) + Main
 
-- [ ] Task: Write a failing OrderRoutesSuite test: a checkout whose synchronous reserve call fails results in order.status-changed published with status="reservation_failed" and the correct orderId/customerId (using a capturing test-double publisher, same pattern as existing historyCache/inventoryClient test doubles)
-- [ ] Task: Add publisher: OrderEventPublisher[F] parameter to OrderRoutes.serverEndpoint; publish on the synchronous reservation-failure branch after a successful store.update, skipping on None (the known update-race edge case)
-- [ ] Task: Add the same parameter to OrderRoutes.routes[F] (test-convenience aggregator), threading it to serverEndpoint
-- [ ] Task: Update existing OrderRoutesSuite/HealthRoutesSuite call sites for the new signature
-- [ ] Task: Write a failing Testcontainers-Kafka test in StockEventConsumerSuite: a synthetic inventory.stock-reservation-failed event against a matching Pending order results in both the status becoming ReservationFailed and order.status-changed published with the correct fields
-- [ ] Task: Write a failing test confirming order.status-changed is never published from reservedStream (mirrors US-5.3's analogous negative test for order.reserved never publishing from reservationFailedStream)
-- [ ] Task: Update StockEventConsumer.reservationFailedStream to publish on success (new publishStatusChangedIfUpdated helper, mirroring publishReservedIfUpdated); run[F] passes the publisher to both streams now
-- [ ] Task: Wire orderEventPublisher into OrderRoutes.serverEndpoint's call site in Main.scala
-- [ ] Task: Run tests, confirm green
+- [x] Task: Write a failing OrderRoutesSuite test: a checkout whose synchronous reserve call fails results in order.status-changed published with status="reservation_failed" and the correct orderId/customerId (using a capturing test-double publisher, same pattern as existing historyCache/inventoryClient test doubles) `616ef87`
+- [x] Task: Add publisher: OrderEventPublisher[F] parameter to OrderRoutes.serverEndpoint; publish on the synchronous reservation-failure branch after a successful store.update, skipping on None (the known update-race edge case) `616ef87`
+- [x] Task: Add the same parameter to OrderRoutes.routes[F] (test-convenience aggregator), threading it to serverEndpoint `616ef87`
+- [x] Task: Update existing OrderRoutesSuite/HealthRoutesSuite call sites for the new signature `616ef87` - also found and fixed OrderDocsSuite.scala's own call site, not in the original file list
+- [x] Task: Write a failing Testcontainers-Kafka test in StockEventConsumerSuite: a synthetic inventory.stock-reservation-failed event against a matching Pending order results in both the status becoming ReservationFailed and order.status-changed published with the correct fields `a805d67`
+- [x] Task: Write a failing test confirming order.status-changed is never published from reservedStream (mirrors US-5.3's analogous negative test for order.reserved never publishing from reservationFailedStream) `a805d67`
+- [x] Task: Update StockEventConsumer.reservationFailedStream to publish on success (new publishStatusChangedIfUpdated helper, mirroring publishReservedIfUpdated); run[F] passes the publisher to both streams now `a805d67`
+- [x] Task: Wire orderEventPublisher into OrderRoutes.serverEndpoint's call site in Main.scala `616ef87`
+- [x] Task: Run tests, confirm green `a805d67` - 116 passed, 0 failed; found and fixed a flaky shared-container test (consumeOne -> consumeMatching, see git note on `a805d67`), confirmed stable across 3 repeated runs
 - [ ] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code)
 - [ ] Task: Conductor - User Manual Verification 'order.status-changed publish wiring' (final, Protocol in workflow.md)
 
