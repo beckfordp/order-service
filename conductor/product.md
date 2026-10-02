@@ -73,7 +73,7 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 - **Phase 8** (independent — can run anytime) — US-8.1, order history + Redis cache
 
 ## Events
-- Publishes: `order.created`, `order.status-changed`
+- Publishes: `order.reserved`, `order.status-changed`
 - Consumes: `inventory.stock-reserved`, `inventory.stock-reservation-failed`
 
 ## Out of scope for this service

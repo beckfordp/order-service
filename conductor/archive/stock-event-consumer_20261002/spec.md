@@ -57,7 +57,7 @@ before calling reserve, since the id must exist to send.
 # Out of Scope
 - New `OrderStatus.Confirmed` case (separate, not-yet-scheduled
   payment-settlement gap)
-- `order.created`/`order.status-changed` publishing (separate, deliberately
+- `order.reserved`/`order.status-changed` publishing (separate, deliberately
   deferred gap)
 - Per-item confirmation tracking / waiting for all items before flipping
   status — one correctly-attributed event suffices, since US-4.2's
