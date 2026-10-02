@@ -11,14 +11,14 @@
 - [x] Task: Run tests, confirm green `c946d8f` - 80 passed, 0 failed
 - [x] Task: Conductor - User Manual Verification 'OrderStore.updateStatusByItemId returns order details' (Protocol in workflow.md) `6f86494` - verified via committed script (prompt-off), see git note on checkpoint commit
 
-## Phase 2: OrderReservedEvent + OrderEventPublisher
+## Phase 2: OrderReservedEvent + OrderEventPublisher [checkpoint: 8e67c21]
 
 - [x] Task: Add OrderReservedEvent case class (orderId, customerId, totalCents, timestamp) with a circe Codec `83d9d0c`
 - [x] Task: Write a failing Testcontainers-Kafka test: OrderEventPublisher.publish produces the event on the order.reserved topic with the correct payload `83d9d0c`
 - [x] Task: Implement OrderEventPublisher (fs2-kafka KafkaProducer[F,String,String], publish wrapped in purerest.resilience's bounded retry), mirroring StockEventPublisher's shape `83d9d0c` - **deviation:** `purerest.resilience` turned out to be `Client[F]`-only, can't wrap a Kafka producer call (discovered by payment-service's parallel session the same day); implemented a hand-rolled bounded retry via `cats-retry` instead, mirroring payment-service's `PaymentEventPublisher` - see `conductor/tech-stack.md` and `gluon/docs/system-design.md`'s corrected "Reliability" note
 - [x] Task: Write a failing test: a producer that always fails causes the bounded retry to exhaust, logged loudly, no crash (mirrors StockEventPublisherSuite's publishFailed test) `83d9d0c` - implemented as "publish against an unreachable broker (localhost:1), confirm a WARN is logged and the call doesn't raise," matching `PaymentEventPublisherSuite`'s equivalent test, rather than a hand-written always-failing producer stub
 - [x] Task: Run tests, confirm green `83d9d0c` - 2 passed, 0 failed
-- [ ] Task: Conductor - User Manual Verification 'Event payload + publisher' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Event payload + publisher' (Protocol in workflow.md) `8e67c21` - verified via committed script (prompt-off), see git note on checkpoint commit
 
 ## Phase 3: Wire the publish into StockEventConsumer + Main
 
