@@ -14,6 +14,8 @@ import org.typelevel.log4cats.testing.StructuredTestingLogger.{
 }
 import purerest.tracing.{ServerTracing, Tracing}
 
+import scala.concurrent.duration._
+
 class OrderRoutesSuite extends CatsEffectSuite {
 
   private val createRequest = CreateOrderRequest(
@@ -747,6 +749,118 @@ class OrderRoutesSuite extends CatsEffectSuite {
         assertEquals(response.status, Status.Created)
         assertEquals(spans.map(_.getName), List("POST /orders"))
       }
+    }
+  }
+
+  test("GET /orders returns an empty list for a customer with no orders") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        noOpHistoryCache
+      )
+      response <- routes.orNotFound.run(
+        Request[IO](
+          Method.GET,
+          uri"/orders".withQueryParam("customerId", "unknown-customer")
+        )
+      )
+      body <- response.as[List[OrderResponse]]
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assertEquals(body, Nil)
+    }
+  }
+
+  test("GET /orders returns a customer's orders newest-first") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        noOpHistoryCache
+      )
+      firstPost <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      firstOrder <- firstPost.as[OrderResponse]
+      _ <- IO.sleep(2.millis)
+      secondPost <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      secondOrder <- secondPost.as[OrderResponse]
+      listResponse <- routes.orNotFound.run(
+        Request[IO](
+          Method.GET,
+          uri"/orders".withQueryParam("customerId", "cust-123")
+        )
+      )
+      history <- listResponse.as[List[OrderResponse]]
+    } yield {
+      assertEquals(listResponse.status, Status.Ok)
+      assertEquals(history.map(_.id), List(secondOrder.id, firstOrder.id))
+    }
+  }
+
+  test(
+    "GET /orders serves from cache on a second call without querying the store again"
+  ) {
+    for {
+      baseStore <- OrderStore.inMemory[IO]
+      callCount <- IO.ref(0)
+      countingStore = new OrderStore[IO] {
+        def create(
+            customerId: String,
+            items: List[NewOrderItem]
+        ): IO[(Order, List[OrderItem])] = baseStore.create(customerId, items)
+        def get(id: String): IO[Option[(Order, List[OrderItem])]] =
+          baseStore.get(id)
+        def listByCustomer(
+            customerId: String
+        ): IO[List[(Order, List[OrderItem])]] =
+          callCount.update(_ + 1) *> baseStore.listByCustomer(customerId)
+        def update(
+            id: String,
+            status: OrderStatus
+        ): IO[Option[(Order, List[OrderItem])]] =
+          baseStore.update(id, status)
+        def updateStatusByItemId(
+            orderItemId: String,
+            newStatus: OrderStatus
+        ): IO[Boolean] = baseStore.updateStatusByItemId(orderItemId, newStatus)
+        def delete(id: String): IO[Boolean] = baseStore.delete(id)
+        def ping: IO[Boolean] = baseStore.ping
+      }
+      cache <- OrderHistoryCache.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        countingStore,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        cache
+      )
+      _ <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      firstList <- routes.orNotFound.run(
+        Request[IO](
+          Method.GET,
+          uri"/orders".withQueryParam("customerId", "cust-123")
+        )
+      )
+      secondList <- routes.orNotFound.run(
+        Request[IO](
+          Method.GET,
+          uri"/orders".withQueryParam("customerId", "cust-123")
+        )
+      )
+      calls <- callCount.get
+    } yield {
+      assertEquals(firstList.status, Status.Ok)
+      assertEquals(secondList.status, Status.Ok)
+      assertEquals(calls, 1)
     }
   }
 }
