@@ -72,7 +72,8 @@ object Main extends IOApp.Simple {
                                       OrderRoutes.serverEndpoint[IO](
                                         store,
                                         logger,
-                                        inventoryClient
+                                        inventoryClient,
+                                        orderEventPublisher
                                       ),
                                       OrderRoutes.listOrdersServerEndpoint[IO](
                                         store,

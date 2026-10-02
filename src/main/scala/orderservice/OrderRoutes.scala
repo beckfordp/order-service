@@ -278,7 +278,8 @@ object OrderRoutes {
   def serverEndpoint[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      inventoryClient: InventoryClient[F]
+      inventoryClient: InventoryClient[F],
+      publisher: OrderEventPublisher[F]
   ): ServerEndpoint[Any, F] =
     createOrderEndpoint.serverLogic[F] { req =>
       for {
@@ -326,6 +327,20 @@ object OrderRoutes {
                       order.id,
                       OrderStatus.ReservationFailed
                     )
+                    _ <- updated match {
+                      case Some((updatedOrder, _)) =>
+                        Async[F].realTimeInstant.flatMap { now =>
+                          publisher.publishStatusChanged(
+                            OrderStatusChangedEvent(
+                              updatedOrder.id,
+                              updatedOrder.customerId,
+                              "reservation_failed",
+                              now
+                            )
+                          )
+                        }
+                      case None => Async[F].unit
+                    }
                   } yield updated.getOrElse((order, orderItems))
               }
             } yield Right(
@@ -483,11 +498,12 @@ object OrderRoutes {
       store: OrderStore[F],
       logger: StructuredLogger[F],
       inventoryClient: InventoryClient[F],
-      historyCache: OrderHistoryCache[F]
+      historyCache: OrderHistoryCache[F],
+      publisher: OrderEventPublisher[F]
   ): HttpRoutes[F] =
     Http4sServerInterpreter[F]().toRoutes(
       List(
-        serverEndpoint(store, logger, inventoryClient),
+        serverEndpoint(store, logger, inventoryClient, publisher),
         listOrdersServerEndpoint(store, logger, historyCache),
         getOrderServerEndpoint(store, logger),
         updateOrderServerEndpoint(store, logger),
