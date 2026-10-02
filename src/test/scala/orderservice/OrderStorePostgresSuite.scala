@@ -10,6 +10,7 @@ import org.typelevel.otel4s.metrics.Meter
 import purerest.metrics.Metrics
 
 import java.sql.DriverManager
+import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
 class OrderStorePostgresSuite
@@ -294,6 +295,59 @@ class OrderStorePostgresSuite
               Some(OrderStatus.ReservationFailed)
             )
           }
+        }
+    }
+  }
+
+  test("listByCustomer returns a customer's orders newest-first") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      // Unique customer id: TestContainerForAll shares one Postgres instance
+      // across every test in this suite, so a fixed "cust-123" would pick up
+      // unrelated orders created by other tests.
+      val customerId = java.util.UUID.randomUUID().toString
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (first, _) <- store.create(customerId, oneItem)
+            _ <- IO.sleep(2.millis)
+            (second, _) <- store.create(customerId, oneItem)
+            history <- store.listByCustomer(customerId)
+          } yield assertEquals(
+            history.map(_._1.id),
+            List(second.id, first.id)
+          )
+        }
+    }
+  }
+
+  test("listByCustomer returns an empty list for a customer with no orders") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          store
+            .listByCustomer(java.util.UUID.randomUUID().toString)
+            .map(assertEquals(_, Nil))
+        }
+    }
+  }
+
+  test("listByCustomer excludes orders belonging to a different customer") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val customerA = java.util.UUID.randomUUID().toString
+      val customerB = java.util.UUID.randomUUID().toString
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            _ <- store.create(customerA, oneItem)
+            (other, _) <- store.create(customerB, oneItem)
+            history <- store.listByCustomer(customerB)
+          } yield assertEquals(history.map(_._1.id), List(other.id))
         }
     }
   }

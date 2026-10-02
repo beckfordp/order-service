@@ -45,6 +45,7 @@ trait OrderStore[F[_]] {
       items: List[NewOrderItem]
   ): F[(Order, List[OrderItem])]
   def get(id: String): F[Option[(Order, List[OrderItem])]]
+  def listByCustomer(customerId: String): F[List[(Order, List[OrderItem])]]
   def update(
       id: String,
       status: OrderStatus
@@ -103,6 +104,18 @@ object OrderStore {
           orders <- ordersRef.get
           items <- itemsRef.get
         } yield orders.get(id).map(order => (order, items.getOrElse(id, Nil)))
+
+      def listByCustomer(
+          customerId: String
+      ): F[List[(Order, List[OrderItem])]] =
+        for {
+          orders <- ordersRef.get
+          items <- itemsRef.get
+        } yield orders.values
+          .filter(_.customerId == customerId)
+          .toList
+          .sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse)
+          .map(order => (order, items.getOrElse(order.id, Nil)))
 
       def update(
           id: String,
@@ -192,6 +205,17 @@ object OrderStore {
       FROM "order"
       WHERE id = $uuid
     """.query(text *: int4 *: orderStatus *: timestamptz *: timestamptz)
+
+  private val selectOrdersByCustomer: skunk.Query[
+    String,
+    (UUID, Int, OrderStatus, OffsetDateTime, OffsetDateTime)
+  ] =
+    sql"""
+      SELECT id, total_cents, status, created_at, updated_at
+      FROM "order"
+      WHERE customer_id = $text
+      ORDER BY created_at DESC
+    """.query(uuid *: int4 *: orderStatus *: timestamptz *: timestamptz)
 
   private val updateOrder: skunk.Query[
     (OrderStatus, UUID),
@@ -410,6 +434,32 @@ object OrderStore {
                           }
                       }
                     } yield result
+                }
+
+              def listByCustomer(
+                  customerId: String
+              ): F[List[(Order, List[OrderItem])]] =
+                timed("select_by_customer") {
+                  pool.use { session =>
+                    session.execute(selectOrdersByCustomer)(customerId)
+                  }
+                }.flatMap { rows =>
+                  rows.traverse {
+                    case (id, totalCents, status, createdAt, updatedAt) =>
+                      fetchItems(id.toString, id).map { items =>
+                        (
+                          Order(
+                            id.toString,
+                            customerId,
+                            totalCents,
+                            status,
+                            createdAt.toInstant,
+                            updatedAt.toInstant
+                          ),
+                          items
+                        )
+                      }
+                  }
                 }
 
               def update(

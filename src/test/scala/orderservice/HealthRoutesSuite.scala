@@ -15,6 +15,9 @@ class HealthRoutesSuite extends CatsEffectSuite {
       ): IO[(Order, List[OrderItem])] =
         IO.raiseError(new NotImplementedError())
       def get(id: String): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
+      def listByCustomer(
+          customerId: String
+      ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
       def update(
           id: String,
           status: OrderStatus
@@ -35,6 +38,9 @@ class HealthRoutesSuite extends CatsEffectSuite {
       ): IO[(Order, List[OrderItem])] =
         IO.raiseError(new NotImplementedError())
       def get(id: String): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
+      def listByCustomer(
+          customerId: String
+      ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
       def update(
           id: String,
           status: OrderStatus

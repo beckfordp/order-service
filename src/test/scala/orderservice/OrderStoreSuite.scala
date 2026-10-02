@@ -3,6 +3,8 @@ package orderservice
 import cats.effect.IO
 import munit.CatsEffectSuite
 
+import scala.concurrent.duration._
+
 class OrderStoreSuite extends CatsEffectSuite {
 
   private val oneItem =
@@ -159,5 +161,31 @@ class OrderStoreSuite extends CatsEffectSuite {
         Some(OrderStatus.ReservationFailed)
       )
     }
+  }
+
+  test("listByCustomer returns a customer's orders newest-first") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (first, _) <- store.create("cust-123", oneItem)
+      _ <- IO.sleep(2.millis)
+      (second, _) <- store.create("cust-123", oneItem)
+      history <- store.listByCustomer("cust-123")
+    } yield assertEquals(history.map(_._1.id), List(second.id, first.id))
+  }
+
+  test("listByCustomer returns an empty list for a customer with no orders") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      history <- store.listByCustomer("unknown-customer")
+    } yield assertEquals(history, Nil)
+  }
+
+  test("listByCustomer excludes orders belonging to a different customer") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      _ <- store.create("cust-123", oneItem)
+      (other, _) <- store.create("cust-456", oneItem)
+      history <- store.listByCustomer("cust-456")
+    } yield assertEquals(history.map(_._1.id), List(other.id))
   }
 }

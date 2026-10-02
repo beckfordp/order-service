@@ -44,6 +44,9 @@ class OrderRoutesSuite extends CatsEffectSuite {
         IO.raiseError(error)
       def get(id: String): IO[Option[(Order, List[OrderItem])]] =
         IO.pure(None)
+      def listByCustomer(
+          customerId: String
+      ): IO[List[(Order, List[OrderItem])]] = IO.raiseError(error)
       def update(
           id: String,
           status: OrderStatus
