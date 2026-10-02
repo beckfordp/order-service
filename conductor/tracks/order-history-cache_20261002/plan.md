@@ -13,7 +13,7 @@
 
 ## Phase 3: Wire the GET /orders list endpoint (cache-aside)
 
-- [ ] Task: Add `GET /orders?customerId=` tapir endpoint + server logic: cache hit -> return; miss -> `listByCustomer`, cache via `OrderHistoryCache.set`, return; wire into `OrderRoutes.routes` and `Main.scala` (construct the real Redis-backed cache)
+- [x] Task: Add `GET /orders?customerId=` tapir endpoint + server logic: cache hit -> return; miss -> `listByCustomer`, cache via `OrderHistoryCache.set`, return; wire into `OrderRoutes.routes` and `Main.scala` (construct the real Redis-backed cache) `053b5fd`
 - [ ] Task: `OrderRoutesSuite` tests using the in-memory cache stub: empty history, multiple orders newest-first, a cache hit skips the store (via a call-counting stub store)
 - [ ] Task: Conductor - User Manual Verification 'GET /orders list endpoint' (final, Protocol in workflow.md)
 
