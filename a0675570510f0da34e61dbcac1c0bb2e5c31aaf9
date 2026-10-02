@@ -1,0 +1,9 @@
+Task: Add ReservationResult ADT and InventoryClient trait + implementation; unit tests against a stub Client[F]
+
+Summary: InventoryClient[F].reserve(sku, quantity) wraps a POST to inventory-service's /inventorys/reservations (US-4.1's contract), mapping 200/404/409 to ReservationResult.Reserved/UnknownSku/InsufficientStock respectively; any other status raises an exception (defensive - order-service's own HTTP layer already prevents a client from sending a non-positive quantity, so a 400 here would be unexpected). The caller is expected to pass in a Client[F] already wrapped with purerest.resilience.Resilience.middleware - InventoryClient itself has no opinion on resilience, matching README's 'Calling other services with resilience' pattern. 7 tests: status-code mapping (3), request body shape, retry-until-success, circuit-breaker-opens-and-fails-fast (the latter two directly adapted from ClientResilienceExampleSuite's own tests, now exercising the real client instead of a dummy one).
+
+Files:
+- src/main/scala/orderservice/InventoryClient.scala (new)
+- src/test/scala/orderservice/InventoryClientSuite.scala (new)
+
+Why: Second step of US-4.2 (track reserve-resilience_20261001) - the resilient client itself, built and fully tested in isolation before Phase 2 wires it into checkout.
