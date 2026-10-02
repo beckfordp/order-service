@@ -51,12 +51,12 @@ proactively updates or evicts that customer's cached entry. The cache simply
 expires on its own after `history-ttl-seconds` (default 60s, see
 `application.conf`), at which point the next request re-populates it from
 the store. A write can therefore take up to the TTL to show up in a cached
-read. That tradeoff is deliberate — see the `order-history-cache_20261002` track's
-`spec.md` (in `conductor/tracks/` or `conductor/archive/`, depending on
-whether it's been archived) "Out of Scope" section for the reasoning — and
-is the right default for most read-mostly caches. If a future cache needs read-your-writes consistency,
-reach for explicit invalidation (evict/update the key at the same write
-site) instead of a shorter TTL.
+read. That tradeoff is deliberate — see
+`conductor/archive/order-history-cache_20261002/spec.md`'s "Out of Scope"
+section for the reasoning — and is the right default for most read-mostly
+caches. If a future cache needs read-your-writes consistency, reach for
+explicit invalidation (evict/update the key at the same write site) instead
+of a shorter TTL.
 
 ## The redis4cats API
 

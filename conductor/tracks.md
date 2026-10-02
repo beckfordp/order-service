@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: US-8.1: order history read endpoint + Redis cache**
-  *Link: [./tracks/order-history-cache_20261002/](./tracks/order-history-cache_20261002/)*
-
 ---
 
 ## Backlog
