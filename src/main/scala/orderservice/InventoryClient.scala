@@ -23,12 +23,20 @@ object ReservationResult {
   * README's "Calling other services with resilience").
   */
 trait InventoryClient[F[_]] {
-  def reserve(sku: String, quantity: Int): F[ReservationResult]
+  def reserve(
+      sku: String,
+      quantity: Int,
+      orderItemId: String
+  ): F[ReservationResult]
 }
 
 object InventoryClient {
 
-  private final case class ReserveRequestBody(sku: String, quantity: Int)
+  private final case class ReserveRequestBody(
+      sku: String,
+      quantity: Int,
+      orderItemId: String
+  )
 
   private object ReserveRequestBody {
     implicit val codec: Codec[ReserveRequestBody] = deriveCodec
@@ -36,11 +44,15 @@ object InventoryClient {
 
   def apply[F[_]: Async](client: Client[F], baseUri: Uri): InventoryClient[F] =
     new InventoryClient[F] {
-      def reserve(sku: String, quantity: Int): F[ReservationResult] = {
+      def reserve(
+          sku: String,
+          quantity: Int,
+          orderItemId: String
+      ): F[ReservationResult] = {
         val request = Request[F](
           Method.POST,
           baseUri / "inventorys" / "reservations"
-        ).withEntity(ReserveRequestBody(sku, quantity))
+        ).withEntity(ReserveRequestBody(sku, quantity, orderItemId))
         client.run(request).use { response =>
           response.status match {
             case Status.Ok       => Async[F].pure(ReservationResult.Reserved)

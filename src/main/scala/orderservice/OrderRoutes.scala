@@ -240,24 +240,27 @@ object OrderRoutes {
     */
   private def reserveAll[F[_]: Async](
       inventoryClient: InventoryClient[F],
-      items: List[NewOrderItem]
+      items: List[OrderItem]
   ): F[Either[String, Unit]] =
     items.foldLeft(Async[F].pure(Right(()): Either[String, Unit])) {
       (acc, item) =>
         acc.flatMap {
           case failed @ Left(_) => Async[F].pure(failed)
           case Right(())        =>
-            inventoryClient.reserve(item.sku, item.quantity).attempt.map {
-              case Right(ReservationResult.Reserved)          => Right(())
-              case Right(ReservationResult.InsufficientStock) =>
-                Left(s"insufficient stock for sku '${item.sku}'")
-              case Right(ReservationResult.UnknownSku) =>
-                Left(s"unknown sku '${item.sku}'")
-              case Left(error) =>
-                Left(
-                  s"reservation call failed for sku '${item.sku}': ${error.getMessage}"
-                )
-            }
+            inventoryClient
+              .reserve(item.sku, item.quantity, item.id)
+              .attempt
+              .map {
+                case Right(ReservationResult.Reserved)          => Right(())
+                case Right(ReservationResult.InsufficientStock) =>
+                  Left(s"insufficient stock for sku '${item.sku}'")
+                case Right(ReservationResult.UnknownSku) =>
+                  Left(s"unknown sku '${item.sku}'")
+                case Left(error) =>
+                  Left(
+                    s"reservation call failed for sku '${item.sku}': ${error.getMessage}"
+                  )
+              }
         }
     }
 
@@ -286,12 +289,12 @@ object OrderRoutes {
               .as(Left(error): Either[OrderError, OrderResponse])
           case Right(items) =>
             for {
-              reservation <- reserveAll(inventoryClient, items)
               created <- store.create(req.customerId, items).onError {
                 case error =>
                   logger.error(Map.empty, error)("Persisting the order failed")
               }
               (order, orderItems) = created
+              reservation <- reserveAll(inventoryClient, orderItems)
               finalOrder <- reservation match {
                 case Right(()) =>
                   logger
