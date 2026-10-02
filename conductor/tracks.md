@@ -16,5 +16,6 @@ through the spec/plan questions and promote it into a real track above.
 
 - US-8.1: order history read endpoint + Redis cache
 - fix: reservation-failure response falls back to stale `pending` status if OrderStore.update races to None (US-4.2 review finding)
+- future: surface StockEventConsumer startup/fiber failure (e.g. Kafka unreachable) via /health/ready or a distinct error log, instead of the server silently running with no consumer (US-5.2 review finding)
 
 ---
