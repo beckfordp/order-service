@@ -1,0 +1,22 @@
+Task: Add OrderStatusChangedEvent + publishStatusChanged (US-5.4, Phase 1)
+
+Summary: Extended OrderEventPublisher (not a new object, per the approved
+spec) with publishStatusChanged(event: OrderStatusChangedEvent): F[Unit] and
+a statusChangedTopic = "order.status-changed" constant, reusing the same
+producer/bounded-retry/log-and-drop plumbing already built for publishReserved
+in US-5.3 - no new infra, just a second method + a second event case class.
+
+Files changed:
+- src/main/scala/orderservice/OrderEvents.scala (new OrderStatusChangedEvent)
+- src/main/scala/orderservice/OrderEventPublisher.scala (publishStatusChanged,
+  statusChangedTopic, noOp updated)
+- src/test/scala/orderservice/OrderEventPublisherSuite.scala (new happy-path
+  test; per the approved spec, no dedicated forced-failure test for this
+  second method - the retry mechanism is identical, generic code already
+  proven by publishReserved's own forced-failure test)
+
+Tests: 3 passed, 0 failed.
+
+Why: US-5.4 needs to publish order.status-changed when a reservation fails;
+this phase builds the publish side in isolation before wiring it into the
+two failure paths (sync OrderRoutes, async StockEventConsumer) in Phase 2.
