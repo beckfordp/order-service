@@ -27,7 +27,7 @@
 - [x] Task: Wire OrderEventPublisher as a Resource in Main.scala and pass it into StockEventConsumer.run `ad5cc70`
 - [x] Task: Write a failing test confirming order.reserved is never published from reservationFailedStream (that's US-5.4's job, not this track's) `ad5cc70` - first version was flaky against the shared Testcontainers Kafka (saw another test's leftover message); fixed by checking for no message matching *this test's* order id, not just "no message at all"
 - [x] Task: Run tests, confirm green `ad5cc70` - 111 passed, 0 failed (full suite)
-- [ ] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code)
+- [x] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code) - 92.20% statement / 93.00% branch overall
 - [ ] Task: Conductor - User Manual Verification 'order.reserved publish wiring' (final, Protocol in workflow.md)
 
 Three phases, each independently testable before the next builds on it - Phase 1 is a pure data-shape change to existing code, Phase 2 is the publish side in isolation (same pattern as inventory-service's US-5.1 and payment-service's just-landed PaymentEventPublisher), Phase 3 wires them together and proves the end-to-end outcome system-design.md already pinned.
