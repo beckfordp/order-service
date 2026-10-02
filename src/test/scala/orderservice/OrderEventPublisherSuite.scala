@@ -63,6 +63,31 @@ class OrderEventPublisherSuite extends CatsEffectSuite with TestContainerForAll 
   }
 
   test(
+    "publishStatusChanged produces exactly one message on order.status-changed"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      val event = OrderStatusChangedEvent(
+        orderId = "order-1",
+        customerId = "cust-123",
+        status = "reservation_failed",
+        timestamp = Instant.parse("2026-01-01T00:00:00Z")
+      )
+      for {
+        consumed <- OrderEventPublisher
+          .resource[IO](config, NoOpLogger[IO])
+          .use(_.publishStatusChanged(event)) *> consumeOne(
+          config,
+          OrderEventPublisher.statusChangedTopic
+        )
+      } yield assertEquals(
+        decode[OrderStatusChangedEvent](consumed),
+        Right(event)
+      )
+    }
+  }
+
+  test(
     "publishReserved logs a WARN and does not raise once the bounded retry is exhausted against an unreachable broker"
   ) {
     val unreachableConfig = KafkaConfig(bootstrapServers = "localhost:1")

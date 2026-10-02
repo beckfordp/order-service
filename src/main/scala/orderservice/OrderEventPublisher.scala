@@ -13,11 +13,13 @@ import scala.concurrent.duration._
 
 trait OrderEventPublisher[F[_]] {
   def publishReserved(event: OrderReservedEvent): F[Unit]
+  def publishStatusChanged(event: OrderStatusChangedEvent): F[Unit]
 }
 
 object OrderEventPublisher {
 
   val reservedTopic: String = "order.reserved"
+  val statusChangedTopic: String = "order.status-changed"
 
   /** Bounds how long a single publish attempt can take. */
   private val publishTimeout: FiniteDuration = 2.seconds
@@ -35,6 +37,8 @@ object OrderEventPublisher {
   def noOp[F[_]: Applicative]: OrderEventPublisher[F] =
     new OrderEventPublisher[F] {
       def publishReserved(event: OrderReservedEvent): F[Unit] =
+        Applicative[F].unit
+      def publishStatusChanged(event: OrderStatusChangedEvent): F[Unit] =
         Applicative[F].unit
     }
 
@@ -99,6 +103,9 @@ object OrderEventPublisher {
 
         def publishReserved(event: OrderReservedEvent): F[Unit] =
           publish(reservedTopic, event.orderId, event.asJson.noSpaces)
+
+        def publishStatusChanged(event: OrderStatusChangedEvent): F[Unit] =
+          publish(statusChangedTopic, event.orderId, event.asJson.noSpaces)
       }
     }
   }

@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: US-5.4: publish order.status-changed (reservation_failed) when a reservation fails**
+- [~] **Track: US-5.4: publish order.status-changed (reservation_failed) when a reservation fails**
   *Link: [./tracks/order-status-changed_20261002/](./tracks/order-status-changed_20261002/)*
 
 ---
