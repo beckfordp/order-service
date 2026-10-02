@@ -1,0 +1,5 @@
+Final verification report: Phase 3 - GET /orders list endpoint (cache-aside)
+
+Automated tests: sbt scalafmtCheck test -> 107/107 passed, formatting clean.
+
+Manual verification: ran scripts/verify-order-history-cache.sh - real order-service instance (2s history cache TTL override), real Postgres, real Kafka, real Redis. Checked out two orders for one customer, confirmed GET /orders?customerId= returns both newest-first, then inspected Redis DIRECTLY via its own redis-cli (not the application) to confirm: the cache key order-history:<customerId> actually holds both order ids after the first GET, the key genuinely expires after the configured TTL (not simulated), and a subsequent GET re-populates it. All checks passed - this is the capstone verification for the whole US-8.1 track, proving the full cache-aside flow against real infrastructure end-to-end.
