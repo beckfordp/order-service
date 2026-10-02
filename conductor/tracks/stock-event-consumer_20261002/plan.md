@@ -14,7 +14,7 @@
 
 ## Phase 3: Kafka consumer (the actual US-5.2 behavior)
 
-- [ ] Task: Add local `StockReservedEvent`/`StockReservationFailedEvent` case classes (mirroring inventory-service's payload, no shared library) and a consumer that subscribes to both topics, calling `updateStatusByItemId` with `Reserved`/`ReservationFailed`; wire it as a background stream in `Main.scala`
+- [x] Task: Add local `StockReservedEvent`/`StockReservationFailedEvent` case classes (mirroring inventory-service's payload, no shared library) and a consumer that subscribes to both topics, calling `updateStatusByItemId` with `Reserved`/`ReservationFailed`; wire it as a background stream in `Main.scala` `e442ed2`
 - [ ] Task: Testcontainers-Kafka tests: publish synthetic events for a pre-created `Pending` order's item, assert status flips to `Reserved`/`ReservationFailed`; an event for an unknown/already-resolved item is a no-op
 - [ ] Task: Conductor - User Manual Verification 'Kafka consumer' (final, Protocol in workflow.md)
 
