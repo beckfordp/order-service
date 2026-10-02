@@ -2,13 +2,13 @@
 
 ## Phase 1: OrderStore.updateStatusByItemId returns order details
 
-- [ ] Task: Write a failing test (in-memory + Postgres via Testcontainers) asserting a successful transition returns the order's id/customerId/totalCents, not just true
-- [ ] Task: Change the trait signature to F[Option[UpdatedOrderRef]] (new small case class: orderId, customerId, totalCents)
-- [ ] Task: Update the Postgres impl's SQL RETURNING clause (id, customer_id, total_cents) and decode into UpdatedOrderRef
-- [ ] Task: Update the in-memory impl to return the same shape
-- [ ] Task: Update StockEventConsumer's two call sites for the new return type (reservedStream uses the returned fields; reservationFailedStream only needs updated-or-not, ignores the payload)
-- [ ] Task: Update existing call sites in OrderStoreSuite, OrderStorePostgresSuite, StockEventConsumerSuite for the new signature
-- [ ] Task: Run tests, confirm green
+- [x] Task: Write a failing test (in-memory + Postgres via Testcontainers) asserting a successful transition returns the order's id/customerId/totalCents, not just true `c946d8f`
+- [x] Task: Change the trait signature to F[Option[UpdatedOrderRef]] (new small case class: orderId, customerId, totalCents) `c946d8f`
+- [x] Task: Update the Postgres impl's SQL RETURNING clause (id, customer_id, total_cents) and decode into UpdatedOrderRef `c946d8f`
+- [x] Task: Update the in-memory impl to return the same shape `c946d8f`
+- [x] Task: Update StockEventConsumer's two call sites for the new return type (reservedStream uses the returned fields; reservationFailedStream only needs updated-or-not, ignores the payload) `c946d8f` - no call-site change needed, both already passed the result through a `_` placeholder into logOutcome, which was updated to pattern-match Option instead of Boolean
+- [x] Task: Update existing call sites in OrderStoreSuite, OrderStorePostgresSuite, StockEventConsumerSuite for the new signature `c946d8f` - StockEventConsumerSuite needed no changes (it never calls updateStatusByItemId directly, only exercises it through Kafka); HealthRoutesSuite's and OrderRoutesSuite's OrderStore stub implementations also needed updating, not originally listed in this task
+- [x] Task: Run tests, confirm green `c946d8f` - 80 passed, 0 failed
 - [ ] Task: Conductor - User Manual Verification 'OrderStore.updateStatusByItemId returns order details' (Protocol in workflow.md)
 
 ## Phase 2: OrderReservedEvent + OrderEventPublisher
