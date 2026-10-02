@@ -1,0 +1,17 @@
+Task: Add OrderHistoryCache wrapping redis4cats, with an in-memory stub
+
+Summary: new OrderHistoryCache[F[_]] trait (get/set), with:
+- OrderHistoryCache.fromRedisCommands + .resource[F] - the real Redis-backed implementation, via Redis[F].utf8(config.uri), storing each customer's history as a single JSON string key (order-history:<customerId>) with setEx baking in the configured TTL. Required explicitly constructing given MkRedis[F]/Log[F] instances (MkRedis.forAsync, redis4cats-log4cats's log4CatsInstance) - no automatic given was found for an arbitrary Async[F].
+- OrderHistoryCache.inMemory[F] - a Ref-backed stub (no TTL) for route-level tests that don't need to exercise expiry themselves.
+
+New OrderHistoryCacheSuite (TestContainerForAll + RedisContainer.Def(), real Redis via Testcontainers): cache miss returns None, set-then-get is a hit, and a 1s TTL actually expires (slept past it against a real Redis, not simulated).
+
+Files changed:
+- src/main/scala/orderservice/OrderHistoryCache.scala (new)
+- src/test/scala/orderservice/OrderHistoryCacheSuite.scala (new)
+
+Debugging note: same shared-container lesson as Phase 1's Postgres tests - TestContainerForAll shares one Redis instance across the whole suite, so each test uses a unique UUID customerId to avoid cross-test key collisions.
+
+Why: Phase 2 Task 2 of US-8.1 - the cache abstraction the GET /orders list endpoint (Phase 3) will do cache-aside reads/writes through.
+
+Result: sbt scalafmtCheck test -> 104/104 passed.
