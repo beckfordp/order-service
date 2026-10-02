@@ -8,7 +8,7 @@
 - [x] Task: Run tests, confirm green `2a9e1c8` - 3 passed, 0 failed
 - [x] Task: Conductor - User Manual Verification 'OrderStatusChangedEvent + publishStatusChanged' (Protocol in workflow.md) `a212229` - verified via committed script (prompt-off), see git note on checkpoint commit
 
-## Phase 2: Wire both failure paths (sync OrderRoutes + async StockEventConsumer) + Main
+## Phase 2: Wire both failure paths (sync OrderRoutes + async StockEventConsumer) + Main [checkpoint: 8e235e9]
 
 - [x] Task: Write a failing OrderRoutesSuite test: a checkout whose synchronous reserve call fails results in order.status-changed published with status="reservation_failed" and the correct orderId/customerId (using a capturing test-double publisher, same pattern as existing historyCache/inventoryClient test doubles) `616ef87`
 - [x] Task: Add publisher: OrderEventPublisher[F] parameter to OrderRoutes.serverEndpoint; publish on the synchronous reservation-failure branch after a successful store.update, skipping on None (the known update-race edge case) `616ef87`
@@ -20,6 +20,6 @@
 - [x] Task: Wire orderEventPublisher into OrderRoutes.serverEndpoint's call site in Main.scala `616ef87`
 - [x] Task: Run tests, confirm green `a805d67` - 116 passed, 0 failed; found and fixed a flaky shared-container test (consumeOne -> consumeMatching, see git note on `a805d67`), confirmed stable across 3 repeated runs
 - [x] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code) - 92.14% statement / 92.38% branch overall
-- [ ] Task: Conductor - User Manual Verification 'order.status-changed publish wiring' (final, Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'order.status-changed publish wiring' (final, Protocol in workflow.md) `8e235e9` - verified via committed script (prompt-off), scoped up front to avoid US-5.3's documented broker race; see git note on checkpoint commit
 
 Two phases - Phase 1 is the publish side in isolation (small, since it reuses US-5.3's producer/retry plumbing wholesale), Phase 2 wires both failure paths (the synchronous checkout path and the async consumer path both reach ReservationFailed, so both need the publish call) and proves each end to end.
