@@ -1,0 +1,8 @@
+{
+  "track_id": "order-status-changed_20261002",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-02T17:03:45Z",
+  "updated_at": "2026-10-02T17:03:45Z",
+  "description": "US-5.4: publish order.status-changed (reservation_failed) when a reservation fails"
+}
