@@ -1,0 +1,25 @@
+Task: OrderStore.updateStatusByItemId returns order details (US-5.3, Phase 1)
+
+Summary: Changed OrderStore.updateStatusByItemId's return type from F[Boolean]
+to F[Option[UpdatedOrderRef]] so StockEventConsumer can build order.reserved's
+payload (orderId/customerId/totalCents) without a second query. Added
+UpdatedOrderRef case class. Extended the Postgres impl's RETURNING clause to
+return id/customer_id/total_cents atomically instead of just id. Updated the
+in-memory impl to match. StockEventConsumer's logOutcome helper now pattern-
+matches Option instead of Boolean; its two call sites needed no changes since
+they already passed the result through a `_` placeholder.
+
+Files changed:
+- src/main/scala/orderservice/OrderStore.scala (UpdatedOrderRef, trait,
+  in-memory impl, Postgres query + impl)
+- src/main/scala/orderservice/StockEventConsumer.scala (logOutcome)
+- src/test/scala/orderservice/OrderStoreSuite.scala (updated 3 tests)
+- src/test/scala/orderservice/OrderStorePostgresSuite.scala (updated 4 tests)
+- src/test/scala/orderservice/HealthRoutesSuite.scala (2 stub signatures)
+- src/test/scala/orderservice/OrderRoutesSuite.scala (2 stub signatures)
+- conductor/tracks.md (marked track in progress)
+
+Why: US-5.3 needs to publish order.reserved once an order is Reserved, but
+the consumer only had a Boolean and an orderItemId - not enough to build the
+payload. Fetching the needed fields in the same atomic UPDATE...RETURNING
+avoids a second round-trip and a race window.
