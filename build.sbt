@@ -13,6 +13,7 @@ val postgresqlJdbcVersion = "42.7.13"
 val pureconfigVersion = "0.17.10"
 val testcontainersScalaVersion = "0.43.6"
 val fs2KafkaVersion = "3.6.0"
+val redis4catsVersion = "2.0.6"
 // Pinned to match the purerestlib version this service is built against — see
 // README's "Consuming purerest as a dependency" section.
 val purerestlibVersion = "0.1.0"
@@ -76,6 +77,11 @@ lazy val root = project
       // fs2-kafka: pure-FP, FS2-native Kafka consumer (US-5.2) - subscribes to
       // inventory.stock-reserved/-reservation-failed to update order status.
       "com.github.fd4s" %% "fs2-kafka" % fs2KafkaVersion,
+      // redis4cats: cats-effect-native Redis client (US-8.1) - caches a
+      // customer's order history. -log4cats wires its internal logging
+      // through the same log4cats this service already uses.
+      "dev.profunktor" %% "redis4cats-effects" % redis4catsVersion,
+      "dev.profunktor" %% "redis4cats-log4cats" % redis4catsVersion,
       // flyway: JDBC-based schema migration tool, run on startup to create/update the
       // order table. Independent of Skunk (which handles all runtime queries).
       "org.flywaydb" % "flyway-core" % flywayVersion,
@@ -94,6 +100,7 @@ lazy val root = project
       // integration tests (not used by main code).
       "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersScalaVersion % Test,
       "com.dimafeng" %% "testcontainers-scala-kafka" % testcontainersScalaVersion % Test,
+      "com.dimafeng" %% "testcontainers-scala-redis" % testcontainersScalaVersion % Test,
       "com.dimafeng" %% "testcontainers-scala-munit" % testcontainersScalaVersion % Test,
       // log4cats-testing: purerestlib keeps this Test-scoped (doesn't propagate to
       // consumers), so this service declares its own copy to assert on log output

@@ -37,6 +37,10 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       |kafka {
       |  bootstrap-servers = "localhost:9092"
       |}
+      |redis {
+      |  uri = "redis://localhost:6379"
+      |  history-ttl-seconds = 60
+      |}
       |""".stripMargin
 
   test("loads a fully-specified config") {
@@ -66,7 +70,11 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
               )
             )
           ),
-          kafka = KafkaConfig(bootstrapServers = "localhost:9092")
+          kafka = KafkaConfig(bootstrapServers = "localhost:9092"),
+          redis = RedisConfig(
+            uri = "redis://localhost:6379",
+            historyTtlSeconds = 60
+          )
         )
       )
     )
@@ -135,6 +143,10 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       assertEquals(
         config.kafka,
         KafkaConfig(bootstrapServers = "localhost:9092")
+      )
+      assertEquals(
+        config.redis,
+        RedisConfig(uri = "redis://localhost:6379", historyTtlSeconds = 60)
       )
     }
   }

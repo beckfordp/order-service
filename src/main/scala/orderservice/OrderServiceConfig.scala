@@ -28,13 +28,19 @@ final case class KafkaConfig(
     bootstrapServers: String
 ) derives ConfigReader
 
+final case class RedisConfig(
+    uri: String,
+    historyTtlSeconds: Int
+) derives ConfigReader
+
 final case class OrderServiceConfig(
     port: Int,
     metricsPort: Int,
     serviceName: String,
     postgres: PostgresConfig,
     inventoryClient: InventoryClientConfig,
-    kafka: KafkaConfig
+    kafka: KafkaConfig,
+    redis: RedisConfig
 ) derives ConfigReader
 
 object OrderServiceConfig {
