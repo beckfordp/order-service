@@ -8,8 +8,8 @@
 
 ## Phase 2: Wire into checkout
 
-- [ ] Task: Update OrderRoutes' create logic to accept an InventoryClient[F], call reserve per item sequentially with short-circuit on the first failure, and call OrderStore.update to set reservation_failed when any item fails or the client raises; update Main.scala to construct and wire the real InventoryClient
-- [ ] Task: Extend OrderRoutesSuite with a stub InventoryClient for the three checkout scenarios (all succeed -> pending/201, one fails -> reservation_failed/201 with all items still persisted, client raises -> reservation_failed/201)
+- [x] Task: Update OrderRoutes' create logic to accept an InventoryClient[F], call reserve per item sequentially with short-circuit on the first failure, and call OrderStore.update to set reservation_failed when any item fails or the client raises; update Main.scala to construct and wire the real InventoryClient `1e33d1e`
+- [x] Task: Extend OrderRoutesSuite with a stub InventoryClient for the three checkout scenarios (all succeed -> pending/201, one fails -> reservation_failed/201 with all items still persisted, client raises -> reservation_failed/201) `1e33d1e`
 - [ ] Task: Conductor - User Manual Verification 'US-4.2 wire resilience middleware for the reserve call to inventory-service' (final, Protocol in workflow.md)
 
 Two phases since InventoryClient is purely additive (no existing signature
