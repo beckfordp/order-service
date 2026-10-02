@@ -1,0 +1,8 @@
+Task: GET /orders history/caching route-level tests
+
+Summary: 3 new OrderRoutesSuite tests - empty history for an unknown customer, two orders returned newest-first (via the real in-memory OrderStore + noOpHistoryCache, proving the endpoint wiring and listByCustomer integration), and a cache-hit-skips-the-store test using a call-counting OrderStore decorator + a real OrderHistoryCache.inMemory instance - proves the cache-aside logic itself (not just that caching exists in principle): the store's listByCustomer is called exactly once across two identical GET /orders calls.
+
+Files changed:
+- src/test/scala/orderservice/OrderRoutesSuite.scala
+
+Result: sbt scalafmtCheck test -> 107/107 passed.
