@@ -113,6 +113,31 @@ object StockEventConsumer {
         }
     }
 
+  /** On a successful transition, publishes `order.status-changed` with the
+    * given `status` - skipped entirely on the no-op case (unknown item id, or
+    * the order already left `Pending`), since nothing changed to tell
+    * notification-service about.
+    */
+  private def publishStatusChangedIfUpdated[F[_]: Async](
+      publisher: OrderEventPublisher[F],
+      status: String,
+      updated: Option[UpdatedOrderRef]
+  ): F[Unit] =
+    updated match {
+      case None           => Async[F].unit
+      case Some(orderRef) =>
+        Async[F].realTimeInstant.flatMap { now =>
+          publisher.publishStatusChanged(
+            OrderStatusChangedEvent(
+              orderRef.orderId,
+              orderRef.customerId,
+              status,
+              now
+            )
+          )
+        }
+    }
+
   private def reservedStream[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
@@ -150,7 +175,8 @@ object StockEventConsumer {
   private def reservationFailedStream[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
-      logger: StructuredLogger[F]
+      logger: StructuredLogger[F],
+      publisher: OrderEventPublisher[F]
   ): Stream[F, Unit] =
     KafkaConsumer
       .stream(
@@ -174,6 +200,13 @@ object StockEventConsumer {
                   event.orderItemId,
                   OrderStatus.ReservationFailed
                 )
+                .flatTap(
+                  publishStatusChangedIfUpdated(
+                    publisher,
+                    "reservation_failed",
+                    _
+                  )
+                )
                 .flatMap(
                   logOutcome(
                     logger,
@@ -193,5 +226,5 @@ object StockEventConsumer {
       publisher: OrderEventPublisher[F]
   ): Stream[F, Unit] =
     reservedStream(config, store, logger, publisher)
-      .merge(reservationFailedStream(config, store, logger))
+      .merge(reservationFailedStream(config, store, logger, publisher))
 }

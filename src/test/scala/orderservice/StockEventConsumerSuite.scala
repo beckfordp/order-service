@@ -53,7 +53,17 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
       )
     ).timeout(15.seconds)
 
-  private def consumeOne(config: KafkaConfig, topic: String): IO[String] = {
+  /** Scans from the beginning for the first message matching `predicate`,
+    * instead of blindly taking the first message ever - tests sharing this
+    * suite's one Testcontainers Kafka instance can run concurrently, each
+    * with a real (non-noOp) publisher writing to the same topic, so "the
+    * first message on the topic" isn't reliably "this test's own message."
+    */
+  private def consumeMatching(
+      config: KafkaConfig,
+      topic: String,
+      predicate: String => Boolean
+  ): IO[String] = {
     val consumerSettings =
       ConsumerSettings[IO, String, String]
         .withBootstrapServers(config.bootstrapServers)
@@ -63,8 +73,14 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     KafkaConsumer.resource(consumerSettings).use { consumer =>
       for {
         _ <- consumer.subscribeTo(topic)
-        record <- consumer.stream.take(1).compile.lastOrError.timeout(15.seconds)
-      } yield record.record.value
+        record <- consumer.stream
+          .map(_.record.value)
+          .filter(predicate)
+          .take(1)
+          .compile
+          .lastOrError
+          .timeout(15.seconds)
+      } yield record
     }
   }
 
@@ -268,7 +284,11 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
               .run[IO](config, store, NoOpLogger[IO], publisher)
               .compile
               .drain,
-            consumeOne(config, OrderEventPublisher.reservedTopic)
+            consumeMatching(
+              config,
+              OrderEventPublisher.reservedTopic,
+              _.contains(order.id)
+            )
           )
         } yield published match {
           case Left(())   =>
@@ -316,6 +336,95 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
               noMatchingMessageWithin(
                 config,
                 OrderEventPublisher.reservedTopic,
+                _.contains(order.id),
+                3.seconds
+              )
+          )
+        } yield assertEquals(result, Right(true))
+      }
+    }
+  }
+
+  test(
+    "a synthetic stock-reservation-failed event also publishes order.status-changed with reservation_failed"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use { publisher =>
+        for {
+          store <- OrderStore.inMemory[IO]
+          (order, items) <- store.create("cust-123", oneItem)
+          event = StockReservationFailedEvent(
+            items.head.id,
+            "sku-1",
+            2,
+            Instant.parse("2026-01-01T00:00:00Z")
+          )
+          _ <- produce(
+            config,
+            StockEventConsumer.reservationFailedTopic,
+            "sku-1",
+            event.asJson.noSpaces
+          )
+          published <- IO.race(
+            StockEventConsumer
+              .run[IO](config, store, NoOpLogger[IO], publisher)
+              .compile
+              .drain,
+            consumeMatching(
+              config,
+              OrderEventPublisher.statusChangedTopic,
+              _.contains(order.id)
+            )
+          )
+        } yield published match {
+          case Left(())   =>
+            fail(
+              "consumer finished before order.status-changed was published"
+            )
+          case Right(raw) =>
+            decode[OrderStatusChangedEvent](raw) match {
+              case Left(error)  => fail(s"failed to decode: $error")
+              case Right(event) =>
+                assertEquals(event.orderId, order.id)
+                assertEquals(event.customerId, "cust-123")
+                assertEquals(event.status, "reservation_failed")
+            }
+        }
+      }
+    }
+  }
+
+  test(
+    "a synthetic stock-reserved event never publishes order.status-changed"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use { publisher =>
+        for {
+          store <- OrderStore.inMemory[IO]
+          (order, items) <- store.create("cust-123", oneItem)
+          event = StockReservedEvent(
+            items.head.id,
+            "sku-1",
+            2,
+            Instant.parse("2026-01-01T00:00:00Z")
+          )
+          _ <- produce(
+            config,
+            StockEventConsumer.reservedTopic,
+            "sku-1",
+            event.asJson.noSpaces
+          )
+          result <- IO.race(
+            StockEventConsumer
+              .run[IO](config, store, NoOpLogger[IO], publisher)
+              .compile
+              .drain,
+            pollForStatus(store, order.id, OrderStatus.Reserved) *>
+              noMatchingMessageWithin(
+                config,
+                OrderEventPublisher.statusChangedTopic,
                 _.contains(order.id),
                 3.seconds
               )
