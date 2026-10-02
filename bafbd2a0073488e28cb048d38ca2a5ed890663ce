@@ -1,0 +1,10 @@
+Final verification report: US-4.2 wire resilience middleware for the reserve call to inventory-service
+
+Automated tests: sbt scalafmtCheck test -> 84/84 passed, formatting clean.
+
+Manual verification: ran scripts/verify-reserve-resilience.sh (committed in this commit) instead of an interactive walkthrough, per .claude/prompt-off. Unlike the unit tests (which exercise InventoryClient against stubs), this points a real sbt run instance's INVENTORY_SERVICE_URL at an unreachable port - a genuine connection-refused failure, not a simulated one:
+- POST /orders still returns 201 Created despite the unreachable downstream
+- order status correctly reflects reservation_failed
+- the request took ~1s, consistent with the configured retry/backoff (3 retries, 100ms base, exponential) actually running its course before giving up, not failing instantly or hanging
+
+This is the closest thing to a real integration check available without a live inventory-service (PLAN.md explicitly defers that to later, optional). All checks passed. Confirmation: no interactive user confirmation sought - .claude/prompt-off is set for this project, so the script's pass/fail is the verification signal.
