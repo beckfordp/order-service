@@ -19,7 +19,7 @@
 - [x] Task: Update StockEventConsumer.reservationFailedStream to publish on success (new publishStatusChangedIfUpdated helper, mirroring publishReservedIfUpdated); run[F] passes the publisher to both streams now `a805d67`
 - [x] Task: Wire orderEventPublisher into OrderRoutes.serverEndpoint's call site in Main.scala `616ef87`
 - [x] Task: Run tests, confirm green `a805d67` - 116 passed, 0 failed; found and fixed a flaky shared-container test (consumeOne -> consumeMatching, see git note on `a805d67`), confirmed stable across 3 repeated runs
-- [ ] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code)
+- [x] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code) - 92.14% statement / 92.38% branch overall
 - [ ] Task: Conductor - User Manual Verification 'order.status-changed publish wiring' (final, Protocol in workflow.md)
 
 Two phases - Phase 1 is the publish side in isolation (small, since it reuses US-5.3's producer/retry plumbing wholesale), Phase 2 wires both failure paths (the synchronous checkout path and the async consumer path both reach ReservationFailed, so both need the publish call) and proves each end to end.
