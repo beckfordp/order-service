@@ -1,0 +1,9 @@
+Task: Wire orderItemId into reserve call, reorder checkout
+
+Summary: InventoryClient.reserve gains an orderItemId: String param, sent as part of ReserveRequestBody. OrderRoutes' checkout now calls store.create before reserveAll (previously reversed), so reserveAll operates on the persisted OrderItem list (real ids) instead of the raw NewOrderItem request list, passing item.id as the correlation id on each reserve call.
+
+Files changed:
+- src/main/scala/orderservice/InventoryClient.scala
+- src/main/scala/orderservice/OrderRoutes.scala
+
+Why: Phase 2 of US-5.2 - inventory-service now requires orderItemId (its own companion track already shipped); this also removes the architectural blocker where order-service had no real item id to send before persisting.
