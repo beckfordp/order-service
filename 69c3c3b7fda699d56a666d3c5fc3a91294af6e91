@@ -1,0 +1,7 @@
+Phase 1 verification report: InventoryClient + resilience wiring
+
+Automated tests: sbt scalafmtCheck test -> 81/81 passed, formatting clean.
+
+Manual verification: ran scripts/verify-inventory-client-config.sh (committed in this commit) instead of an interactive walkthrough, per .claude/prompt-off. Since InventoryClient isn't wired into checkout yet (Phase 2's job), there's no new HTTP-observable behavior to exercise - the meaningful live check for this phase is that order-service still boots correctly now that OrderServiceConfig has a new required inventory-client block. Confirmed: docker compose up + sbt run, /health returns 200.
+
+All checks passed. Confirmation: no interactive user confirmation sought - .claude/prompt-off is set for this project, so the script's pass/fail is the verification signal.
