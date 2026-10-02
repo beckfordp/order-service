@@ -2,10 +2,10 @@
 
 ## Phase 1: OrderStatusChangedEvent + OrderEventPublisher.publishStatusChanged
 
-- [ ] Task: Add OrderStatusChangedEvent case class (orderId, customerId, status, timestamp) with a circe Codec to OrderEvents.scala
-- [ ] Task: Write a failing Testcontainers-Kafka test: OrderEventPublisher.publishStatusChanged produces the event on the order.status-changed topic with the correct payload
-- [ ] Task: Implement publishStatusChanged + statusChangedTopic constant on OrderEventPublisher, reusing the existing producer/bounded-retry plumbing built for publishReserved
-- [ ] Task: Run tests, confirm green
+- [x] Task: Add OrderStatusChangedEvent case class (orderId, customerId, status, timestamp) with a circe Codec to OrderEvents.scala `2a9e1c8`
+- [x] Task: Write a failing Testcontainers-Kafka test: OrderEventPublisher.publishStatusChanged produces the event on the order.status-changed topic with the correct payload `2a9e1c8`
+- [x] Task: Implement publishStatusChanged + statusChangedTopic constant on OrderEventPublisher, reusing the existing producer/bounded-retry plumbing built for publishReserved `2a9e1c8`
+- [x] Task: Run tests, confirm green `2a9e1c8` - 3 passed, 0 failed
 - [ ] Task: Conductor - User Manual Verification 'OrderStatusChangedEvent + publishStatusChanged' (Protocol in workflow.md)
 
 ## Phase 2: Wire both failure paths (sync OrderRoutes + async StockEventConsumer) + Main
