@@ -3,7 +3,7 @@
 ## Phase 1: Kafka config + atomic per-item status update (self-contained, no existing signatures change)
 
 - [x] Task: Add `fs2-kafka` + `testcontainers-scala-kafka` dependencies; add `kafka` block to `application.conf` + matching `KafkaConfig`/`OrderServiceConfig` field, mirroring inventory-service's shape `1d331f3`
-- [ ] Task: Add `OrderStore.updateStatusByItemId(orderItemId: String, newStatus: OrderStatus): F[Boolean]` (atomic conditional UPDATE joining through `order_items.id`, both in-memory and Postgres impls); unit tests covering: matching `Pending` order flips, unknown item id no-ops, non-`Pending` order no-ops
+- [x] Task: Add `OrderStore.updateStatusByItemId(orderItemId: String, newStatus: OrderStatus): F[Boolean]` (atomic conditional UPDATE joining through `order_items.id`, both in-memory and Postgres impls); unit tests covering: matching `Pending` order flips, unknown item id no-ops, non-`Pending` order no-ops `b096f40`
 - [ ] Task: Conductor - User Manual Verification 'Kafka config + atomic per-item status update' (Protocol in workflow.md)
 
 ## Phase 2: Wire orderItemId into the synchronous reserve call
