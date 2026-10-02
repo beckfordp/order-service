@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: US-4.2: wire resilience middleware for the reserve call to inventory-service**
+- [x] **Track: US-4.2: wire resilience middleware for the reserve call to inventory-service**
   *Link: [./tracks/reserve-resilience_20261001/](./tracks/reserve-resilience_20261001/)*
 
 ---
