@@ -231,9 +231,40 @@ object OrderRoutes {
           )
       }
 
+  /** Attempts to reserve every item in order, sequentially, short-circuiting at
+    * the first item that can't be reserved (all-or-nothing - see US-4.2's spec,
+    * "Out of Scope" re: partial fulfillment). Returns `Left(reason)` for the
+    * first failure - a non-`Reserved` result or the client itself raising (e.g.
+    * the circuit breaker open, retries exhausted) - never calling `reserve` for
+    * any item after that point.
+    */
+  private def reserveAll[F[_]: Async](
+      inventoryClient: InventoryClient[F],
+      items: List[NewOrderItem]
+  ): F[Either[String, Unit]] =
+    items.foldLeft(Async[F].pure(Right(()): Either[String, Unit])) {
+      (acc, item) =>
+        acc.flatMap {
+          case failed @ Left(_) => Async[F].pure(failed)
+          case Right(())        =>
+            inventoryClient.reserve(item.sku, item.quantity).attempt.map {
+              case Right(ReservationResult.Reserved)          => Right(())
+              case Right(ReservationResult.InsufficientStock) =>
+                Left(s"insufficient stock for sku '${item.sku}'")
+              case Right(ReservationResult.UnknownSku) =>
+                Left(s"unknown sku '${item.sku}'")
+              case Left(error) =>
+                Left(
+                  s"reservation call failed for sku '${item.sku}': ${error.getMessage}"
+                )
+            }
+        }
+    }
+
   def serverEndpoint[F[_]: Async](
       store: OrderStore[F],
-      logger: StructuredLogger[F]
+      logger: StructuredLogger[F],
+      inventoryClient: InventoryClient[F]
   ): ServerEndpoint[Any, F] =
     createOrderEndpoint.serverLogic[F] { req =>
       for {
@@ -255,16 +286,30 @@ object OrderRoutes {
               .as(Left(error): Either[OrderError, OrderResponse])
           case Right(items) =>
             for {
+              reservation <- reserveAll(inventoryClient, items)
               created <- store.create(req.customerId, items).onError {
                 case error =>
                   logger.error(Map.empty, error)("Persisting the order failed")
               }
               (order, orderItems) = created
-              _ <- logger.info(
-                Map("order_id" -> order.id)
-              )("Request completed")
+              finalOrder <- reservation match {
+                case Right(()) =>
+                  logger
+                    .info(Map("order_id" -> order.id))("Request completed")
+                    .as((order, orderItems))
+                case Left(reason) =>
+                  for {
+                    _ <- logger.warn(
+                      Map("order_id" -> order.id, "reason" -> reason)
+                    )("Reservation failed")
+                    updated <- store.update(
+                      order.id,
+                      OrderStatus.ReservationFailed
+                    )
+                  } yield updated.getOrElse((order, orderItems))
+              }
             } yield Right(
-              OrderResponse(order, orderItems)
+              OrderResponse(finalOrder._1, finalOrder._2)
             ): Either[OrderError, OrderResponse]
         }
       } yield result
@@ -375,11 +420,12 @@ object OrderRoutes {
 
   def routes[F[_]: Async](
       store: OrderStore[F],
-      logger: StructuredLogger[F]
+      logger: StructuredLogger[F],
+      inventoryClient: InventoryClient[F]
   ): HttpRoutes[F] =
     Http4sServerInterpreter[F]().toRoutes(
       List(
-        serverEndpoint(store, logger),
+        serverEndpoint(store, logger, inventoryClient),
         getOrderServerEndpoint(store, logger),
         updateOrderServerEndpoint(store, logger),
         replaceOrderServerEndpoint(store, logger),
