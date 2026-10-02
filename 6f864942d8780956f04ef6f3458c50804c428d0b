@@ -1,0 +1,17 @@
+Phase 1 verification report: OrderStore.updateStatusByItemId returns order details (US-5.3)
+
+Automated tests: sbt testOnly orderservice.OrderStoreSuite orderservice.OrderStorePostgresSuite orderservice.HealthRoutesSuite orderservice.OrderRoutesSuite orderservice.StockEventConsumerSuite
+Result: 80 passed, 0 failed.
+
+Manual verification (prompt-off: via committed script, not an interactive walkthrough):
+Command: ./scripts/verify-updatestatusbyitemid-returns-order-details.sh
+- Starts a throwaway Postgres container (port 15432, avoids colliding with
+  payment-service's own docker-compose stack running on 5432 at the time).
+- Applies this repo's real Flyway migrations (V1-V5) directly.
+- Inserts a Pending order + item, runs the exact updateOrderStatusByItemId
+  SQL by hand, confirms the RETURNING clause yields the correct
+  id/customer_id/total_cents and the status actually flips to reserved.
+- Re-runs the same UPDATE on the now-Reserved order, confirms it's a no-op
+  (0 rows) - matches the "already resolved" case OrderStoreSuite also covers.
+
+Result: All checks passed.
