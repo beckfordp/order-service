@@ -73,11 +73,17 @@ object StockEventConsumer {
     updated match {
       case Some(_) =>
         logger.info(
-          Map("order_item_id" -> orderItemId, "new_status" -> newStatus.asString)
+          Map(
+            "order_item_id" -> orderItemId,
+            "new_status" -> newStatus.asString
+          )
         )("Order status updated from stock-reservation event")
       case None =>
         logger.info(
-          Map("order_item_id" -> orderItemId, "new_status" -> newStatus.asString)
+          Map(
+            "order_item_id" -> orderItemId,
+            "new_status" -> newStatus.asString
+          )
         )(
           "No matching Pending order for orderItemId (unknown item, or already resolved) - ignoring"
         )
@@ -93,7 +99,7 @@ object StockEventConsumer {
       updated: Option[UpdatedOrderRef]
   ): F[Unit] =
     updated match {
-      case None            => Async[F].unit
+      case None           => Async[F].unit
       case Some(orderRef) =>
         Async[F].realTimeInstant.flatMap { now =>
           publisher.publishReserved(

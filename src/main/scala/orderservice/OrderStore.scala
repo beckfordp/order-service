@@ -41,8 +41,8 @@ final case class OrderItem(
 
 /** Minimal projection of an order returned by `updateStatusByItemId` on a
   * successful transition - just the fields `order.reserved`'s payload needs
-  * (see US-5.3's spec.md), fetched atomically in the same query that does
-  * the update rather than a separate round-trip.
+  * (see US-5.3's spec.md), fetched atomically in the same query that does the
+  * update rather than a separate round-trip.
   */
 final case class UpdatedOrderRef(
     orderId: String,
@@ -539,13 +539,12 @@ object OrderStore {
                               (newStatus, OrderStatus.Pending, itemUuid)
                             )
                           )
-                          .map(_.map {
-                            case (orderId, customerId, totalCents) =>
-                              UpdatedOrderRef(
-                                orderId.toString,
-                                customerId,
-                                totalCents
-                              )
+                          .map(_.map { case (orderId, customerId, totalCents) =>
+                            UpdatedOrderRef(
+                              orderId.toString,
+                              customerId,
+                              totalCents
+                            )
                           })
                       }
                     }
