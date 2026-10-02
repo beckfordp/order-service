@@ -155,6 +155,17 @@ object OrderRoutes {
       .out(jsonBody[OrderResponse])
       .errorOut(orderErrorOutput)
 
+  private val listOrdersEndpoint: PublicEndpoint[
+    String,
+    Unit,
+    List[OrderResponse],
+    Any
+  ] =
+    endpoint.get
+      .in("orders")
+      .in(query[String]("customerId"))
+      .out(jsonBody[List[OrderResponse]])
+
   private val getOrderEndpoint: PublicEndpoint[
     String,
     OrderError,
@@ -324,6 +335,47 @@ object OrderRoutes {
       } yield result
     }
 
+  /** Cache-aside: a hit returns the cached history as-is; a miss queries the
+    * store, populates the cache (TTL-only freshness - see spec.md's "Out of
+    * Scope"), and returns the freshly-queried result.
+    */
+  def listOrdersServerEndpoint[F[_]: Async](
+      store: OrderStore[F],
+      logger: StructuredLogger[F],
+      historyCache: OrderHistoryCache[F]
+  ): ServerEndpoint[Any, F] =
+    listOrdersEndpoint.serverLogicSuccess[F] { customerId =>
+      for {
+        _ <- logger.info(
+          Map(
+            "method" -> "GET",
+            "path" -> "/orders",
+            "customer_id" -> customerId
+          )
+        )("Received request")
+        cached <- historyCache.get(customerId)
+        result <- cached match {
+          case Some(history) =>
+            logger
+              .info(Map("customer_id" -> customerId, "cache" -> "hit"))(
+                "Request completed"
+              )
+              .as(history)
+          case None =>
+            for {
+              orders <- store.listByCustomer(customerId)
+              history = orders.map { case (order, items) =>
+                OrderResponse(order, items)
+              }
+              _ <- historyCache.set(customerId, history)
+              _ <- logger.info(
+                Map("customer_id" -> customerId, "cache" -> "miss")
+              )("Request completed")
+            } yield history
+        }
+      } yield result
+    }
+
   def getOrderServerEndpoint[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F]
@@ -430,11 +482,13 @@ object OrderRoutes {
   def routes[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      inventoryClient: InventoryClient[F]
+      inventoryClient: InventoryClient[F],
+      historyCache: OrderHistoryCache[F]
   ): HttpRoutes[F] =
     Http4sServerInterpreter[F]().toRoutes(
       List(
         serverEndpoint(store, logger, inventoryClient),
+        listOrdersServerEndpoint(store, logger, historyCache),
         getOrderServerEndpoint(store, logger),
         updateOrderServerEndpoint(store, logger),
         replaceOrderServerEndpoint(store, logger),

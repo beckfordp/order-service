@@ -44,45 +44,64 @@ object Main extends IOApp.Simple {
                     .background
                     .use { _ =>
                       EmberClientBuilder.default[IO].build.use { httpClient =>
-                        val resilientClient = Resilience.middleware[IO](
-                          config.inventoryClient.resilience
-                        )(logger)(meter)(httpClient)
-                        val inventoryClient = InventoryClient[IO](
-                          resilientClient,
-                          Uri.unsafeFromString(config.inventoryClient.baseUrl)
-                        )
-                        val docsRoutes = Docs.routes[IO](
-                          "Order Service",
-                          "1.0",
-                          List(
-                            OrderRoutes.serverEndpoint[IO](
-                              store,
-                              logger,
-                              inventoryClient
-                            ),
-                            OrderRoutes
-                              .getOrderServerEndpoint[IO](store, logger),
-                            OrderRoutes
-                              .updateOrderServerEndpoint[IO](store, logger),
-                            OrderRoutes
-                              .replaceOrderServerEndpoint[IO](store, logger),
-                            OrderRoutes
-                              .deleteOrderServerEndpoint[IO](store, logger),
-                            HealthRoutes.healthServerEndpoint[IO],
-                            HealthRoutes.readyServerEndpoint[IO](store)
-                          )
-                        )
-                        val tracedRoutes =
-                          ServerTracing.middleware(tracer)(docsRoutes)
-                        val routes =
-                          ServerMetrics.middleware[IO](meter)(tracedRoutes)
-                        EmberServerBuilder
-                          .default[IO]
-                          .withHost(host"0.0.0.0")
-                          .withPort(port)
-                          .withHttpApp(routes.orNotFound)
-                          .build
-                          .useForever
+                        OrderHistoryCache
+                          .resource[IO](config.redis, logger)
+                          .use { historyCache =>
+                            val resilientClient = Resilience.middleware[IO](
+                              config.inventoryClient.resilience
+                            )(logger)(meter)(httpClient)
+                            val inventoryClient = InventoryClient[IO](
+                              resilientClient,
+                              Uri.unsafeFromString(
+                                config.inventoryClient.baseUrl
+                              )
+                            )
+                            val docsRoutes = Docs.routes[IO](
+                              "Order Service",
+                              "1.0",
+                              List(
+                                OrderRoutes.serverEndpoint[IO](
+                                  store,
+                                  logger,
+                                  inventoryClient
+                                ),
+                                OrderRoutes.listOrdersServerEndpoint[IO](
+                                  store,
+                                  logger,
+                                  historyCache
+                                ),
+                                OrderRoutes
+                                  .getOrderServerEndpoint[IO](store, logger),
+                                OrderRoutes.updateOrderServerEndpoint[IO](
+                                  store,
+                                  logger
+                                ),
+                                OrderRoutes.replaceOrderServerEndpoint[IO](
+                                  store,
+                                  logger
+                                ),
+                                OrderRoutes.deleteOrderServerEndpoint[IO](
+                                  store,
+                                  logger
+                                ),
+                                HealthRoutes.healthServerEndpoint[IO],
+                                HealthRoutes.readyServerEndpoint[IO](store)
+                              )
+                            )
+                            val tracedRoutes =
+                              ServerTracing.middleware(tracer)(docsRoutes)
+                            val routes =
+                              ServerMetrics.middleware[IO](meter)(
+                                tracedRoutes
+                              )
+                            EmberServerBuilder
+                              .default[IO]
+                              .withHost(host"0.0.0.0")
+                              .withPort(port)
+                              .withHttpApp(routes.orNotFound)
+                              .build
+                              .useForever
+                          }
                       }
                     }
               }
