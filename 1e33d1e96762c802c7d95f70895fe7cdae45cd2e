@@ -1,0 +1,15 @@
+Tasks: Wire InventoryClient into checkout's create logic; extend OrderRoutesSuite for the reservation scenarios
+
+Summary: POST /orders now calls InventoryClient.reserve once per item (sequential, short-circuit on the first failure - all-or-nothing per spec). The order and all its items are always persisted via the existing OrderStore.create; if every item reserves, status stays pending; if any item fails (InsufficientStock/UnknownSku) or the client itself raises (circuit open, retries exhausted), OrderStore.update immediately sets status to reservation_failed. Response is always 201 Created either way - OrderResponse.status communicates the actual outcome. Main.scala now builds a real http4s ember Client wrapped in Resilience.middleware (using the new inventory-client config) and passes the resulting InventoryClient through to OrderRoutes.
+
+Combined the two originally-planned Phase 2 tasks into one commit (same reason as the last two tracks): OrderRoutes.serverEndpoint/routes gaining an InventoryClient parameter breaks every call site (OrderDocsSuite, OrderRoutesSuite's ~15 routes() calls) immediately, so there's no way to land the production wiring without also updating every test call site in the same commit.
+
+New tests: all-items-reserve -> pending/201 (extended the existing happy-path test); one item fails -> reservation_failed/201 with both items still persisted; client raises -> reservation_failed/201; short-circuit proof (inventory client is called exactly once, not twice, when the first of two items fails).
+
+Files:
+- src/main/scala/orderservice/OrderRoutes.scala (reserveAll, serverEndpoint/routes signature change)
+- src/main/scala/orderservice/Main.scala (real InventoryClient construction/wiring)
+- src/test/scala/orderservice/OrderRoutesSuite.scala (alwaysSucceedsInventoryClient stub threaded through ~15 existing calls, 4 new tests)
+- src/test/scala/orderservice/OrderDocsSuite.scala (stub client for its one call site)
+
+Why: The actual feature of US-4.2 (track reserve-resilience_20261001) - checkout now really calls inventory-service (resilience-wrapped) before confirming an order, closing out the sync half of the walking skeleton's Phase 2.
