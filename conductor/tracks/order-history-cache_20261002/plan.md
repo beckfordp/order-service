@@ -1,9 +1,9 @@
 # Implementation Plan: US-8.1 order history read endpoint + Redis cache
 
-## Phase 1: OrderStore.listByCustomer (self-contained, no existing signatures change)
+## Phase 1: OrderStore.listByCustomer (self-contained, no existing signatures change) [checkpoint: 05b1663]
 
 - [x] Task: Add `OrderStore.listByCustomer(customerId: String): F[List[(Order, List[OrderItem])]]`, newest-first by `createdAt`, in both in-memory and Postgres impls; unit tests covering: a customer with multiple orders (ordering), a customer with none (empty list), orders belonging to a different customer excluded `05b1663`
-- [ ] Task: Conductor - User Manual Verification 'OrderStore.listByCustomer' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'OrderStore.listByCustomer' (Protocol in workflow.md) `05b1663` - deviation: no new config/wiring/startup surface introduced this phase (pure store addition), so the real-Postgres Testcontainers tests already constitute the live verification; no separate shell script adds further confidence (unlike the Kafka-config phase, which risked a startup-only failure mode the test suite's self-constructed HOCON couldn't catch)
 
 ## Phase 2: Redis config + OrderHistoryCache (self-contained, no existing signatures change)
 
