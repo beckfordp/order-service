@@ -24,12 +24,17 @@ final case class InventoryClientConfig(
     resilience: ResilienceConfig
 ) derives ConfigReader
 
+final case class KafkaConfig(
+    bootstrapServers: String
+) derives ConfigReader
+
 final case class OrderServiceConfig(
     port: Int,
     metricsPort: Int,
     serviceName: String,
     postgres: PostgresConfig,
-    inventoryClient: InventoryClientConfig
+    inventoryClient: InventoryClientConfig,
+    kafka: KafkaConfig
 ) derives ConfigReader
 
 object OrderServiceConfig {

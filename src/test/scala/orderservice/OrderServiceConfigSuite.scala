@@ -34,6 +34,9 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       |    }
       |  }
       |}
+      |kafka {
+      |  bootstrap-servers = "localhost:9092"
+      |}
       |""".stripMargin
 
   test("loads a fully-specified config") {
@@ -62,7 +65,8 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
                 resetTimeout = 30.seconds
               )
             )
-          )
+          ),
+          kafka = KafkaConfig(bootstrapServers = "localhost:9092")
         )
       )
     )
@@ -127,6 +131,10 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
               CircuitBreakerConfig(failureThreshold = 5, resetTimeout = 30.seconds)
           )
         )
+      )
+      assertEquals(
+        config.kafka,
+        KafkaConfig(bootstrapServers = "localhost:9092")
       )
     }
   }
