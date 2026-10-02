@@ -1,0 +1,9 @@
+Task: Add local event mirrors + Kafka consumer, wire into Main.scala
+
+Summary: new StockEventConsumer.scala with local StockReservedEvent/StockReservationFailedEvent case classes (mirroring inventory-service's payload - no shared library), subscribing to inventory.stock-reserved/-reservation-failed via fs2-kafka, calling OrderStore.updateStatusByItemId with Reserved/ReservationFailed per event, per-record offset commit after handling. Wired into Main.scala as a background stream (compile.drain.background) running alongside the HTTP server, sharing the same OrderStore instance.
+
+Files changed:
+- src/main/scala/orderservice/StockEventConsumer.scala (new)
+- src/main/scala/orderservice/Main.scala
+
+Why: Phase 3 of US-5.2 - the actual consumer behavior this whole track exists for. Decode failures and no-match outcomes (unknown item id / already-resolved order) are both logged, never raised, per spec.md's idempotent-no-op decision.
