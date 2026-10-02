@@ -23,3 +23,7 @@
 - [x] Task: Conductor - User Manual Verification 'order.status-changed publish wiring' (final, Protocol in workflow.md) `8e235e9` - verified via committed script (prompt-off), scoped up front to avoid US-5.3's documented broker race; see git note on checkpoint commit
 
 Two phases - Phase 1 is the publish side in isolation (small, since it reuses US-5.3's producer/retry plumbing wholesale), Phase 2 wires both failure paths (the synchronous checkout path and the async consumer path both reach ReservationFailed, so both need the publish call) and proves each end to end.
+
+## Phase: Review Fixes
+
+- [x] Task: Apply review suggestions `4fda961` - replaced hardcoded "reservation_failed" literals in OrderRoutes.scala and StockEventConsumer.scala with OrderStatus.ReservationFailed.asString; full suite still 116/116
