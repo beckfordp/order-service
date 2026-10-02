@@ -1,0 +1,14 @@
+Task: Add redis4cats dependency + RedisConfig
+
+Summary: added redis4cats-effects/redis4cats-log4cats 2.0.6 (confirmed as the latest stable Scala-3-published version via Maven Central's actual directory listing - an earlier web-search snippet had wrongly suggested 1.7.2, a stale/lagging search index result) and testcontainers-scala-redis 0.43.6 (confirmed available at the exact version already pinned for the other testcontainers-scala modules). Added a redis { uri, history-ttl-seconds } block to application.conf and a matching RedisConfig/OrderServiceConfig field. Added a Redis service to docker-compose.yml (redis:7-alpine, no persistence, local-dev-only).
+
+Files changed:
+- build.sbt
+- src/main/resources/application.conf
+- src/main/scala/orderservice/OrderServiceConfig.scala
+- src/test/scala/orderservice/OrderServiceConfigSuite.scala
+- docker-compose.yml
+
+Why: Phase 2 Task 1 of US-8.1 - lays the Redis config groundwork OrderHistoryCache (next task) will need.
+
+Result: sbt scalafmtCheck test -> 101/101 passed.
