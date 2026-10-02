@@ -1,0 +1,8 @@
+Task: Testcontainers-Kafka tests for the stock-event consumer
+
+Summary: new StockEventConsumerSuite (TestContainerForAll + KafkaContainer), 4 tests: a synthetic stock-reserved event flips a Pending order to Reserved, a synthetic stock-reservation-failed event flips it to ReservationFailed, an event for an unknown orderItemId is a no-op that doesn't block a subsequent real event on the same topic, and an event for an already-resolved order is a no-op that doesn't block a subsequent real event either. Each test races the consumer's never-terminating stream against a short polling loop for the expected DB state, so the consumer fiber is cancelled automatically once the assertion is satisfied (or the test times out after 15s).
+
+Files changed:
+- src/test/scala/orderservice/StockEventConsumerSuite.scala (new)
+
+Result: sbt scalafmtCheck test -> 95/95 passed, formatting clean.
