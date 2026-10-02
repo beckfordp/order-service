@@ -203,7 +203,7 @@ object StockEventConsumer {
                 .flatTap(
                   publishStatusChangedIfUpdated(
                     publisher,
-                    "reservation_failed",
+                    OrderStatus.ReservationFailed.asString,
                     _
                   )
                 )

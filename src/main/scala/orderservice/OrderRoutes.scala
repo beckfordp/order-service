@@ -334,7 +334,7 @@ object OrderRoutes {
                             OrderStatusChangedEvent(
                               updatedOrder.id,
                               updatedOrder.customerId,
-                              "reservation_failed",
+                              OrderStatus.ReservationFailed.asString,
                               now
                             )
                           )
