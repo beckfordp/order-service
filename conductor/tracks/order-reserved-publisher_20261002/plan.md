@@ -1,6 +1,6 @@
 # Implementation Plan: US-5.3 publish order.reserved once an order's stock is fully reserved
 
-## Phase 1: OrderStore.updateStatusByItemId returns order details
+## Phase 1: OrderStore.updateStatusByItemId returns order details [checkpoint: 6f86494]
 
 - [x] Task: Write a failing test (in-memory + Postgres via Testcontainers) asserting a successful transition returns the order's id/customerId/totalCents, not just true `c946d8f`
 - [x] Task: Change the trait signature to F[Option[UpdatedOrderRef]] (new small case class: orderId, customerId, totalCents) `c946d8f`
@@ -9,7 +9,7 @@
 - [x] Task: Update StockEventConsumer's two call sites for the new return type (reservedStream uses the returned fields; reservationFailedStream only needs updated-or-not, ignores the payload) `c946d8f` - no call-site change needed, both already passed the result through a `_` placeholder into logOutcome, which was updated to pattern-match Option instead of Boolean
 - [x] Task: Update existing call sites in OrderStoreSuite, OrderStorePostgresSuite, StockEventConsumerSuite for the new signature `c946d8f` - StockEventConsumerSuite needed no changes (it never calls updateStatusByItemId directly, only exercises it through Kafka); HealthRoutesSuite's and OrderRoutesSuite's OrderStore stub implementations also needed updating, not originally listed in this task
 - [x] Task: Run tests, confirm green `c946d8f` - 80 passed, 0 failed
-- [ ] Task: Conductor - User Manual Verification 'OrderStore.updateStatusByItemId returns order details' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'OrderStore.updateStatusByItemId returns order details' (Protocol in workflow.md) `6f86494` - verified via committed script (prompt-off), see git note on checkpoint commit
 
 ## Phase 2: OrderReservedEvent + OrderEventPublisher
 
