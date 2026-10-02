@@ -302,6 +302,12 @@ object OrderRoutes {
                     _ <- logger.warn(
                       Map("order_id" -> order.id, "reason" -> reason)
                     )("Reservation failed")
+                    // Known edge case (review finding, US-4.2): if `update` returns
+                    // None - e.g. the order row vanishes between creation and this
+                    // call - the response falls back to the stale `order` object,
+                    // which still reports `pending` instead of `reservation_failed`.
+                    // Accepted risk: requires the just-created order to disappear
+                    // within the same request. Not fixed; tracked in the backlog.
                     updated <- store.update(
                       order.id,
                       OrderStatus.ReservationFailed

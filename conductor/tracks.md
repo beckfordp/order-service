@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: US-4.2: wire resilience middleware for the reserve call to inventory-service**
-  *Link: [./tracks/reserve-resilience_20261001/](./tracks/reserve-resilience_20261001/)*
-
 ---
 
 ## Backlog
@@ -16,5 +13,6 @@ through the spec/plan questions and promote it into a real track above.
 
 - US-5.2: consume inventory.stock-reserved / inventory.stock-reservation-failed, update order status
 - US-8.1: order history read endpoint + Redis cache
+- fix: reservation-failure response falls back to stale `pending` status if OrderStore.update races to None (US-4.2 review finding)
 
 ---
