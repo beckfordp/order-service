@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: US-5.3: publish order.reserved once an order's stock is fully reserved**
+- [~] **Track: US-5.3: publish order.reserved once an order's stock is fully reserved**
   *Link: [./tracks/order-reserved-publisher_20261002/](./tracks/order-reserved-publisher_20261002/)*
 
 ---

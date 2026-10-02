@@ -219,7 +219,7 @@ class OrderStorePostgresSuite
   }
 
   test(
-    "updateStatusByItemId flips a Pending order's status given a matching item id"
+    "updateStatusByItemId flips a Pending order's status given a matching item id, returning the order's details"
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -234,14 +234,17 @@ class OrderStorePostgresSuite
             )
             found <- store.get(created.id)
           } yield {
-            assert(updated)
+            assertEquals(
+              updated,
+              Some(UpdatedOrderRef(created.id, "cust-123", created.totalCents))
+            )
             assertEquals(found.map(_._1.status), Some(OrderStatus.Reserved))
           }
         }
     }
   }
 
-  test("updateStatusByItemId returns false for an unknown item id") {
+  test("updateStatusByItemId returns None for an unknown item id") {
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
@@ -252,13 +255,13 @@ class OrderStorePostgresSuite
               java.util.UUID.randomUUID().toString,
               OrderStatus.Reserved
             )
-            .map(updated => assert(!updated))
+            .map(updated => assertEquals(updated, None))
         }
     }
   }
 
   test(
-    "updateStatusByItemId returns false for a malformed (non-UUID) item id"
+    "updateStatusByItemId returns None for a malformed (non-UUID) item id"
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -267,13 +270,13 @@ class OrderStorePostgresSuite
         .use { store =>
           store
             .updateStatusByItemId("not-a-uuid", OrderStatus.Reserved)
-            .map(updated => assert(!updated))
+            .map(updated => assertEquals(updated, None))
         }
     }
   }
 
   test(
-    "updateStatusByItemId returns false and leaves status unchanged for an order that's no longer Pending"
+    "updateStatusByItemId returns None and leaves status unchanged for an order that's no longer Pending"
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -289,7 +292,7 @@ class OrderStorePostgresSuite
             )
             found <- store.get(created.id)
           } yield {
-            assert(!updated)
+            assertEquals(updated, None)
             assertEquals(
               found.map(_._1.status),
               Some(OrderStatus.ReservationFailed)

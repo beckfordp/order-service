@@ -39,6 +39,17 @@ final case class OrderItem(
     quantity: Int
 )
 
+/** Minimal projection of an order returned by `updateStatusByItemId` on a
+  * successful transition - just the fields `order.reserved`'s payload needs
+  * (see US-5.3's spec.md), fetched atomically in the same query that does
+  * the update rather than a separate round-trip.
+  */
+final case class UpdatedOrderRef(
+    orderId: String,
+    customerId: String,
+    totalCents: Int
+)
+
 trait OrderStore[F[_]] {
   def create(
       customerId: String,
@@ -53,7 +64,7 @@ trait OrderStore[F[_]] {
   def updateStatusByItemId(
       orderItemId: String,
       newStatus: OrderStatus
-  ): F[Boolean]
+  ): F[Option[UpdatedOrderRef]]
   def delete(id: String): F[Boolean]
   def ping: F[Boolean]
 }
@@ -145,7 +156,7 @@ object OrderStore {
       def updateStatusByItemId(
           orderItemId: String,
           newStatus: OrderStatus
-      ): F[Boolean] =
+      ): F[Option[UpdatedOrderRef]] =
         for {
           items <- itemsRef.get
           maybeOrderId = items.collectFirst {
@@ -155,20 +166,25 @@ object OrderStore {
           }
           now <- Sync[F].realTimeInstant
           updated <- maybeOrderId match {
-            case None          => Sync[F].pure(false)
+            case None          => Sync[F].pure(None)
             case Some(orderId) =>
               ordersRef.modify { entities =>
                 entities.get(orderId) match {
                   case Some(existing)
                       if existing.status == OrderStatus.Pending =>
+                    val next =
+                      existing.copy(status = newStatus, updatedAt = now)
                     (
-                      entities + (orderId -> existing.copy(
-                        status = newStatus,
-                        updatedAt = now
-                      )),
-                      true
+                      entities + (orderId -> next),
+                      Some(
+                        UpdatedOrderRef(
+                          next.id,
+                          next.customerId,
+                          next.totalCents
+                        )
+                      )
                     )
-                  case _ => (entities, false)
+                  case _ => (entities, None)
                 }
               }
           }
@@ -235,15 +251,15 @@ object OrderStore {
   // or an unknown orderItemId both no-op (0 rows), surfaced as `false`.
   private val updateOrderStatusByItemId: skunk.Query[
     (OrderStatus, OrderStatus, UUID),
-    UUID
+    (UUID, String, Int)
   ] =
     sql"""
       UPDATE "order"
       SET status = $orderStatus, updated_at = now()
       WHERE status = $orderStatus
         AND id = (SELECT order_id FROM order_items WHERE id = $uuid)
-      RETURNING id
-    """.query(uuid)
+      RETURNING id, customer_id, total_cents
+    """.query(uuid *: text *: int4)
 
   private val deleteOrder: skunk.Query[UUID, UUID] =
     sql"""
@@ -510,9 +526,9 @@ object OrderStore {
               def updateStatusByItemId(
                   orderItemId: String,
                   newStatus: OrderStatus
-              ): F[Boolean] =
+              ): F[Option[UpdatedOrderRef]] =
                 scala.util.Try(UUID.fromString(orderItemId)).toOption match {
-                  case None           => Sync[F].pure(false)
+                  case None           => Sync[F].pure(None)
                   case Some(itemUuid) =>
                     timed("update_status_by_item_id") {
                       pool.use { session =>
@@ -523,7 +539,14 @@ object OrderStore {
                               (newStatus, OrderStatus.Pending, itemUuid)
                             )
                           )
-                          .map(_.isDefined)
+                          .map(_.map {
+                            case (orderId, customerId, totalCents) =>
+                              UpdatedOrderRef(
+                                orderId.toString,
+                                customerId,
+                                totalCents
+                              )
+                          })
                       }
                     }
                 }

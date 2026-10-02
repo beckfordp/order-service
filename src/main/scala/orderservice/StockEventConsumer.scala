@@ -68,18 +68,20 @@ object StockEventConsumer {
       logger: StructuredLogger[F],
       orderItemId: String,
       newStatus: OrderStatus,
-      updated: Boolean
+      updated: Option[UpdatedOrderRef]
   ): F[Unit] =
-    if (updated)
-      logger.info(
-        Map("order_item_id" -> orderItemId, "new_status" -> newStatus.asString)
-      )("Order status updated from stock-reservation event")
-    else
-      logger.info(
-        Map("order_item_id" -> orderItemId, "new_status" -> newStatus.asString)
-      )(
-        "No matching Pending order for orderItemId (unknown item, or already resolved) - ignoring"
-      )
+    updated match {
+      case Some(_) =>
+        logger.info(
+          Map("order_item_id" -> orderItemId, "new_status" -> newStatus.asString)
+        )("Order status updated from stock-reservation event")
+      case None =>
+        logger.info(
+          Map("order_item_id" -> orderItemId, "new_status" -> newStatus.asString)
+        )(
+          "No matching Pending order for orderItemId (unknown item, or already resolved) - ignoring"
+        )
+    }
 
   private def reservedStream[F[_]: Async](
       config: KafkaConfig,

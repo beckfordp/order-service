@@ -115,7 +115,7 @@ class OrderStoreSuite extends CatsEffectSuite {
   }
 
   test(
-    "updateStatusByItemId flips a Pending order's status given a matching item id"
+    "updateStatusByItemId flips a Pending order's status given a matching item id, returning the order's details"
   ) {
     for {
       store <- OrderStore.inMemory[IO]
@@ -126,12 +126,15 @@ class OrderStoreSuite extends CatsEffectSuite {
       )
       found <- store.get(created.id)
     } yield {
-      assert(updated)
+      assertEquals(
+        updated,
+        Some(UpdatedOrderRef(created.id, "cust-123", created.totalCents))
+      )
       assertEquals(found.map(_._1.status), Some(OrderStatus.Reserved))
     }
   }
 
-  test("updateStatusByItemId returns false for an unknown item id") {
+  test("updateStatusByItemId returns None for an unknown item id") {
     for {
       store <- OrderStore.inMemory[IO]
       _ <- store.create("cust-123", oneItem)
@@ -139,11 +142,11 @@ class OrderStoreSuite extends CatsEffectSuite {
         "unknown-item-id",
         OrderStatus.Reserved
       )
-    } yield assert(!updated)
+    } yield assertEquals(updated, None)
   }
 
   test(
-    "updateStatusByItemId returns false and leaves status unchanged for an order that's no longer Pending"
+    "updateStatusByItemId returns None and leaves status unchanged for an order that's no longer Pending"
   ) {
     for {
       store <- OrderStore.inMemory[IO]
@@ -155,7 +158,7 @@ class OrderStoreSuite extends CatsEffectSuite {
       )
       found <- store.get(created.id)
     } yield {
-      assert(!updated)
+      assertEquals(updated, None)
       assertEquals(
         found.map(_._1.status),
         Some(OrderStatus.ReservationFailed)

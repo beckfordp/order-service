@@ -68,7 +68,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       def updateStatusByItemId(
           orderItemId: String,
           newStatus: OrderStatus
-      ): IO[Boolean] = IO.raiseError(error)
+      ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
       def delete(id: String): IO[Boolean] = IO.raiseError(error)
       def ping: IO[Boolean] = IO.raiseError(error)
     }
@@ -830,7 +830,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         def updateStatusByItemId(
             orderItemId: String,
             newStatus: OrderStatus
-        ): IO[Boolean] = baseStore.updateStatusByItemId(orderItemId, newStatus)
+        ): IO[Option[UpdatedOrderRef]] = baseStore.updateStatusByItemId(orderItemId, newStatus)
         def delete(id: String): IO[Boolean] = baseStore.delete(id)
         def ping: IO[Boolean] = baseStore.ping
       }

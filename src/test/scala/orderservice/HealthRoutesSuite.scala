@@ -25,7 +25,7 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def updateStatusByItemId(
           orderItemId: String,
           newStatus: OrderStatus
-      ): IO[Boolean] = IO.pure(false)
+      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def delete(id: String): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(true)
     }
@@ -48,7 +48,7 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def updateStatusByItemId(
           orderItemId: String,
           newStatus: OrderStatus
-      ): IO[Boolean] = IO.pure(false)
+      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def delete(id: String): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(false)
     }
