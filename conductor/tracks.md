@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: US-5.2: consume inventory.stock-reserved / inventory.stock-reservation-failed, update order status**
+- [x] **Track: US-5.2: consume inventory.stock-reserved / inventory.stock-reservation-failed, update order status**
   *Link: [./tracks/stock-event-consumer_20261002/](./tracks/stock-event-consumer_20261002/)*
 
 ---
