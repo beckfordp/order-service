@@ -4,6 +4,7 @@ import cats.effect.IO
 import com.dimafeng.testcontainers.KafkaContainer
 import com.dimafeng.testcontainers.munit.TestContainerForAll
 import fs2.kafka._
+import io.circe.parser.decode
 import io.circe.syntax._
 import munit.CatsEffectSuite
 import org.typelevel.log4cats.noop.NoOpLogger
@@ -52,6 +53,50 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
       )
     ).timeout(15.seconds)
 
+  private def consumeOne(config: KafkaConfig, topic: String): IO[String] = {
+    val consumerSettings =
+      ConsumerSettings[IO, String, String]
+        .withBootstrapServers(config.bootstrapServers)
+        .withGroupId(s"test-${java.util.UUID.randomUUID()}")
+        .withAutoOffsetReset(AutoOffsetReset.Earliest)
+
+    KafkaConsumer.resource(consumerSettings).use { consumer =>
+      for {
+        _ <- consumer.subscribeTo(topic)
+        record <- consumer.stream.take(1).compile.lastOrError.timeout(15.seconds)
+      } yield record.record.value
+    }
+  }
+
+  /** Returns true if no message matching `predicate` arrives on the topic
+    * within the window - used to assert a negative (nothing published for
+    * *this test's* order), tolerant of other tests having already published
+    * unrelated messages to the same topic in this shared container.
+    */
+  private def noMatchingMessageWithin(
+      config: KafkaConfig,
+      topic: String,
+      predicate: String => Boolean,
+      window: FiniteDuration
+  ): IO[Boolean] = {
+    val consumerSettings =
+      ConsumerSettings[IO, String, String]
+        .withBootstrapServers(config.bootstrapServers)
+        .withGroupId(s"test-${java.util.UUID.randomUUID()}")
+        .withAutoOffsetReset(AutoOffsetReset.Earliest)
+
+    KafkaConsumer.resource(consumerSettings).use { consumer =>
+      for {
+        _ <- consumer.subscribeTo(topic)
+        records <- consumer.stream
+          .map(_.record.value)
+          .interruptAfter(window)
+          .compile
+          .toList
+      } yield !records.exists(predicate)
+    }
+  }
+
   private val oneItem =
     List(NewOrderItem("sku-1", "Widget", 999, 2))
 
@@ -76,7 +121,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
           event.asJson.noSpaces
         )
         finalStatus <- IO.race(
-          StockEventConsumer.run[IO](config, store, NoOpLogger[IO]).compile.drain,
+          StockEventConsumer.run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO]).compile.drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
         )
       } yield assertEquals(finalStatus, Right(OrderStatus.Reserved))
@@ -104,7 +149,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
           event.asJson.noSpaces
         )
         finalStatus <- IO.race(
-          StockEventConsumer.run[IO](config, store, NoOpLogger[IO]).compile.drain,
+          StockEventConsumer.run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO]).compile.drain,
           pollForStatus(store, order.id, OrderStatus.ReservationFailed)
         )
       } yield assertEquals(finalStatus, Right(OrderStatus.ReservationFailed))
@@ -144,7 +189,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
           realEvent.asJson.noSpaces
         )
         finalStatus <- IO.race(
-          StockEventConsumer.run[IO](config, store, NoOpLogger[IO]).compile.drain,
+          StockEventConsumer.run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO]).compile.drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
         )
       } yield assertEquals(finalStatus, Right(OrderStatus.Reserved))
@@ -186,13 +231,96 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
           liveEvent.asJson.noSpaces
         )
         finalStatus <- IO.race(
-          StockEventConsumer.run[IO](config, store, NoOpLogger[IO]).compile.drain,
+          StockEventConsumer.run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO]).compile.drain,
           pollForStatus(store, otherOrder.id, OrderStatus.Reserved)
         )
         resolvedOrderStatus <- statusOf(store, resolvedOrder.id)
       } yield {
         assertEquals(finalStatus, Right(OrderStatus.Reserved))
         assertEquals(resolvedOrderStatus, OrderStatus.Reserved)
+      }
+    }
+  }
+
+  test(
+    "a synthetic stock-reserved event also publishes order.reserved with the order's details"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use { publisher =>
+        for {
+          store <- OrderStore.inMemory[IO]
+          (order, items) <- store.create("cust-123", oneItem)
+          event = StockReservedEvent(
+            items.head.id,
+            "sku-1",
+            2,
+            Instant.parse("2026-01-01T00:00:00Z")
+          )
+          _ <- produce(
+            config,
+            StockEventConsumer.reservedTopic,
+            "sku-1",
+            event.asJson.noSpaces
+          )
+          published <- IO.race(
+            StockEventConsumer
+              .run[IO](config, store, NoOpLogger[IO], publisher)
+              .compile
+              .drain,
+            consumeOne(config, OrderEventPublisher.reservedTopic)
+          )
+        } yield published match {
+          case Left(())   =>
+            fail("consumer finished before order.reserved was published")
+          case Right(raw) =>
+            decode[OrderReservedEvent](raw) match {
+              case Left(error)  => fail(s"failed to decode: $error")
+              case Right(event) =>
+                assertEquals(event.orderId, order.id)
+                assertEquals(event.customerId, "cust-123")
+                assertEquals(event.totalCents, order.totalCents)
+            }
+        }
+      }
+    }
+  }
+
+  test(
+    "a synthetic stock-reservation-failed event never publishes order.reserved"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use { publisher =>
+        for {
+          store <- OrderStore.inMemory[IO]
+          (order, items) <- store.create("cust-123", oneItem)
+          event = StockReservationFailedEvent(
+            items.head.id,
+            "sku-1",
+            2,
+            Instant.parse("2026-01-01T00:00:00Z")
+          )
+          _ <- produce(
+            config,
+            StockEventConsumer.reservationFailedTopic,
+            "sku-1",
+            event.asJson.noSpaces
+          )
+          result <- IO.race(
+            StockEventConsumer
+              .run[IO](config, store, NoOpLogger[IO], publisher)
+              .compile
+              .drain,
+            pollForStatus(store, order.id, OrderStatus.ReservationFailed) *>
+              noMatchingMessageWithin(
+                config,
+                OrderEventPublisher.reservedTopic,
+                _.contains(order.id),
+                3.seconds
+              )
+          )
+        } yield assertEquals(result, Right(true))
       }
     }
   }

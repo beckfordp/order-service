@@ -83,10 +83,35 @@ object StockEventConsumer {
         )
     }
 
+  /** On a successful transition, publishes `order.reserved` with the order's
+    * details - skipped entirely on the no-op case (unknown item id, or the
+    * order already left `Pending`), since nothing changed to tell
+    * payment-service about.
+    */
+  private def publishReservedIfUpdated[F[_]: Async](
+      publisher: OrderEventPublisher[F],
+      updated: Option[UpdatedOrderRef]
+  ): F[Unit] =
+    updated match {
+      case None            => Async[F].unit
+      case Some(orderRef) =>
+        Async[F].realTimeInstant.flatMap { now =>
+          publisher.publishReserved(
+            OrderReservedEvent(
+              orderRef.orderId,
+              orderRef.customerId,
+              orderRef.totalCents,
+              now
+            )
+          )
+        }
+    }
+
   private def reservedStream[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
-      logger: StructuredLogger[F]
+      logger: StructuredLogger[F],
+      publisher: OrderEventPublisher[F]
   ): Stream[F, Unit] =
     KafkaConsumer
       .stream(consumerSettings[F](config, "order-service-stock-reserved"))
@@ -103,6 +128,7 @@ object StockEventConsumer {
             case Right(event) =>
               store
                 .updateStatusByItemId(event.orderItemId, OrderStatus.Reserved)
+                .flatTap(publishReservedIfUpdated(publisher, _))
                 .flatMap(
                   logOutcome(
                     logger,
@@ -157,8 +183,9 @@ object StockEventConsumer {
   def run[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
-      logger: StructuredLogger[F]
+      logger: StructuredLogger[F],
+      publisher: OrderEventPublisher[F]
   ): Stream[F, Unit] =
-    reservedStream(config, store, logger)
+    reservedStream(config, store, logger, publisher)
       .merge(reservationFailedStream(config, store, logger))
 }
