@@ -1,0 +1,8 @@
+{
+  "track_id": "order-reserved-publisher_20261002",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-02T13:09:04Z",
+  "updated_at": "2026-10-02T13:09:04Z",
+  "description": "US-5.3: publish order.reserved once an order's stock is fully reserved"
+}
