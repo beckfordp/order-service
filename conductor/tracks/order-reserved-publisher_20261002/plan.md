@@ -31,3 +31,7 @@
 - [x] Task: Conductor - User Manual Verification 'order.reserved publish wiring' (final, Protocol in workflow.md) `0d97a77` - verified via committed script (prompt-off); script's live scope reduced to boot+checkout after a reproducible local-broker race blocked the full live round trip (see git note on checkpoint commit for full detail) - the round trip itself is proven by StockEventConsumerSuite's Testcontainers tests instead
 
 Three phases, each independently testable before the next builds on it - Phase 1 is a pure data-shape change to existing code, Phase 2 is the publish side in isolation (same pattern as inventory-service's US-5.1 and payment-service's just-landed PaymentEventPublisher), Phase 3 wires them together and proves the end-to-end outcome system-design.md already pinned.
+
+## Phase: Review Fixes
+
+- [x] Task: Apply review suggestions `0b4c345` - 3 files (OrderEvents, OrderStore, StockEventConsumer) failed scalafmtCheck; ran `sbt scalafmt`, reverified clean, full suite still 111/111
