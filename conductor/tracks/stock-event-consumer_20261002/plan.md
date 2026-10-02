@@ -8,8 +8,8 @@
 
 ## Phase 2: Wire orderItemId into the synchronous reserve call
 
-- [ ] Task: Add `orderItemId: String` param to `InventoryClient.reserve`; reorder `OrderRoutes`' checkout to call `store.create` before `reserveAll`, passing each persisted `OrderItem.id` as the correlation id; update `Main.scala`'s wiring
-- [ ] Task: Update `InventoryClientSuite`/`OrderRoutesSuite`/`OrderDocsSuite` call sites forced by the signature changes
+- [x] Task: Add `orderItemId: String` param to `InventoryClient.reserve`; reorder `OrderRoutes`' checkout to call `store.create` before `reserveAll`, passing each persisted `OrderItem.id` as the correlation id; update `Main.scala`'s wiring `e29e93f`
+- [x] Task: Update `InventoryClientSuite`/`OrderRoutesSuite`/`OrderDocsSuite` call sites forced by the signature changes `7ba7e90`
 - [ ] Task: Conductor - User Manual Verification 'Wire orderItemId into the synchronous reserve call' (Protocol in workflow.md)
 
 ## Phase 3: Kafka consumer (the actual US-5.2 behavior)
