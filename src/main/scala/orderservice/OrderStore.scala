@@ -49,6 +49,10 @@ trait OrderStore[F[_]] {
       id: String,
       status: OrderStatus
   ): F[Option[(Order, List[OrderItem])]]
+  def updateStatusByItemId(
+      orderItemId: String,
+      newStatus: OrderStatus
+  ): F[Boolean]
   def delete(id: String): F[Boolean]
   def ping: F[Boolean]
 }
@@ -125,6 +129,38 @@ object OrderStore {
           }
         } yield result
 
+      def updateStatusByItemId(
+          orderItemId: String,
+          newStatus: OrderStatus
+      ): F[Boolean] =
+        for {
+          items <- itemsRef.get
+          maybeOrderId = items.collectFirst {
+            case (orderId, orderItems)
+                if orderItems.exists(_.id == orderItemId) =>
+              orderId
+          }
+          now <- Sync[F].realTimeInstant
+          updated <- maybeOrderId match {
+            case None          => Sync[F].pure(false)
+            case Some(orderId) =>
+              ordersRef.modify { entities =>
+                entities.get(orderId) match {
+                  case Some(existing)
+                      if existing.status == OrderStatus.Pending =>
+                    (
+                      entities + (orderId -> existing.copy(
+                        status = newStatus,
+                        updatedAt = now
+                      )),
+                      true
+                    )
+                  case _ => (entities, false)
+                }
+              }
+          }
+        } yield updated
+
       def delete(id: String): F[Boolean] =
         for {
           existed <- ordersRef.modify { entities =>
@@ -167,6 +203,23 @@ object OrderStore {
       WHERE id = $uuid
       RETURNING customer_id, total_cents, status, created_at, updated_at
     """.query(text *: int4 *: orderStatus *: timestamptz *: timestamptz)
+
+  // Joins through order_items to find the owning order, atomically in one
+  // statement - avoids a separate lookup + check + update race (two
+  // concurrent events for different items of the same order could otherwise
+  // interleave). Only transitions a Pending order; already-resolved orders
+  // or an unknown orderItemId both no-op (0 rows), surfaced as `false`.
+  private val updateOrderStatusByItemId: skunk.Query[
+    (OrderStatus, OrderStatus, UUID),
+    UUID
+  ] =
+    sql"""
+      UPDATE "order"
+      SET status = $orderStatus, updated_at = now()
+      WHERE status = $orderStatus
+        AND id = (SELECT order_id FROM order_items WHERE id = $uuid)
+      RETURNING id
+    """.query(uuid)
 
   private val deleteOrder: skunk.Query[UUID, UUID] =
     sql"""
@@ -402,6 +455,27 @@ object OrderStore {
                           }
                       }
                     } yield result
+                }
+
+              def updateStatusByItemId(
+                  orderItemId: String,
+                  newStatus: OrderStatus
+              ): F[Boolean] =
+                scala.util.Try(UUID.fromString(orderItemId)).toOption match {
+                  case None           => Sync[F].pure(false)
+                  case Some(itemUuid) =>
+                    timed("update_status_by_item_id") {
+                      pool.use { session =>
+                        session
+                          .prepare(updateOrderStatusByItemId)
+                          .flatMap(
+                            _.option(
+                              (newStatus, OrderStatus.Pending, itemUuid)
+                            )
+                          )
+                          .map(_.isDefined)
+                      }
+                    }
                 }
 
               def delete(id: String): F[Boolean] =

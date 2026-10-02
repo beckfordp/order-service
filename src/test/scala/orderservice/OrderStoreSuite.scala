@@ -111,4 +111,53 @@ class OrderStoreSuite extends CatsEffectSuite {
       deleted <- store.delete("unknown-id")
     } yield assert(!deleted)
   }
+
+  test(
+    "updateStatusByItemId flips a Pending order's status given a matching item id"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (created, items) <- store.create("cust-123", oneItem)
+      updated <- store.updateStatusByItemId(
+        items.head.id,
+        OrderStatus.Reserved
+      )
+      found <- store.get(created.id)
+    } yield {
+      assert(updated)
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Reserved))
+    }
+  }
+
+  test("updateStatusByItemId returns false for an unknown item id") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      _ <- store.create("cust-123", oneItem)
+      updated <- store.updateStatusByItemId(
+        "unknown-item-id",
+        OrderStatus.Reserved
+      )
+    } yield assert(!updated)
+  }
+
+  test(
+    "updateStatusByItemId returns false and leaves status unchanged for an order that's no longer Pending"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (created, items) <- store.create("cust-123", oneItem)
+      _ <- store.update(created.id, OrderStatus.ReservationFailed)
+      updated <- store.updateStatusByItemId(
+        items.head.id,
+        OrderStatus.Reserved
+      )
+      found <- store.get(created.id)
+    } yield {
+      assert(!updated)
+      assertEquals(
+        found.map(_._1.status),
+        Some(OrderStatus.ReservationFailed)
+      )
+    }
+  }
 }

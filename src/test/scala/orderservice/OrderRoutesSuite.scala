@@ -45,6 +45,10 @@ class OrderRoutesSuite extends CatsEffectSuite {
           status: OrderStatus
       ): IO[Option[(Order, List[OrderItem])]] =
         IO.raiseError(error)
+      def updateStatusByItemId(
+          orderItemId: String,
+          newStatus: OrderStatus
+      ): IO[Boolean] = IO.raiseError(error)
       def delete(id: String): IO[Boolean] = IO.raiseError(error)
       def ping: IO[Boolean] = IO.raiseError(error)
     }

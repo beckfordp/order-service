@@ -218,6 +218,87 @@ class OrderStorePostgresSuite
   }
 
   test(
+    "updateStatusByItemId flips a Pending order's status given a matching item id"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, items) <- store.create("cust-123", oneItem)
+            updated <- store.updateStatusByItemId(
+              items.head.id,
+              OrderStatus.Reserved
+            )
+            found <- store.get(created.id)
+          } yield {
+            assert(updated)
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Reserved))
+          }
+        }
+    }
+  }
+
+  test("updateStatusByItemId returns false for an unknown item id") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          store
+            .updateStatusByItemId(
+              java.util.UUID.randomUUID().toString,
+              OrderStatus.Reserved
+            )
+            .map(updated => assert(!updated))
+        }
+    }
+  }
+
+  test(
+    "updateStatusByItemId returns false for a malformed (non-UUID) item id"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          store
+            .updateStatusByItemId("not-a-uuid", OrderStatus.Reserved)
+            .map(updated => assert(!updated))
+        }
+    }
+  }
+
+  test(
+    "updateStatusByItemId returns false and leaves status unchanged for an order that's no longer Pending"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, items) <- store.create("cust-123", oneItem)
+            _ <- store.update(created.id, OrderStatus.ReservationFailed)
+            updated <- store.updateStatusByItemId(
+              items.head.id,
+              OrderStatus.Reserved
+            )
+            found <- store.get(created.id)
+          } yield {
+            assert(!updated)
+            assertEquals(
+              found.map(_._1.status),
+              Some(OrderStatus.ReservationFailed)
+            )
+          }
+        }
+    }
+  }
+
+  test(
     "delete removes the entity and CASCADEs to remove its items, and get then returns None"
   ) {
     withContainers { postgres =>
