@@ -1,0 +1,10 @@
+Task: Update InventoryClient call sites forced by signature change
+
+Summary: updated all 9 InventoryClientSuite call sites (plus 4 stub InventoryClient implementations in OrderRoutesSuite, 1 in OrderDocsSuite) for the new orderItemId param. Extended the request-body content test to also assert orderItemId is included in the JSON sent to inventory-service.
+
+Files changed:
+- src/test/scala/orderservice/InventoryClientSuite.scala
+- src/test/scala/orderservice/OrderRoutesSuite.scala
+- src/test/scala/orderservice/OrderDocsSuite.scala
+
+Result: sbt scalafmtCheck test -> 91/91 passed.
