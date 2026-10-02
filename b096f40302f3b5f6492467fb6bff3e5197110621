@@ -1,0 +1,14 @@
+Task: Add OrderStore.updateStatusByItemId
+
+Summary: new trait method updateStatusByItemId(orderItemId, newStatus): F[Boolean] - atomically transitions the order owning the given item from Pending to newStatus, joining through order_items.id in a single UPDATE (Postgres) / single Ref.modify (in-memory). Returns false (no-op) for an unknown item id or a non-Pending order. Added to both OrderStore impls and the three test-stub OrderStore implementations forced by the new trait method (HealthRoutesSuite's two stores, OrderRoutesSuite's failingStore).
+
+Files changed:
+- src/main/scala/orderservice/OrderStore.scala
+- src/test/scala/orderservice/OrderStoreSuite.scala (3 new tests)
+- src/test/scala/orderservice/OrderStorePostgresSuite.scala (4 new tests)
+- src/test/scala/orderservice/HealthRoutesSuite.scala
+- src/test/scala/orderservice/OrderRoutesSuite.scala
+
+Why: Phase 1 of US-5.2 - this is the atomic status-update primitive the upcoming Kafka consumer (Phase 3) will call per received event, keyed by orderItemId rather than order id since that's all the event payload carries.
+
+Result: sbt scalafmtCheck test -> 91/91 passed.
