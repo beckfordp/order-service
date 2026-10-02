@@ -9,9 +9,19 @@
 - http4s 0.23.37 (ember-server, ember-client — client used by `InventoryClient`
   for the resilience-wrapped sync reserve call to inventory-service)
 - circe 0.14.16
-- fs2-kafka 3.6.0 — consumer only (US-5.2), subscribes to
-  `inventory.stock-reserved`/`inventory.stock-reservation-failed`; no
-  producer side in this service
+- fs2-kafka 3.6.0 — consumer side (US-5.2), subscribes to
+  `inventory.stock-reserved`/`inventory.stock-reservation-failed`; producer
+  side added for US-5.3 (`OrderEventPublisher`, publishes `order.reserved`)
+- cats-retry (`com.github.cb372`) — not an explicit `build.sbt` dependency;
+  comes transitively via `purerestlib`, which uses it internally for
+  `purerest.resilience`'s own `Client[F]` retry middleware. Used directly
+  (not through `purerest.resilience`, which is `Client[F]`-only and doesn't
+  cover a Kafka producer call) to bound-retry `OrderEventPublisher`'s
+  publish, matching the pattern payment-service's `PaymentEventPublisher`
+  established the same day for the identical problem (deviation found
+  2026-10-02: `system-design.md`'s "Reliability" note originally said
+  publishes would be `purerest.resilience`-wrapped; corrected here and
+  there once that turned out not to apply to Kafka)
 
 ## API layer
 - tapir 1.11.25 — route definitions and generated Swagger/OpenAPI docs
