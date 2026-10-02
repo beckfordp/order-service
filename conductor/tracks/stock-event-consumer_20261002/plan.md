@@ -12,11 +12,11 @@
 - [x] Task: Update `InventoryClientSuite`/`OrderRoutesSuite`/`OrderDocsSuite` call sites forced by the signature changes `7ba7e90`
 - [x] Task: Conductor - User Manual Verification 'Wire orderItemId into the synchronous reserve call' (Protocol in workflow.md) `3c5a741`
 
-## Phase 3: Kafka consumer (the actual US-5.2 behavior)
+## Phase 3: Kafka consumer (the actual US-5.2 behavior) [checkpoint: bfd148a]
 
 - [x] Task: Add local `StockReservedEvent`/`StockReservationFailedEvent` case classes (mirroring inventory-service's payload, no shared library) and a consumer that subscribes to both topics, calling `updateStatusByItemId` with `Reserved`/`ReservationFailed`; wire it as a background stream in `Main.scala` `e442ed2`
 - [x] Task: Testcontainers-Kafka tests: publish synthetic events for a pre-created `Pending` order's item, assert status flips to `Reserved`/`ReservationFailed`; an event for an unknown/already-resolved item is a no-op `0757fc6`
-- [ ] Task: Conductor - User Manual Verification 'Kafka consumer' (final, Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Kafka consumer' (final, Protocol in workflow.md) `bfd148a`
 
 Three phases, each independently testable before the next touches it -
 Phase 1 is pure addition, Phase 2 touches existing checkout signatures
