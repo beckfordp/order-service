@@ -1,0 +1,11 @@
+Task: Add fs2-kafka + testcontainers-scala-kafka dependencies; add kafka config block
+
+Summary: added fs2-kafka and testcontainers-scala-kafka dependencies to build.sbt, mirroring inventory-service's versions (3.6.0 / 0.43.6). Added a kafka { bootstrap-servers } block to application.conf and a matching KafkaConfig/OrderServiceConfig field, mirroring inventory-service's InventoryServiceConfig shape. Updated OrderServiceConfigSuite's three existing tests for the new required field.
+
+Files changed:
+- build.sbt
+- src/main/resources/application.conf
+- src/main/scala/orderservice/OrderServiceConfig.scala
+- src/test/scala/orderservice/OrderServiceConfigSuite.scala
+
+Why: Phase 1 of US-5.2 - lays the Kafka config groundwork the consumer (Phase 3) will need, kept as a pure addition so it can land independently.
