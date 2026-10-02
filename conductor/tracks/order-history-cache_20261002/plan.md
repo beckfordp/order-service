@@ -2,7 +2,7 @@
 
 ## Phase 1: OrderStore.listByCustomer (self-contained, no existing signatures change)
 
-- [ ] Task: Add `OrderStore.listByCustomer(customerId: String): F[List[(Order, List[OrderItem])]]`, newest-first by `createdAt`, in both in-memory and Postgres impls; unit tests covering: a customer with multiple orders (ordering), a customer with none (empty list), orders belonging to a different customer excluded
+- [x] Task: Add `OrderStore.listByCustomer(customerId: String): F[List[(Order, List[OrderItem])]]`, newest-first by `createdAt`, in both in-memory and Postgres impls; unit tests covering: a customer with multiple orders (ordering), a customer with none (empty list), orders belonging to a different customer excluded `05b1663`
 - [ ] Task: Conductor - User Manual Verification 'OrderStore.listByCustomer' (Protocol in workflow.md)
 
 ## Phase 2: Redis config + OrderHistoryCache (self-contained, no existing signatures change)
