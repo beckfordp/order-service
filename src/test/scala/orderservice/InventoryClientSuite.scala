@@ -38,7 +38,7 @@ class InventoryClientSuite extends CatsEffectSuite {
   test("reserve returns Reserved for a 200 response") {
     val client =
       InventoryClient[IO](resilientClient(stubClient(_ => Response[IO](Status.Ok))), baseUri)
-    client.reserve("sku-1", 2).map(assertEquals(_, ReservationResult.Reserved))
+    client.reserve("sku-1", 2, "item-1").map(assertEquals(_, ReservationResult.Reserved))
   }
 
   test("reserve returns InsufficientStock for a 409 response") {
@@ -47,7 +47,7 @@ class InventoryClientSuite extends CatsEffectSuite {
       baseUri
     )
     client
-      .reserve("sku-1", 2)
+      .reserve("sku-1", 2, "item-1")
       .map(assertEquals(_, ReservationResult.InsufficientStock))
   }
 
@@ -56,7 +56,7 @@ class InventoryClientSuite extends CatsEffectSuite {
       resilientClient(stubClient(_ => Response[IO](Status.NotFound))),
       baseUri
     )
-    client.reserve("sku-1", 2).map(assertEquals(_, ReservationResult.UnknownSku))
+    client.reserve("sku-1", 2, "item-1").map(assertEquals(_, ReservationResult.UnknownSku))
   }
 
   test("reserve raises for an unexpected status (e.g. a non-retriable 400)") {
@@ -65,13 +65,13 @@ class InventoryClientSuite extends CatsEffectSuite {
       baseUri
     )
     client
-      .reserve("sku-1", 2)
+      .reserve("sku-1", 2, "item-1")
       .attempt
       .map(result => assert(result.isLeft, s"expected a failure, got: $result"))
   }
 
   test(
-    "sends the sku and quantity as the JSON request body to POST /inventorys/reservations"
+    "sends the sku, quantity and orderItemId as the JSON request body to POST /inventorys/reservations"
   ) {
     for {
       capturedRequest <- Ref.of[IO, Option[Request[IO]]](None)
@@ -84,7 +84,7 @@ class InventoryClientSuite extends CatsEffectSuite {
         )
       }
       client = InventoryClient[IO](resilientClient(stub), baseUri)
-      _ <- client.reserve("sku-1", 3)
+      _ <- client.reserve("sku-1", 3, "item-1")
       req <- capturedRequest.get
       body <- capturedBody.get
     } yield {
@@ -92,6 +92,10 @@ class InventoryClientSuite extends CatsEffectSuite {
       assertEquals(req.map(_.uri.path.toString), Some("/inventorys/reservations"))
       assert(body.contains("sku-1"), s"expected sku in body, got: $body")
       assert(body.contains("3"), s"expected quantity in body, got: $body")
+      assert(
+        body.contains("item-1"),
+        s"expected orderItemId in body, got: $body"
+      )
     }
   }
 
@@ -106,7 +110,7 @@ class InventoryClientSuite extends CatsEffectSuite {
         )
       }
       client = InventoryClient[IO](resilientClient(stub), baseUri)
-      result <- client.reserve("sku-1", 2)
+      result <- client.reserve("sku-1", 2, "item-1")
       attempts <- counter.get
     } yield {
       assertEquals(result, ReservationResult.Reserved)
@@ -127,9 +131,9 @@ class InventoryClientSuite extends CatsEffectSuite {
         circuitBreaker = fastConfig.circuitBreaker.copy(failureThreshold = 2)
       )
       client = InventoryClient[IO](resilientClient(failingStub, config), baseUri)
-      _ <- client.reserve("sku-1", 2).attempt
-      _ <- client.reserve("sku-1", 2).attempt
-      openResult <- client.reserve("sku-1", 2).attempt
+      _ <- client.reserve("sku-1", 2, "item-1").attempt
+      _ <- client.reserve("sku-1", 2, "item-1").attempt
+      openResult <- client.reserve("sku-1", 2, "item-1").attempt
       attempts <- counter.get
     } yield {
       assertEquals(openResult, Left(CircuitBreakerOpen))

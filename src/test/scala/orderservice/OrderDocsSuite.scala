@@ -16,7 +16,11 @@ class OrderDocsSuite extends CatsEffectSuite {
     for {
       store <- OrderStore.inMemory[IO]
       inventoryClient = new InventoryClient[IO] {
-        def reserve(sku: String, quantity: Int): IO[ReservationResult] =
+        def reserve(
+            sku: String,
+            quantity: Int,
+            orderItemId: String
+        ): IO[ReservationResult] =
           IO.pure(ReservationResult.Reserved)
       }
       endpoint = OrderRoutes.serverEndpoint[IO](store, NoOpLogger[IO], inventoryClient)

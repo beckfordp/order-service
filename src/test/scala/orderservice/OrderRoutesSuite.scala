@@ -27,7 +27,11 @@ class OrderRoutesSuite extends CatsEffectSuite {
     */
   private val alwaysSucceedsInventoryClient: InventoryClient[IO] =
     new InventoryClient[IO] {
-      def reserve(sku: String, quantity: Int): IO[ReservationResult] =
+      def reserve(
+          sku: String,
+          quantity: Int,
+          orderItemId: String
+      ): IO[ReservationResult] =
         IO.pure(ReservationResult.Reserved)
     }
 
@@ -76,7 +80,11 @@ class OrderRoutesSuite extends CatsEffectSuite {
   ) {
     val failsSecondItem: InventoryClient[IO] =
       new InventoryClient[IO] {
-        def reserve(sku: String, quantity: Int): IO[ReservationResult] =
+        def reserve(
+            sku: String,
+            quantity: Int,
+            orderItemId: String
+        ): IO[ReservationResult] =
           if (sku == "sku-1") IO.pure(ReservationResult.Reserved)
           else IO.pure(ReservationResult.InsufficientStock)
       }
@@ -106,7 +114,11 @@ class OrderRoutesSuite extends CatsEffectSuite {
   ) {
     val raisingClient: InventoryClient[IO] =
       new InventoryClient[IO] {
-        def reserve(sku: String, quantity: Int): IO[ReservationResult] =
+        def reserve(
+            sku: String,
+            quantity: Int,
+            orderItemId: String
+        ): IO[ReservationResult] =
           IO.raiseError(new RuntimeException("circuit open"))
       }
     for {
@@ -129,7 +141,11 @@ class OrderRoutesSuite extends CatsEffectSuite {
     for {
       callCount <- IO.ref(0)
       client = new InventoryClient[IO] {
-        def reserve(sku: String, quantity: Int): IO[ReservationResult] =
+        def reserve(
+            sku: String,
+            quantity: Int,
+            orderItemId: String
+        ): IO[ReservationResult] =
           callCount.update(_ + 1).as(ReservationResult.InsufficientStock)
       }
       twoItemRequest = CreateOrderRequest(
