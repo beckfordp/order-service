@@ -1,0 +1,5 @@
+Final verification report: Phase 2 - Redis config + OrderHistoryCache
+
+Automated tests: sbt scalafmtCheck test -> 104/104 passed, formatting clean (includes OrderHistoryCacheSuite's real-Redis-backed tests via Testcontainers - cache miss, hit, and real TTL expiry).
+
+Manual verification: ran scripts/verify-redis-config.sh - confirmed order-service boots cleanly against the new required redis config block (the one thing not already covered by the test suite's own self-constructed HOCON). The cache itself isn't wired into Main.scala yet (that's Phase 3), so this only exercises config loading, same scope as Phase 1 of the Kafka-consumer track. All checks passed.
