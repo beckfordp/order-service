@@ -50,6 +50,15 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   exact `orderItemId` match — a single correctly-attributed event is
   sufficient, since the synchronous call already verified every item's
   outcome before leaving the order `pending`
+- **Order history** — `GET /orders?customerId=<id>` (required query param,
+  no auth) returns that customer's orders newest-first as
+  `List[OrderResponse]` (same shape as `GET /orders/{id}`). Cache-aside via
+  Redis (`OrderHistoryCache`, `redis4cats`): a hit returns the cached list; a
+  miss queries `OrderStore.listByCustomer`, caches the result with a
+  configurable TTL, and returns it. TTL-only freshness — no explicit
+  invalidation when an order is created or its status changes, so a write
+  can take up to the TTL to show up in a cached list. First Redis
+  integration anywhere in Gluon
 
 ## User stories in scope (gluon/docs/user-stories.md)
 - US-3.1 — checkout creates an order

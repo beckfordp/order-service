@@ -23,6 +23,12 @@
 - postgresql JDBC 42.7.13 — Flyway-only (runtime scope), never used directly
   in application code
 
+## Caching
+- redis4cats-effects + redis4cats-log4cats 2.0.6 — cats-effect-native Redis
+  client (US-8.1), caches a customer's order history (`OrderHistoryCache`),
+  cache-aside with TTL-only freshness. First Redis integration anywhere in
+  Gluon — no prior pattern existed to follow
+
 ## Config
 - pureconfig 0.17.10 — typed config from `application.conf`
 
@@ -36,17 +42,15 @@
 ## Testing
 - munit 1.3.6 + munit-cats-effect 2.2.1
 - log4cats-testing 2.8.0 — assert on structured log output
-- testcontainers-scala 0.43.6 (postgresql + kafka + munit modules) — real,
-  ephemeral Postgres/Kafka for integration tests, no manual local setup
+- testcontainers-scala 0.43.6 (postgresql + kafka + redis + munit modules) —
+  real, ephemeral Postgres/Kafka/Redis for integration tests, no manual
+  local setup
 - scalafmt (default Scala 3 style) — `sbt scalafmtCheck test` run in CI
 
 ## Packaging / local deploy
 - sbt-native-packager (`JavaAppPackaging`, `DockerPlugin`)
 - Docker image: `eclipse-temurin:21-jre`
-- Docker Compose — local Postgres + Kafka
-
-## Not yet in `build.sbt` (needed for upcoming backlog items)
-- Redis client — for US-8.1 (order history cache)
+- Docker Compose — local Postgres + Kafka + Redis
 
 ## Target infrastructure (platform-wide, from `gluon/docs/system-design.md`)
 - Local: OrbStack Kubernetes (see ADR 0002)
