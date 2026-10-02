@@ -1,0 +1,16 @@
+Phase 1 verification report: OrderStatusChangedEvent + publishStatusChanged (US-5.4)
+
+Automated tests: sbt testOnly orderservice.OrderEventPublisherSuite
+Result: 3 passed, 0 failed.
+
+Manual verification (prompt-off: via committed script, not an interactive walkthrough):
+Command: ./scripts/verify-order-event-publisher.sh (extended this run to also
+cover order.status-changed, not just order.reserved)
+- Confirms OrderEventPublisher.statusChangedTopic matches the pinned
+  "order.status-changed" topic name from gluon/docs/system-design.md.
+- Produces the exact JSON shape OrderStatusChangedEvent's codec emits, by
+  hand, via kafka-console-producer.sh, and reads it back via
+  kafka-console-consumer.sh against the real docker-compose Kafka (not
+  Testcontainers), confirming the wire format round-trips.
+
+Result: All checks passed.
