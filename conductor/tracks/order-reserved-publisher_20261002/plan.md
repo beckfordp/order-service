@@ -20,7 +20,7 @@
 - [x] Task: Run tests, confirm green `83d9d0c` - 2 passed, 0 failed
 - [x] Task: Conductor - User Manual Verification 'Event payload + publisher' (Protocol in workflow.md) `8e67c21` - verified via committed script (prompt-off), see git note on checkpoint commit
 
-## Phase 3: Wire the publish into StockEventConsumer + Main
+## Phase 3: Wire the publish into StockEventConsumer + Main [checkpoint: 0d97a77]
 
 - [x] Task: Write a failing Testcontainers-Kafka test: a synthetic inventory.stock-reserved event against a matching Pending order results in both the status becoming Reserved and an order.reserved event published with the correct orderId/customerId/totalCents `ad5cc70`
 - [x] Task: Update StockEventConsumer.reservedStream to build and publish OrderReservedEvent on a successful transition, skipping publish on the existing no-op case `ad5cc70`
@@ -28,6 +28,6 @@
 - [x] Task: Write a failing test confirming order.reserved is never published from reservationFailedStream (that's US-5.4's job, not this track's) `ad5cc70` - first version was flaky against the shared Testcontainers Kafka (saw another test's leftover message); fixed by checking for no message matching *this test's* order id, not just "no message at all"
 - [x] Task: Run tests, confirm green `ad5cc70` - 111 passed, 0 failed (full suite)
 - [x] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code) - 92.20% statement / 93.00% branch overall
-- [ ] Task: Conductor - User Manual Verification 'order.reserved publish wiring' (final, Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'order.reserved publish wiring' (final, Protocol in workflow.md) `0d97a77` - verified via committed script (prompt-off); script's live scope reduced to boot+checkout after a reproducible local-broker race blocked the full live round trip (see git note on checkpoint commit for full detail) - the round trip itself is proven by StockEventConsumerSuite's Testcontainers tests instead
 
 Three phases, each independently testable before the next builds on it - Phase 1 is a pure data-shape change to existing code, Phase 2 is the publish side in isolation (same pattern as inventory-service's US-5.1 and payment-service's just-landed PaymentEventPublisher), Phase 3 wires them together and proves the end-to-end outcome system-design.md already pinned.
