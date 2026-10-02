@@ -1,0 +1,27 @@
+Final verification report: US-5.4 publish order.status-changed (reservation_failed) when a reservation fails
+
+Automated tests: sbt test (full suite)
+Result: 116 passed, 0 failed, 92.14% statement / 92.38% branch coverage.
+Includes 4 tests specific to this track's behavior: publishes on sync
+checkout failure with correct orderId/customerId/status; does not publish
+on sync checkout success; publishes on the async stock-reservation-failed
+path with correct fields; never publishes from reservedStream. Confirmed
+stable across 3 repeated full-suite runs (a flaky shared-container test was
+found and fixed along the way - see git note on a805d67).
+
+Manual verification (prompt-off: via committed script, not an interactive walkthrough):
+Command: ./scripts/verify-order-status-changed-end-to-end.sh
+Scoped from the start to avoid US-5.3's own documented local-broker race
+(starting a new producer at the same moment the merged consumer stream joins
+its groups) - reservationFailedStream now shares that same producer, so the
+same race would apply. Verifies instead: order-service boots cleanly with
+the (already wired) OrderEventPublisher; a checkout with a reservable item
+returns pending; a checkout with an item the stub rejects (simulating
+insufficient stock) returns reservation_failed - both synchronous outcomes
+proven live over real HTTP, neither touching the flaky consumer-group-join
+path. The Kafka publish round trip itself (both paths) is proven by
+StockEventConsumerSuite's and OrderRoutesSuite's tests instead.
+
+Result: All checks passed, first attempt - applying the lesson from US-5.3's
+track up front (rather than rediscovering it) avoided the iteration cost
+that track paid.
