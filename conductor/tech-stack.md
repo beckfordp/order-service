@@ -6,7 +6,8 @@
 
 ## Effects / HTTP
 - Cats Effect 3.7.0
-- http4s 0.23.37 (ember-server)
+- http4s 0.23.37 (ember-server, ember-client — client used by `InventoryClient`
+  for the resilience-wrapped sync reserve call to inventory-service)
 - circe 0.14.16
 
 ## API layer
@@ -42,8 +43,8 @@
 - Docker Compose — local Postgres
 
 ## Not yet in `build.sbt` (needed for upcoming backlog items)
-- Kafka client — for US-4.2 (none directly; reserve call is sync HTTP) and
-  US-5.2 (consume `inventory.stock-reserved` / `inventory.stock-reservation-failed`)
+- Kafka client — for US-5.2 (consume `inventory.stock-reserved` /
+  `inventory.stock-reservation-failed`)
 - Redis client — for US-8.1 (order history cache)
 
 ## Target infrastructure (platform-wide, from `gluon/docs/system-design.md`)

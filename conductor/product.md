@@ -33,6 +33,14 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   and all its items are persisted atomically in one DB transaction. No FK to
   catalog-service — different service, different database, logical
   reference + snapshot only
+- **Stock reservation** — checkout synchronously calls inventory-service's
+  reserve endpoint per item via `InventoryClient`, wrapped in purerest's
+  `Resilience.middleware` (retry + circuit breaker). All-or-nothing: the
+  order and its items are always persisted, but `status` becomes
+  `reservation_failed` if any item can't be reserved or the call fails;
+  otherwise it stays `pending`. No compensating release of already-reserved
+  items on partial failure (inventory-service has no such endpoint); partial
+  order fulfillment is a flagged future improvement, not yet designed
 
 ## User stories in scope (gluon/docs/user-stories.md)
 - US-3.1 — checkout creates an order
