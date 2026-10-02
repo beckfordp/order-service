@@ -65,13 +65,18 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 - US-4.2 — wire resilience middleware for the reserve call to inventory-service
 - US-5.2 — consume `inventory.stock-reserved` / `inventory.stock-reservation-failed`, update order status
 - US-5.3 — publish `order.reserved` once an order's stock is fully reserved
+- US-5.4 — publish `order.status-changed` (`reservation_failed`) when a
+  reservation fails, from either the synchronous checkout-failure path or
+  the async consumer path
 - US-8.1 — order history read endpoint + Redis cache
 
 ## Sequencing (gluon/PLAN.md)
 - **Phase 1** (parallel with inventory-service) — US-3.1
 - **Phase 2** (depends on Phase 1) — US-4.2, resilience-wrapped sync reserve call
 - **Phase 3** (parallel with inventory-service) — US-5.2, consume Kafka events;
-  US-5.3, publish `order.reserved` (order-service's first Kafka producer)
+  US-5.3, publish `order.reserved` (order-service's first Kafka producer);
+  US-5.4, publish `order.status-changed` on reservation failure (reuses the
+  same producer)
 - **Phase 8** (independent — can run anytime) — US-8.1, order history + Redis cache
 
 ## Events
