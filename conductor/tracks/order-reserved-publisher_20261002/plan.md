@@ -22,11 +22,11 @@
 
 ## Phase 3: Wire the publish into StockEventConsumer + Main
 
-- [ ] Task: Write a failing Testcontainers-Kafka test: a synthetic inventory.stock-reserved event against a matching Pending order results in both the status becoming Reserved and an order.reserved event published with the correct orderId/customerId/totalCents
-- [ ] Task: Update StockEventConsumer.reservedStream to build and publish OrderReservedEvent on a successful transition, skipping publish on the existing no-op case
-- [ ] Task: Wire OrderEventPublisher as a Resource in Main.scala and pass it into StockEventConsumer.run
-- [ ] Task: Write a failing test confirming order.reserved is never published from reservationFailedStream (that's US-5.4's job, not this track's)
-- [ ] Task: Run tests, confirm green
+- [x] Task: Write a failing Testcontainers-Kafka test: a synthetic inventory.stock-reserved event against a matching Pending order results in both the status becoming Reserved and an order.reserved event published with the correct orderId/customerId/totalCents `ad5cc70`
+- [x] Task: Update StockEventConsumer.reservedStream to build and publish OrderReservedEvent on a successful transition, skipping publish on the existing no-op case `ad5cc70`
+- [x] Task: Wire OrderEventPublisher as a Resource in Main.scala and pass it into StockEventConsumer.run `ad5cc70`
+- [x] Task: Write a failing test confirming order.reserved is never published from reservationFailedStream (that's US-5.4's job, not this track's) `ad5cc70` - first version was flaky against the shared Testcontainers Kafka (saw another test's leftover message); fixed by checking for no message matching *this test's* order id, not just "no message at all"
+- [x] Task: Run tests, confirm green `ad5cc70` - 111 passed, 0 failed (full suite)
 - [ ] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code)
 - [ ] Task: Conductor - User Manual Verification 'order.reserved publish wiring' (final, Protocol in workflow.md)
 
