@@ -40,7 +40,16 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   `reservation_failed` if any item can't be reserved or the call fails;
   otherwise it stays `pending`. No compensating release of already-reserved
   items on partial failure (inventory-service has no such endpoint); partial
-  order fulfillment is a flagged future improvement, not yet designed
+  order fulfillment is a flagged future improvement, not yet designed.
+  Checkout persists the order (minting real `order_items.id`s) before
+  calling reserve, so each reserve call carries its item's real id as
+  `orderItemId` — sent to inventory-service and echoed back on its async
+  `inventory.stock-reserved`/`inventory.stock-reservation-failed` events. A
+  background Kafka consumer (`StockEventConsumer`) listens for those events
+  and flips a still-`pending` order to `reserved`/`reservation_failed` by
+  exact `orderItemId` match — a single correctly-attributed event is
+  sufficient, since the synchronous call already verified every item's
+  outcome before leaving the order `pending`
 
 ## User stories in scope (gluon/docs/user-stories.md)
 - US-3.1 — checkout creates an order
