@@ -1,0 +1,5 @@
+Final verification report: Phase 2 - Wire orderItemId into the synchronous reserve call
+
+Automated tests: sbt scalafmtCheck test -> 91/91 passed, formatting clean.
+
+Manual verification: ran scripts/verify-orderitemid-wiring.sh - real order-service instance, real Postgres, pointed at a minimal Python HTTP stand-in for inventory-service (captures raw requests, not a real inventory-service, per PLAN.md's stub/fan-out guidance). Confirmed: checkout with two line items returns 201/pending, the stub received exactly 2 reserve requests, and each one's orderItemId field matched the real, persisted order_items.id returned in the order response (not a stub id). This is the one thing InventoryClientSuite's own stub-Client[F] tests can't catch, since they never exercise real end-to-end JSON request-body encoding through a live checkout call. All checks passed.
