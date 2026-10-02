@@ -7,7 +7,7 @@
 
 ## Phase 2: Redis config + OrderHistoryCache (self-contained, no existing signatures change)
 
-- [ ] Task: Add `redis4cats-effects`/`redis4cats-log4cats`/`testcontainers-scala-redis` dependencies (versions confirmed against Maven Central at implementation time); add `redis` block to `application.conf` + `RedisConfig`/`OrderServiceConfig` field; add a Redis service to `docker-compose.yml`
+- [x] Task: Add `redis4cats-effects`/`redis4cats-log4cats`/`testcontainers-scala-redis` dependencies (versions confirmed against Maven Central at implementation time); add `redis` block to `application.conf` + `RedisConfig`/`OrderServiceConfig` field; add a Redis service to `docker-compose.yml` `64e6a29`
 - [ ] Task: Add `OrderHistoryCache[F[_]]` (`get`/`set` wrapping `redis4cats`, TTL from config) with an in-memory stub for route-level tests; Testcontainers-Redis tests: cache miss then hit, and expiry after the configured TTL re-misses
 - [ ] Task: Conductor - User Manual Verification 'Redis config + OrderHistoryCache' (Protocol in workflow.md)
 
