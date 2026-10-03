@@ -21,9 +21,9 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 - **Order** — `customerId` (create-only), `totalCents` (computed server-side
   from its items' `quantity × unitPriceCents`, summed — not client-supplied),
   `status` (server-defaulted `"pending"`; hardened to a closed `OrderStatus`
-  ADT — `Pending`/`Reserved`/`ReservationFailed` — at both the Scala and DB
-  level: a `text.eimap`-based Skunk codec plus a Postgres `CHECK` constraint.
-  PATCH/PUT reject any other value with `400`)
+  ADT — `Pending`/`Reserved`/`ReservationFailed`/`Confirmed`/`PaymentFailed`
+  — at both the Scala and DB level: a `text.eimap`-based Skunk codec plus a
+  Postgres `CHECK` constraint. PATCH/PUT reject any other value with `400`)
 - **OrderItem** (hand-added — not codegen'd) — `id`, `orderId`, `sku`,
   `productName`, `unitPriceCents`, `quantity`, all snapshotted at
   order-create time; `order_items.order_id` → `"order"(id)`
@@ -50,6 +50,14 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   exact `orderItemId` match — a single correctly-attributed event is
   sufficient, since the synchronous call already verified every item's
   outcome before leaving the order `pending`
+- **Payment settlement** — a background Kafka consumer
+  (`PaymentEventConsumer`) listens for payment-service's `payment.settled`/
+  `payment.failed` events and flips a `Reserved` order to `confirmed`/
+  `payment_failed` by exact `orderId` match (unlike the stock-reservation
+  consumer, which matches by `orderItemId`). Publishes `order.status-changed`
+  on a successful transition. A redelivered/out-of-order event for an order
+  that's no longer `Reserved` (or an unknown `orderId`) is an idempotent
+  no-op
 - **Order history** — `GET /orders?customerId=<id>` (required query param,
   no auth) returns that customer's orders newest-first as
   `List[OrderResponse]` (same shape as `GET /orders/{id}`). Cache-aside via
@@ -68,6 +76,8 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 - US-5.4 — publish `order.status-changed` (`reservation_failed`) when a
   reservation fails, from either the synchronous checkout-failure path or
   the async consumer path
+- US-6.3 — consume `payment.settled` / `payment.failed`, update order
+  status to `confirmed` / `payment_failed`, publish `order.status-changed`
 - US-8.1 — order history read endpoint + Redis cache
 
 ## Sequencing (gluon/PLAN.md)
@@ -77,11 +87,16 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   US-5.3, publish `order.reserved` (order-service's first Kafka producer);
   US-5.4, publish `order.status-changed` on reservation failure (reuses the
   same producer)
+- **Phase 4** (depends on payment-service's US-6.1 actually publishing) —
+  US-6.3, consume `payment.settled`/`payment.failed`, update order status to
+  `confirmed`/`payment_failed`, publish `order.status-changed` (reuses
+  US-5.3/US-5.4's `OrderEventPublisher`)
 - **Phase 8** (independent — can run anytime) — US-8.1, order history + Redis cache
 
 ## Events
 - Publishes: `order.reserved`, `order.status-changed`
-- Consumes: `inventory.stock-reserved`, `inventory.stock-reservation-failed`
+- Consumes: `inventory.stock-reserved`, `inventory.stock-reservation-failed`,
+  `payment.settled`, `payment.failed`
 
 ## Out of scope for this service
 - Auth/identity (bare `customerId` for now — no user-service yet)

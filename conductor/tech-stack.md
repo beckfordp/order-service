@@ -11,7 +11,9 @@
 - circe 0.14.16
 - fs2-kafka 3.6.0 — consumer side (US-5.2), subscribes to
   `inventory.stock-reserved`/`inventory.stock-reservation-failed`; producer
-  side added for US-5.3 (`OrderEventPublisher`, publishes `order.reserved`)
+  side added for US-5.3 (`OrderEventPublisher`, publishes `order.reserved`);
+  a second consumer added for US-6.3 (`PaymentEventConsumer`, subscribes to
+  `payment.settled`/`payment.failed`)
 - cats-retry (`com.github.cb372`) — not an explicit `build.sbt` dependency;
   comes transitively via `purerestlib`, which uses it internally for
   `purerest.resilience`'s own `Client[F]` retry middleware. Used directly
