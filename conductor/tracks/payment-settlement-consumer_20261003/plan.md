@@ -4,10 +4,10 @@
 
 - [x] Task: Add OrderStatus.Confirmed ("confirmed") and OrderStatus.PaymentFailed ("payment_failed") cases to the ADT (asString/fromString) `8f3ac85`
 - [x] Task: Write failing OrderStatus tests for the two new cases (asString + fromString round trip, plus fromString rejecting unrelated garbage still works) `8f3ac85`
-- [ ] Task: Add migration V6__add_payment_status_values.sql - drop+recreate order_status_check to include all 5 values
-- [ ] Task: Write failing OrderStoreSuite (in-memory) + OrderStorePostgresSuite tests for a new `updateStatusIfCurrent(id, expected, newStatus): F[Option[UpdatedOrderRef]]` method: success when current==expected; no-op (None) when current!=expected; no-op (None) for unknown id
-- [ ] Task: Implement updateStatusIfCurrent in the OrderStore trait + in-memory + Postgres impls (atomic guarded transition, mirrors updateStatusByItemId's pattern)
-- [ ] Task: Run tests, confirm green
+- [x] Task: Add migration V6__add_payment_status_values.sql - drop+recreate order_status_check to include all 5 values `2b190cf`
+- [x] Task: Write failing OrderStoreSuite (in-memory) + OrderStorePostgresSuite tests for a new `updateStatusIfCurrent(id, expected, newStatus): F[Option[UpdatedOrderRef]]` method: success when current==expected; no-op (None) when current!=expected; no-op (None) for unknown id `2b190cf`
+- [x] Task: Implement updateStatusIfCurrent in the OrderStore trait + in-memory + Postgres impls (atomic guarded transition, mirrors updateStatusByItemId's pattern) `2b190cf`
+- [x] Task: Run tests, confirm green `2b190cf` - 125 passed, 0 failed
 - [ ] Task: Conductor - User Manual Verification 'OrderStatus extension + updateStatusIfCurrent' (Protocol in workflow.md)
 
 ## Phase 2: PaymentEventConsumer + Main wiring
