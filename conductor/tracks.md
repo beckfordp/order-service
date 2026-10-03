@@ -4,7 +4,7 @@ This file tracks all major tracks for the project.
 
 ---
 
-- [ ] **Track: US-6.3: consume payment.settled / payment.failed, update order status to confirmed / payment_failed, publish order.status-changed**
+- [~] **Track: US-6.3: consume payment.settled / payment.failed, update order status to confirmed / payment_failed, publish order.status-changed**
   *Link: [./tracks/payment-settlement-consumer_20261003/](./tracks/payment-settlement-consumer_20261003/)*
 
 ---

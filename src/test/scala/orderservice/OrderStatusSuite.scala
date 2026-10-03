@@ -19,13 +19,29 @@ class OrderStatusSuite extends CatsEffectSuite {
     )
   }
 
+  test("fromString parses \"confirmed\" as Confirmed") {
+    assertEquals(OrderStatus.fromString("confirmed"), Right(OrderStatus.Confirmed))
+  }
+
+  test("fromString parses \"payment_failed\" as PaymentFailed") {
+    assertEquals(
+      OrderStatus.fromString("payment_failed"),
+      Right(OrderStatus.PaymentFailed)
+    )
+  }
+
   test("fromString rejects an unrecognized value") {
     assert(OrderStatus.fromString("bogus").isLeft)
   }
 
   test("asString round-trips through fromString for every status") {
-    List(OrderStatus.Pending, OrderStatus.Reserved, OrderStatus.ReservationFailed)
-      .foreach { status =>
+    List(
+      OrderStatus.Pending,
+      OrderStatus.Reserved,
+      OrderStatus.ReservationFailed,
+      OrderStatus.Confirmed,
+      OrderStatus.PaymentFailed
+    ).foreach { status =>
         assertEquals(OrderStatus.fromString(status.asString), Right(status))
       }
   }
