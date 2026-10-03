@@ -1,0 +1,33 @@
+Phase 2 (final) verification report: PaymentEventConsumer + Main wiring (US-6.3)
+
+Automated tests: sbt test
+Result: 133 passed, 0 failed (full suite). Coverage: 92.42% statement /
+92.62% branch overall.
+
+Manual verification (prompt-off: via committed script, not an interactive
+walkthrough):
+Command: ./scripts/verify-payment-settlement-consumer-end-to-end.sh
+
+Scope note: applying the lesson from US-5.3/US-5.4's documented local-only
+Kafka broker race (a new producer connecting at the same moment a
+consumer's merged stream joins its consumer groups crashes the colliding
+consumer on this project's single-node KRaft docker-compose Kafka) -
+scoped this script from the start to what's reliably provable live:
+order-service boots cleanly against the real docker-compose stack with
+PaymentEventConsumer's two new consumer groups (order-service-payment-settled,
+order-service-payment-failed) wired in alongside StockEventConsumer's two
+existing groups and OrderEventPublisher's producer - four consumer groups
+plus one producer all connecting concurrently at startup, strictly more
+concurrent connections than either prior track had. No exception appeared
+in the startup log, and both /health and /health/ready returned 200.
+
+The actual consume -> transition -> publish behavior (payment.settled ->
+confirmed, payment.failed -> payment_failed, the non-Reserved/unknown-id/
+malformed-event no-op paths, and cross-topic routing) is proven instead by
+PaymentEventConsumerSuite's 8 Testcontainers-Kafka tests, confirmed stable
+across 3 repeated runs before this checkpoint.
+
+Result: All checks passed. Passed with only one trivial fix needed (a wrong
+endpoint path assumption in the script itself, /ready instead of the real
+/health/ready) - no actual service or infrastructure issue, unlike US-5.3's
+four failed attempts debugging the broker race itself.
