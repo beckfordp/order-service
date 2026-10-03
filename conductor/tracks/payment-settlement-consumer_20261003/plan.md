@@ -12,17 +12,17 @@
 
 ## Phase 2: PaymentEventConsumer + Main wiring
 
-- [ ] Task: Add PaymentSettledEvent/PaymentFailedEvent case classes (orderId, paymentId, amountCents, timestamp) with circe Codecs in a new PaymentEventConsumer.scala (mirrors StockEventConsumer.scala's co-located event mirrors)
-- [ ] Task: Write a failing Testcontainers-Kafka test: a synthetic payment.settled event for a Reserved order moves it to confirmed and publishes order.status-changed (status="confirmed") with correct orderId/customerId, via a capturing test-double publisher
-- [ ] Task: Write a failing test: a synthetic payment.failed event for a Reserved order moves it to payment_failed and publishes order.status-changed (status="payment_failed")
-- [ ] Task: Write a failing test: an event for an order NOT currently Reserved (e.g. still pending, or already confirmed) is a no-op - no status change, no publish
-- [ ] Task: Write a failing test: an event for an unknown orderId is a no-op, logged info, no crash
-- [ ] Task: Write a failing test: a malformed/undecodable event is logged as a decode failure, offset still committed, no crash
-- [ ] Task: Write a failing cross-topic negative test: settledStream never triggers a transition from a payment.failed-shaped event and vice versa
-- [ ] Task: Implement PaymentEventConsumer (settledStream, failedStream merged via run[F]), using updateStatusIfCurrent + the existing OrderEventPublisher.publishStatusChanged
-- [ ] Task: Wire PaymentEventConsumer.run into Main.scala as an additional backgrounded fiber alongside the existing StockEventConsumer, sharing the same OrderEventPublisher instance
-- [ ] Task: Run tests, confirm green
-- [ ] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code)
+- [x] Task: Add PaymentSettledEvent/PaymentFailedEvent case classes (orderId, paymentId, amountCents, timestamp) with circe Codecs in a new PaymentEventConsumer.scala (mirrors StockEventConsumer.scala's co-located event mirrors) `2204c94`
+- [x] Task: Write a failing Testcontainers-Kafka test: a synthetic payment.settled event for a Reserved order moves it to confirmed and publishes order.status-changed (status="confirmed") with correct orderId/customerId, via a capturing test-double publisher `2204c94`
+- [x] Task: Write a failing test: a synthetic payment.failed event for a Reserved order moves it to payment_failed and publishes order.status-changed (status="payment_failed") `2204c94`
+- [x] Task: Write a failing test: an event for an order NOT currently Reserved (e.g. still pending, or already confirmed) is a no-op - no status change, no publish `2204c94`
+- [x] Task: Write a failing test: an event for an unknown orderId is a no-op, logged info, no crash `2204c94`
+- [x] Task: Write a failing test: a malformed/undecodable event is logged as a decode failure, offset still committed, no crash `2204c94`
+- [x] Task: Write a failing cross-topic negative test: settledStream never triggers a transition from a payment.failed-shaped event and vice versa `2204c94`
+- [x] Task: Implement PaymentEventConsumer (settledStream, failedStream merged via run[F]), using updateStatusIfCurrent + the existing OrderEventPublisher.publishStatusChanged `2204c94`
+- [x] Task: Wire PaymentEventConsumer.run into Main.scala as an additional backgrounded fiber alongside the existing StockEventConsumer, sharing the same OrderEventPublisher instance `2204c94`
+- [x] Task: Run tests, confirm green `2204c94` - 133 passed, 0 failed; confirmed stable across 3 repeated runs of PaymentEventConsumerSuite
+- [x] Task: Verify coverage (sbt coverage test coverageReport, target >80% on new code) `2204c94` - 92.42% statement / 92.62% branch overall
 - [ ] Task: Conductor - User Manual Verification 'payment.settled/payment.failed consumer wiring' (final, Protocol in workflow.md)
 
 Two phases - Phase 1 is the status/store layer in isolation (small,
