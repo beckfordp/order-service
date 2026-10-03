@@ -1,0 +1,22 @@
+Phase 1 verification report: OrderStatus extension + OrderStore.updateStatusIfCurrent (US-6.3)
+
+Automated tests: sbt test
+Result: 125 passed, 0 failed (full suite, including 30/30 in
+OrderStorePostgresSuite against real Testcontainers Postgres, schema version 6).
+
+Manual verification (prompt-off: via committed script, not an interactive
+walkthrough):
+Command: ./scripts/verify-updatestatusifcurrent.sh
+- Spins up a throwaway Postgres container (port 15432), applies this repo's
+  real Flyway migrations V1-V6 directly.
+- Confirms the V6 migration's widened order_status_check CHECK constraint
+  accepts both new values ('confirmed', 'payment_failed') and still rejects
+  an out-of-set value (constraint violation raised as expected).
+- Runs the exact updateOrderStatusIfCurrent SQL from OrderStore.scala by
+  hand: a Reserved order transitions to Confirmed and returns
+  id/customer_id/total_cents; re-running the same guarded UPDATE against the
+  now-Confirmed order is a no-op (0 rows, status unchanged) - proving a
+  redelivered/out-of-order payment event can't regress an already-settled
+  order.
+
+Result: All checks passed.
