@@ -46,6 +46,14 @@ object Main extends IOApp.Simple {
                           logger,
                           orderEventPublisher
                         )
+                        .merge(
+                          PaymentEventConsumer.run[IO](
+                            config.kafka,
+                            store,
+                            logger,
+                            orderEventPublisher
+                          )
+                        )
                         .compile
                         .drain
                         .background
