@@ -1,0 +1,8 @@
+{
+  "track_id": "payment-settlement-consumer_20261003",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-03T04:21:27Z",
+  "updated_at": "2026-10-03T04:21:27Z",
+  "description": "US-6.3: consume payment.settled / payment.failed, update order status to confirmed / payment_failed, publish order.status-changed"
+}
