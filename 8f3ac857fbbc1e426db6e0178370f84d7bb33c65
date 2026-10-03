@@ -1,0 +1,16 @@
+Task: Add OrderStatus.Confirmed and PaymentFailed cases + tests (US-6.3 Phase 1)
+
+Summary: Extended the closed OrderStatus ADT with two new terminal cases -
+Confirmed ('confirmed') and PaymentFailed ('payment_failed') - needed to
+represent the outcome of payment-service's payment.settled/payment.failed
+events. Both asString and fromString updated; fromString's error path is
+unaffected (still rejects any other string).
+
+Files changed:
+- src/main/scala/orderservice/OrderStatus.scala
+- src/test/scala/orderservice/OrderStatusSuite.scala
+
+Why: US-6.3 needs a target status to transition an order to once a payment
+settles or fails. These two cases are the DB/Scala-level groundwork; the
+CHECK constraint migration and the actual transition logic come next in
+this phase.
