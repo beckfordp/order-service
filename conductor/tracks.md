@@ -4,11 +4,6 @@ This file tracks all major tracks for the project.
 
 ---
 
-- [x] **Track: US-6.3: consume payment.settled / payment.failed, update order status to confirmed / payment_failed, publish order.status-changed**
-  *Link: [./tracks/payment-settlement-consumer_20261003/](./tracks/payment-settlement-consumer_20261003/)*
-
----
-
 ## Backlog
 
 Title-only placeholders for future tracks — not yet detailed (no spec/plan, no linked
