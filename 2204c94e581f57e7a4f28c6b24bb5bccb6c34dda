@@ -1,0 +1,47 @@
+Task: Implement PaymentEventConsumer + Main wiring (US-6.3 Phase 2)
+
+Summary: Added PaymentEventConsumer.scala, mirroring StockEventConsumer.scala's
+structure exactly:
+- PaymentSettledEvent/PaymentFailedEvent local mirrors (orderId, paymentId,
+  amountCents, timestamp), circe Codec via deriveCodec.
+- settledStream (consumer group order-service-payment-settled, topic
+  payment.settled) and failedStream (group order-service-payment-failed,
+  topic payment.failed), each: decode -> on failure log+commit-skip; on
+  success call store.updateStatusIfCurrent(orderId, Reserved, target),
+  publish order.status-changed via the existing OrderEventPublisher on
+  Some, log outcome, commit offset regardless.
+- run[F] merges both streams, same signature shape as StockEventConsumer.run.
+- Main.scala: StockEventConsumer.run merged with PaymentEventConsumer.run
+  before compiling/draining/backgrounding as one fiber, sharing the same
+  OrderEventPublisher instance built earlier in the resource chain.
+
+Tests (PaymentEventConsumerSuite.scala, new, 8 tests):
+- payment.settled -> Confirmed transition
+- payment.failed -> PaymentFailed transition
+- non-Reserved order (still Pending) -> no-op, doesn't block a later real event
+- unknown orderId -> no-op, doesn't block a later real event
+- malformed JSON -> decode-failure no-op, doesn't block a later real event
+- cross-topic routing: settled and failed events for two different orders
+  each land on their own distinct target status, not the other's
+- payment.settled also publishes order.status-changed (status=confirmed,
+  correct orderId/customerId)
+- payment.failed also publishes order.status-changed (status=payment_failed)
+
+Applied the US-5.3/US-5.4 lesson proactively: used consumeMatching
+(filter by order id) from the start instead of consumeOne, since this
+suite's tests share one Testcontainers Kafka instance and can run with a
+real (non-noOp) publisher concurrently - confirmed stable across 3 repeated
+runs (8/8 each time).
+
+Files changed:
+- src/main/scala/orderservice/PaymentEventConsumer.scala (new)
+- src/test/scala/orderservice/PaymentEventConsumerSuite.scala (new)
+- src/main/scala/orderservice/Main.scala
+
+Verification: 133/133 tests pass (full suite). Coverage: 92.42% statement /
+92.62% branch overall.
+
+Why: closes Phase 4's order-service side - once payment-service settles or
+fails a charge, the order now actually reaches confirmed/payment_failed and
+notification-service (US-7.1, separate repo) has an order.status-changed
+event to react to.
