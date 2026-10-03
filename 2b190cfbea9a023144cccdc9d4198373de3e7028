@@ -1,0 +1,39 @@
+Task: Add migration V6 + OrderStore.updateStatusIfCurrent + tests (US-6.3 Phase 1)
+
+Summary: Added V6__add_payment_status_values.sql (drop+recreate
+order_status_check to include 'confirmed'/'payment_failed' alongside the
+existing three values). Added a new atomic guarded-transition method,
+updateStatusIfCurrent(id, expected, newStatus), to the OrderStore trait and
+both impls - keyed directly by order id (unlike updateStatusByItemId, which
+joins through order_items), since payment.settled/payment.failed events
+carry orderId, not an item id. Only transitions if the order's current
+status equals expected; returns None (idempotent no-op) otherwise, or for
+an unknown/malformed id. In-memory impl uses Ref.modify's atomic
+compare-and-swap; Postgres impl adds a new prepared query
+(updateOrderStatusIfCurrent) with WHERE id = ? AND status = ?, mirroring
+updateOrderStatusByItemId's RETURNING shape.
+
+Also fixed 3 pre-existing test-double OrderStore[IO] implementations
+(HealthRoutesSuite x2, OrderRoutesSuite x2) that needed the new trait method
+added to compile - found immediately via the compiler, not missed.
+
+Files changed:
+- src/main/resources/db/migration/V6__add_payment_status_values.sql (new)
+- src/main/scala/orderservice/OrderStore.scala
+- src/test/scala/orderservice/OrderStoreSuite.scala
+- src/test/scala/orderservice/OrderStorePostgresSuite.scala
+- src/test/scala/orderservice/HealthRoutesSuite.scala
+- src/test/scala/orderservice/OrderRoutesSuite.scala
+- several other test files reformatted by scalafmt incidentally (pre-existing
+  line-length violations from US-5.4's 4th constructor param, unrelated to
+  this task's logic - confirmed whitespace-only via git diff before bundling)
+
+Verification: 125/125 tests pass (62 non-Postgres + 30 Postgres/Testcontainers
++ others), including 30/30 in OrderStorePostgresSuite proving the migration
+applies cleanly (schema version 6) and the new method's 3 behaviors (success,
+wrong-current-status no-op, unknown-id no-op) against real Postgres.
+
+Why: payment.settled/payment.failed consumer (Phase 2) needs an atomic,
+race-free way to transition an order from Reserved to Confirmed/PaymentFailed
+by orderId, without regressing a later/terminal status on a redelivered or
+out-of-order event.
