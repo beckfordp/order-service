@@ -1,6 +1,6 @@
 # Implementation Plan: US-6.3 consume payment.settled / payment.failed, update order status, publish order.status-changed
 
-## Phase 1: OrderStatus extension + OrderStore.updateStatusIfCurrent
+## Phase 1: OrderStatus extension + OrderStore.updateStatusIfCurrent [checkpoint: c24a466]
 
 - [x] Task: Add OrderStatus.Confirmed ("confirmed") and OrderStatus.PaymentFailed ("payment_failed") cases to the ADT (asString/fromString) `8f3ac85`
 - [x] Task: Write failing OrderStatus tests for the two new cases (asString + fromString round trip, plus fromString rejecting unrelated garbage still works) `8f3ac85`
@@ -8,7 +8,7 @@
 - [x] Task: Write failing OrderStoreSuite (in-memory) + OrderStorePostgresSuite tests for a new `updateStatusIfCurrent(id, expected, newStatus): F[Option[UpdatedOrderRef]]` method: success when current==expected; no-op (None) when current!=expected; no-op (None) for unknown id `2b190cf`
 - [x] Task: Implement updateStatusIfCurrent in the OrderStore trait + in-memory + Postgres impls (atomic guarded transition, mirrors updateStatusByItemId's pattern) `2b190cf`
 - [x] Task: Run tests, confirm green `2b190cf` - 125 passed, 0 failed
-- [ ] Task: Conductor - User Manual Verification 'OrderStatus extension + updateStatusIfCurrent' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'OrderStatus extension + updateStatusIfCurrent' (Protocol in workflow.md) `c24a466` - verified via committed script (prompt-off), see git note on checkpoint commit
 
 ## Phase 2: PaymentEventConsumer + Main wiring
 
