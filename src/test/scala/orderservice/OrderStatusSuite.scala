@@ -9,7 +9,10 @@ class OrderStatusSuite extends CatsEffectSuite {
   }
 
   test("fromString parses \"reserved\" as Reserved") {
-    assertEquals(OrderStatus.fromString("reserved"), Right(OrderStatus.Reserved))
+    assertEquals(
+      OrderStatus.fromString("reserved"),
+      Right(OrderStatus.Reserved)
+    )
   }
 
   test("fromString parses \"reservation_failed\" as ReservationFailed") {
@@ -20,7 +23,10 @@ class OrderStatusSuite extends CatsEffectSuite {
   }
 
   test("fromString parses \"confirmed\" as Confirmed") {
-    assertEquals(OrderStatus.fromString("confirmed"), Right(OrderStatus.Confirmed))
+    assertEquals(
+      OrderStatus.fromString("confirmed"),
+      Right(OrderStatus.Confirmed)
+    )
   }
 
   test("fromString parses \"payment_failed\" as PaymentFailed") {
@@ -42,7 +48,7 @@ class OrderStatusSuite extends CatsEffectSuite {
       OrderStatus.Confirmed,
       OrderStatus.PaymentFailed
     ).foreach { status =>
-        assertEquals(OrderStatus.fromString(status.asString), Right(status))
-      }
+      assertEquals(OrderStatus.fromString(status.asString), Right(status))
+    }
   }
 }

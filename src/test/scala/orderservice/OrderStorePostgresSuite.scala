@@ -13,9 +13,7 @@ import java.sql.DriverManager
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
-class OrderStorePostgresSuite
-    extends CatsEffectSuite
-    with TestContainerForAll {
+class OrderStorePostgresSuite extends CatsEffectSuite with TestContainerForAll {
 
   override val containerDef: PostgreSQLContainer.Def =
     PostgreSQLContainer.Def(dockerImageName =
@@ -302,6 +300,94 @@ class OrderStorePostgresSuite
     }
   }
 
+  test(
+    "updateStatusIfCurrent transitions when the order's current status matches expected, returning the order's details"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            _ <- store.update(created.id, OrderStatus.Reserved)
+            updated <- store.updateStatusIfCurrent(
+              created.id,
+              OrderStatus.Reserved,
+              OrderStatus.Confirmed
+            )
+            found <- store.get(created.id)
+          } yield {
+            assertEquals(
+              updated,
+              Some(UpdatedOrderRef(created.id, "cust-123", created.totalCents))
+            )
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
+          }
+        }
+    }
+  }
+
+  test(
+    "updateStatusIfCurrent returns None and leaves status unchanged when the order's current status doesn't match expected"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            updated <- store.updateStatusIfCurrent(
+              created.id,
+              OrderStatus.Reserved,
+              OrderStatus.Confirmed
+            )
+            found <- store.get(created.id)
+          } yield {
+            assertEquals(updated, None)
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
+          }
+        }
+    }
+  }
+
+  test("updateStatusIfCurrent returns None for an unknown order id") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          store
+            .updateStatusIfCurrent(
+              java.util.UUID.randomUUID().toString,
+              OrderStatus.Reserved,
+              OrderStatus.Confirmed
+            )
+            .map(updated => assertEquals(updated, None))
+        }
+    }
+  }
+
+  test(
+    "updateStatusIfCurrent returns None for a malformed (non-UUID) order id"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          store
+            .updateStatusIfCurrent(
+              "not-a-uuid",
+              OrderStatus.Reserved,
+              OrderStatus.Confirmed
+            )
+            .map(updated => assertEquals(updated, None))
+        }
+    }
+  }
+
   test("listByCustomer returns a customer's orders newest-first") {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -426,37 +512,36 @@ class OrderStorePostgresSuite
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
-      Metrics.test[IO]("order-store-postgres-metrics-test").use {
-        testMeter =>
-          Migrations.run[IO](config) *> OrderStore
-            .postgres[IO](config, testMeter.meter)
-            .use { store =>
-              for {
-                created <- store.create("cust-123", oneItem)
-                _ <- store.get(created._1.id)
-                metrics <- testMeter.collectMetrics
-              } yield {
-                val data =
-                  metrics.find(_.getName == "db.client.operation.duration")
-                assert(
-                  data.isDefined,
-                  s"expected a db.client.operation.duration series, got: $metrics"
+      Metrics.test[IO]("order-store-postgres-metrics-test").use { testMeter =>
+        Migrations.run[IO](config) *> OrderStore
+          .postgres[IO](config, testMeter.meter)
+          .use { store =>
+            for {
+              created <- store.create("cust-123", oneItem)
+              _ <- store.get(created._1.id)
+              metrics <- testMeter.collectMetrics
+            } yield {
+              val data =
+                metrics.find(_.getName == "db.client.operation.duration")
+              assert(
+                data.isDefined,
+                s"expected a db.client.operation.duration series, got: $metrics"
+              )
+              val dbOperationKey =
+                io.opentelemetry.api.common.AttributeKey
+                  .stringKey("db.operation")
+              val operations = data.get.getHistogramData.getPoints.asScala
+                .flatMap(point =>
+                  Option(point.getAttributes.get(dbOperationKey))
                 )
-                val dbOperationKey =
-                  io.opentelemetry.api.common.AttributeKey
-                    .stringKey("db.operation")
-                val operations = data.get.getHistogramData.getPoints.asScala
-                  .flatMap(point =>
-                    Option(point.getAttributes.get(dbOperationKey))
-                  )
-                  .toSet
-                assert(
-                  operations
-                    .contains("insert") && operations.contains("select"),
-                  s"expected db.operation attributes for both insert and select, got: $operations"
-                )
-              }
+                .toSet
+              assert(
+                operations
+                  .contains("insert") && operations.contains("select"),
+                s"expected db.operation attributes for both insert and select, got: $operations"
+              )
             }
+          }
       }
     }
   }
@@ -469,40 +554,39 @@ class OrderStorePostgresSuite
       // `mappedPort(5432) + 1`, it can't collide with another concurrently-running
       // Testcontainers Postgres instance's dynamically assigned port.
       val unreachableConfig = configFor(postgres).copy(port = 1)
-      Metrics.test[IO]("order-store-postgres-metrics-test").use {
-        testMeter =>
-          OrderStore
-            .postgres[IO](unreachableConfig, testMeter.meter)
-            .use { store =>
-              for {
-                result <- store.create("cust-123", oneItem).attempt
-                metrics <- testMeter.collectMetrics
-              } yield {
-                assert(
-                  result.isLeft,
-                  s"expected the connection failure to propagate, got: $result"
+      Metrics.test[IO]("order-store-postgres-metrics-test").use { testMeter =>
+        OrderStore
+          .postgres[IO](unreachableConfig, testMeter.meter)
+          .use { store =>
+            for {
+              result <- store.create("cust-123", oneItem).attempt
+              metrics <- testMeter.collectMetrics
+            } yield {
+              assert(
+                result.isLeft,
+                s"expected the connection failure to propagate, got: $result"
+              )
+              val data =
+                metrics.find(_.getName == "db.client.operation.duration")
+              assert(
+                data.isDefined,
+                s"expected a db.client.operation.duration series, got: $metrics"
+              )
+              val errorTypeKey =
+                io.opentelemetry.api.common.AttributeKey.stringKey(
+                  "error.type"
                 )
-                val data =
-                  metrics.find(_.getName == "db.client.operation.duration")
-                assert(
-                  data.isDefined,
-                  s"expected a db.client.operation.duration series, got: $metrics"
-                )
-                val errorTypeKey =
-                  io.opentelemetry.api.common.AttributeKey.stringKey(
-                    "error.type"
+              val hasErrorAttribute =
+                data.get.getHistogramData.getPoints.asScala
+                  .exists(point =>
+                    Option(point.getAttributes.get(errorTypeKey)).isDefined
                   )
-                val hasErrorAttribute =
-                  data.get.getHistogramData.getPoints.asScala
-                    .exists(point =>
-                      Option(point.getAttributes.get(errorTypeKey)).isDefined
-                    )
-                assert(
-                  hasErrorAttribute,
-                  s"expected a point tagged with error.type, got: ${data.get.getHistogramData.getPoints}"
-                )
-              }
+              assert(
+                hasErrorAttribute,
+                s"expected a point tagged with error.type, got: ${data.get.getHistogramData.getPoints}"
+              )
             }
+          }
       }
     }
   }

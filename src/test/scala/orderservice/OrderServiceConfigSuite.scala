@@ -135,8 +135,10 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
           baseUrl = "http://localhost:8081",
           resilience = ResilienceConfig(
             retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
-            circuitBreaker =
-              CircuitBreakerConfig(failureThreshold = 5, resetTimeout = 30.seconds)
+            circuitBreaker = CircuitBreakerConfig(
+              failureThreshold = 5,
+              resetTimeout = 30.seconds
+            )
           )
         )
       )

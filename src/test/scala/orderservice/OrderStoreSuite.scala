@@ -64,7 +64,9 @@ class OrderStoreSuite extends CatsEffectSuite {
     } yield assertNotEquals(first.id, second.id)
   }
 
-  test("update returns the updated entity with updatedAt not moving backwards") {
+  test(
+    "update returns the updated entity with updatedAt not moving backwards"
+  ) {
     for {
       store <- OrderStore.inMemory[IO]
       (created, _) <- store.create("cust-123", oneItem)
@@ -164,6 +166,57 @@ class OrderStoreSuite extends CatsEffectSuite {
         Some(OrderStatus.ReservationFailed)
       )
     }
+  }
+
+  test(
+    "updateStatusIfCurrent transitions when the order's current status matches expected, returning the order's details"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (created, _) <- store.create("cust-123", oneItem)
+      _ <- store.update(created.id, OrderStatus.Reserved)
+      updated <- store.updateStatusIfCurrent(
+        created.id,
+        OrderStatus.Reserved,
+        OrderStatus.Confirmed
+      )
+      found <- store.get(created.id)
+    } yield {
+      assertEquals(
+        updated,
+        Some(UpdatedOrderRef(created.id, "cust-123", created.totalCents))
+      )
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
+    }
+  }
+
+  test(
+    "updateStatusIfCurrent returns None and leaves status unchanged when the order's current status doesn't match expected"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (created, _) <- store.create("cust-123", oneItem)
+      updated <- store.updateStatusIfCurrent(
+        created.id,
+        OrderStatus.Reserved,
+        OrderStatus.Confirmed
+      )
+      found <- store.get(created.id)
+    } yield {
+      assertEquals(updated, None)
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
+    }
+  }
+
+  test("updateStatusIfCurrent returns None for an unknown order id") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      updated <- store.updateStatusIfCurrent(
+        "unknown-order-id",
+        OrderStatus.Reserved,
+        OrderStatus.Confirmed
+      )
+    } yield assertEquals(updated, None)
   }
 
   test("listByCustomer returns a customer's orders newest-first") {

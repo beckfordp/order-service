@@ -39,7 +39,9 @@ class OrderHistoryCacheSuite extends CatsEffectSuite with TestContainerForAll {
     }
   }
 
-  test("a cache miss followed by set populates the cache - subsequent get is a hit") {
+  test(
+    "a cache miss followed by set populates the cache - subsequent get is a hit"
+  ) {
     withContainers { redis =>
       val config = RedisConfig(uri = redis.redisUri, historyTtlSeconds = 60)
       val customerId = newCustomerId()

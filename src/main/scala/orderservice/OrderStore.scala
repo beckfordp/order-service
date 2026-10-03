@@ -65,6 +65,11 @@ trait OrderStore[F[_]] {
       orderItemId: String,
       newStatus: OrderStatus
   ): F[Option[UpdatedOrderRef]]
+  def updateStatusIfCurrent(
+      id: String,
+      expected: OrderStatus,
+      newStatus: OrderStatus
+  ): F[Option[UpdatedOrderRef]]
   def delete(id: String): F[Boolean]
   def ping: F[Boolean]
 }
@@ -190,6 +195,28 @@ object OrderStore {
           }
         } yield updated
 
+      def updateStatusIfCurrent(
+          id: String,
+          expected: OrderStatus,
+          newStatus: OrderStatus
+      ): F[Option[UpdatedOrderRef]] =
+        for {
+          now <- Sync[F].realTimeInstant
+          updated <- ordersRef.modify { entities =>
+            entities.get(id) match {
+              case Some(existing) if existing.status == expected =>
+                val next = existing.copy(status = newStatus, updatedAt = now)
+                (
+                  entities + (id -> next),
+                  Some(
+                    UpdatedOrderRef(next.id, next.customerId, next.totalCents)
+                  )
+                )
+              case _ => (entities, None)
+            }
+          }
+        } yield updated
+
       def delete(id: String): F[Boolean] =
         for {
           existed <- ordersRef.modify { entities =>
@@ -258,6 +285,23 @@ object OrderStore {
       SET status = $orderStatus, updated_at = now()
       WHERE status = $orderStatus
         AND id = (SELECT order_id FROM order_items WHERE id = $uuid)
+      RETURNING id, customer_id, total_cents
+    """.query(uuid *: text *: int4)
+
+  // Atomic guarded transition keyed by the order's own id directly (unlike
+  // updateOrderStatusByItemId above, which joins through order_items) -
+  // payment.settled/payment.failed events carry orderId, not an item id.
+  // Only transitions when the order's current status matches `expected`;
+  // any other current status or an unknown id both no-op (0 rows).
+  private val updateOrderStatusIfCurrent: skunk.Query[
+    (OrderStatus, UUID, OrderStatus),
+    (UUID, String, Int)
+  ] =
+    sql"""
+      UPDATE "order"
+      SET status = $orderStatus, updated_at = now()
+      WHERE id = $uuid
+        AND status = $orderStatus
       RETURNING id, customer_id, total_cents
     """.query(uuid *: text *: int4)
 
@@ -539,6 +583,30 @@ object OrderStore {
                               (newStatus, OrderStatus.Pending, itemUuid)
                             )
                           )
+                          .map(_.map { case (orderId, customerId, totalCents) =>
+                            UpdatedOrderRef(
+                              orderId.toString,
+                              customerId,
+                              totalCents
+                            )
+                          })
+                      }
+                    }
+                }
+
+              def updateStatusIfCurrent(
+                  id: String,
+                  expected: OrderStatus,
+                  newStatus: OrderStatus
+              ): F[Option[UpdatedOrderRef]] =
+                scala.util.Try(UUID.fromString(id)).toOption match {
+                  case None       => Sync[F].pure(None)
+                  case Some(uuid) =>
+                    timed("update_status_if_current") {
+                      pool.use { session =>
+                        session
+                          .prepare(updateOrderStatusIfCurrent)
+                          .flatMap(_.option((newStatus, uuid, expected)))
                           .map(_.map { case (orderId, customerId, totalCents) =>
                             UpdatedOrderRef(
                               orderId.toString,

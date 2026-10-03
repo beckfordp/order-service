@@ -14,7 +14,9 @@ import java.time.Instant
 import java.util.UUID
 import scala.concurrent.duration._
 
-class OrderEventPublisherSuite extends CatsEffectSuite with TestContainerForAll {
+class OrderEventPublisherSuite
+    extends CatsEffectSuite
+    with TestContainerForAll {
 
   override val containerDef: KafkaContainer.Def = KafkaContainer.Def()
 

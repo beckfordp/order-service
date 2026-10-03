@@ -37,8 +37,13 @@ class InventoryClientSuite extends CatsEffectSuite {
 
   test("reserve returns Reserved for a 200 response") {
     val client =
-      InventoryClient[IO](resilientClient(stubClient(_ => Response[IO](Status.Ok))), baseUri)
-    client.reserve("sku-1", 2, "item-1").map(assertEquals(_, ReservationResult.Reserved))
+      InventoryClient[IO](
+        resilientClient(stubClient(_ => Response[IO](Status.Ok))),
+        baseUri
+      )
+    client
+      .reserve("sku-1", 2, "item-1")
+      .map(assertEquals(_, ReservationResult.Reserved))
   }
 
   test("reserve returns InsufficientStock for a 409 response") {
@@ -56,7 +61,9 @@ class InventoryClientSuite extends CatsEffectSuite {
       resilientClient(stubClient(_ => Response[IO](Status.NotFound))),
       baseUri
     )
-    client.reserve("sku-1", 2, "item-1").map(assertEquals(_, ReservationResult.UnknownSku))
+    client
+      .reserve("sku-1", 2, "item-1")
+      .map(assertEquals(_, ReservationResult.UnknownSku))
   }
 
   test("reserve raises for an unexpected status (e.g. a non-retriable 400)") {
@@ -89,7 +96,10 @@ class InventoryClientSuite extends CatsEffectSuite {
       body <- capturedBody.get
     } yield {
       assertEquals(req.map(_.method), Some(Method.POST))
-      assertEquals(req.map(_.uri.path.toString), Some("/inventorys/reservations"))
+      assertEquals(
+        req.map(_.uri.path.toString),
+        Some("/inventorys/reservations")
+      )
       assert(body.contains("sku-1"), s"expected sku in body, got: $body")
       assert(body.contains("3"), s"expected quantity in body, got: $body")
       assert(
@@ -106,7 +116,9 @@ class InventoryClientSuite extends CatsEffectSuite {
         Resource.eval(
           counter
             .updateAndGet(_ + 1)
-            .map(n => Response[IO](if (n < 3) Status.InternalServerError else Status.Ok))
+            .map(n =>
+              Response[IO](if (n < 3) Status.InternalServerError else Status.Ok)
+            )
         )
       }
       client = InventoryClient[IO](resilientClient(stub), baseUri)
@@ -123,14 +135,19 @@ class InventoryClientSuite extends CatsEffectSuite {
       counter <- Ref.of[IO, Int](0)
       failingStub = Client[IO] { _ =>
         Resource.eval(
-          counter.updateAndGet(_ + 1).as(Response[IO](Status.InternalServerError))
+          counter
+            .updateAndGet(_ + 1)
+            .as(Response[IO](Status.InternalServerError))
         )
       }
       config = fastConfig.copy(
         retry = fastConfig.retry.copy(maxRetries = 0),
         circuitBreaker = fastConfig.circuitBreaker.copy(failureThreshold = 2)
       )
-      client = InventoryClient[IO](resilientClient(failingStub, config), baseUri)
+      client = InventoryClient[IO](
+        resilientClient(failingStub, config),
+        baseUri
+      )
       _ <- client.reserve("sku-1", 2, "item-1").attempt
       _ <- client.reserve("sku-1", 2, "item-1").attempt
       openResult <- client.reserve("sku-1", 2, "item-1").attempt
