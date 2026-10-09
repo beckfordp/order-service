@@ -1,0 +1,8 @@
+{
+  "track_id": "reservation-failure-detail_20261009",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-09T07:07:55Z",
+  "updated_at": "2026-10-09T07:07:55Z",
+  "description": "Surface which sku failed reservation in OrderResponse"
+}
