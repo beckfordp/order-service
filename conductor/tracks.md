@@ -4,11 +4,6 @@ This file tracks all major tracks for the project.
 
 ---
 
-- [x] **Track: Surface which sku failed reservation in OrderResponse**
-  *Link: [./tracks/reservation-failure-detail_20261009/](./tracks/reservation-failure-detail_20261009/)*
-
----
-
 ## Backlog
 
 Title-only placeholders for future tracks — not yet detailed (no spec/plan, no linked
