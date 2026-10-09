@@ -4,7 +4,7 @@ This file tracks all major tracks for the project.
 
 ---
 
-- [~] **Track: Surface which sku failed reservation in OrderResponse**
+- [x] **Track: Surface which sku failed reservation in OrderResponse**
   *Link: [./tracks/reservation-failure-detail_20261009/](./tracks/reservation-failure-detail_20261009/)*
 
 ---
