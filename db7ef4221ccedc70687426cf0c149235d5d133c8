@@ -1,0 +1,31 @@
+Task: Implement to pass tests (Green) — reservationFailure on OrderResponse
+
+Summary: Implemented the production code to satisfy the Red-phase tests
+(commit 9776333): a new ReservationFailure(sku, reason) type, surfaced on
+OrderResponse only for the synchronous POST /orders reservation-failure
+branch.
+
+Changes:
+- src/main/scala/orderservice/OrderRoutes.scala
+  - Added ReservationFailure(sku, reason) case class + circe Codec
+  - Added reservationFailure field to OrderResponse; kept the default
+    (None) only on the custom entity/items apply overload, not the
+    case-class field itself — Scala disallows default args on two
+    overloaded apply methods simultaneously
+  - reserveAll now returns Either[ReservationFailure, Unit] instead of
+    Either[String, Unit], carrying sku structurally; message text for all
+    three failure branches (insufficient stock / unknown sku / raised
+    error) unchanged from before
+  - serverEndpoint's checkout handler derives failureOpt from the
+    reservation outcome (independent of the existing US-4.2 stale-order
+    fallback) and threads it into the final OrderResponse
+- src/test/scala/orderservice/OrderHistoryCacheSuite.scala — updated the
+  one call site using OrderResponse's generated 8-arg apply to pass
+  reservationFailure = None explicitly (no longer defaulted there)
+
+Why: Completes the track's single phase per spec.md — ephemeral,
+sync-response-only, no DB migration, reason text exposed verbatim
+(including raw exception messages), per the user's approved design
+decisions during /conductor:newTrack.
+
+Verification: `sbt test` (CI=true) — full suite, 134 total, 0 failed.
