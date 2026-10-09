@@ -1,8 +1,8 @@
 # Plan: Surface which sku failed reservation in OrderResponse
 
-## Phase 1: Add `reservationFailure` to OrderResponse [checkpoint: 673408d]
+## Phase 1: Add `reservationFailure` to OrderResponse [checkpoint: 24baaca]
 
-- [x] Task: Write failing tests (Red) [9776333]
+- [x] Task: Write failing tests (Red) [d13aad6]
   - [x] Add cases to `OrderRoutesSuite.scala` asserting `POST /orders` returns
         `reservationFailure: {sku, reason}` for: insufficient stock, unknown sku, and a
         raised reservation-call error (circuit-breaker/retry failure)
@@ -15,7 +15,7 @@
         errors (`ReservationFailure`/`reservationFailure` not found), as expected in
         Scala's statically-typed Red phase
 
-- [x] Task: Implement to pass tests (Green) [7f19542]
+- [x] Task: Implement to pass tests (Green) [db7ef42]
   - [x] Add `ReservationFailure(sku: String, reason: String)` case class + circe `Codec`
         in `OrderRoutes.scala`
   - [x] Add `reservationFailure: Option[ReservationFailure]` field to `OrderResponse`
