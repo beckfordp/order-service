@@ -2,7 +2,7 @@
 
 ## Phase 1: Add `reservationFailure` to OrderResponse
 
-- [x] Task: Write failing tests (Red)
+- [x] Task: Write failing tests (Red) [9776333]
   - [x] Add cases to `OrderRoutesSuite.scala` asserting `POST /orders` returns
         `reservationFailure: {sku, reason}` for: insufficient stock, unknown sku, and a
         raised reservation-call error (circuit-breaker/retry failure)
