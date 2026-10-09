@@ -118,6 +118,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       assertEquals(entity.totalCents, 999 * 5)
       assertEquals(entity.items.map(_.sku), List("sku-1"))
       assertEquals(entity.status, "pending")
+      assertEquals(entity.reservationFailure, None)
     }
   }
 
@@ -154,10 +155,64 @@ class OrderRoutesSuite extends CatsEffectSuite {
         Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
       )
       entity <- response.as[OrderResponse]
+      getResponse <- routes.orNotFound.run(
+        Request[IO](Method.GET, uri"/orders" / entity.id)
+      )
+      fetched <- getResponse.as[OrderResponse]
     } yield {
       assertEquals(response.status, Status.Created)
       assertEquals(entity.status, "reservation_failed")
       assertEquals(entity.items.map(_.sku), List("sku-1", "sku-2"))
+      assertEquals(
+        entity.reservationFailure,
+        Some(ReservationFailure("sku-2", "insufficient stock for sku 'sku-2'"))
+      )
+      // Ephemeral by design (see spec's "Out of Scope") - not persisted, so a later
+      // GET of the same reservation_failed order can't recover the failure detail.
+      assertEquals(fetched.reservationFailure, None)
+    }
+  }
+
+  test(
+    "POST /orders returns 201 with status reservation_failed and the structured failure when an item's sku is unknown"
+  ) {
+    val unknownSecondItem: InventoryClient[IO] =
+      new InventoryClient[IO] {
+        def reserve(
+            sku: String,
+            quantity: Int,
+            orderItemId: String
+        ): IO[ReservationResult] =
+          if (sku == "sku-1") IO.pure(ReservationResult.Reserved)
+          else IO.pure(ReservationResult.UnknownSku)
+      }
+    val twoItemRequest = CreateOrderRequest(
+      "cust-123",
+      List(
+        CreateOrderItemRequest("sku-1", "Widget", 999, 2),
+        CreateOrderItemRequest("sku-2", "Gadget", 500, 1)
+      )
+    )
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        unknownSecondItem,
+        noOpHistoryCache,
+        noOpPublisher
+      )
+      response <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
+      )
+      entity <- response.as[OrderResponse]
+    } yield {
+      assertEquals(response.status, Status.Created)
+      assertEquals(entity.status, "reservation_failed")
+      assertEquals(
+        entity.reservationFailure,
+        Some(ReservationFailure("sku-2", "unknown sku 'sku-2'"))
+      )
     }
   }
 
@@ -257,6 +312,15 @@ class OrderRoutesSuite extends CatsEffectSuite {
       assertEquals(response.status, Status.Created)
       assertEquals(entity.status, "reservation_failed")
       assertEquals(entity.items.map(_.sku), List("sku-1"))
+      assertEquals(
+        entity.reservationFailure,
+        Some(
+          ReservationFailure(
+            "sku-1",
+            "reservation call failed for sku 'sku-1': circuit open"
+          )
+        )
+      )
     }
   }
 

@@ -2,16 +2,18 @@
 
 ## Phase 1: Add `reservationFailure` to OrderResponse
 
-- [ ] Task: Write failing tests (Red)
-  - [ ] Add cases to `OrderRoutesSuite.scala` asserting `POST /orders` returns
+- [x] Task: Write failing tests (Red)
+  - [x] Add cases to `OrderRoutesSuite.scala` asserting `POST /orders` returns
         `reservationFailure: {sku, reason}` for: insufficient stock, unknown sku, and a
         raised reservation-call error (circuit-breaker/retry failure)
-  - [ ] Add a case asserting a fully-successful `POST /orders` returns
+  - [x] Add a case asserting a fully-successful `POST /orders` returns
         `reservationFailure: null`
-  - [ ] Add/extend a case asserting `GET /orders/{id}` for an existing
+  - [x] Add/extend a case asserting `GET /orders/{id}` for an existing
         `reservation_failed` order returns `reservationFailure: null` (ephemeral, not
         persisted)
-  - [ ] Run `sbt test`, confirm the new cases fail (Red)
+  - [x] Run `sbt test`, confirm the new cases fail (Red) — confirmed as 8 compile
+        errors (`ReservationFailure`/`reservationFailure` not found), as expected in
+        Scala's statically-typed Red phase
 
 - [ ] Task: Implement to pass tests (Green)
   - [ ] Add `ReservationFailure(sku: String, reason: String)` case class + circe `Codec`
