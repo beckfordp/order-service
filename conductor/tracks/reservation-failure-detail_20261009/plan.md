@@ -1,6 +1,6 @@
 # Plan: Surface which sku failed reservation in OrderResponse
 
-## Phase 1: Add `reservationFailure` to OrderResponse
+## Phase 1: Add `reservationFailure` to OrderResponse [checkpoint: 673408d]
 
 - [x] Task: Write failing tests (Red) [9776333]
   - [x] Add cases to `OrderRoutesSuite.scala` asserting `POST /orders` returns
