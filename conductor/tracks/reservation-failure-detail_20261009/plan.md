@@ -15,21 +15,26 @@
         errors (`ReservationFailure`/`reservationFailure` not found), as expected in
         Scala's statically-typed Red phase
 
-- [ ] Task: Implement to pass tests (Green)
-  - [ ] Add `ReservationFailure(sku: String, reason: String)` case class + circe `Codec`
+- [x] Task: Implement to pass tests (Green) [7f19542]
+  - [x] Add `ReservationFailure(sku: String, reason: String)` case class + circe `Codec`
         in `OrderRoutes.scala`
-  - [ ] Add `reservationFailure: Option[ReservationFailure] = None` field to
-        `OrderResponse`, update its codec/`apply`
-  - [ ] Change `reserveAll`'s return type from `F[Either[String, Unit]]` to
+  - [x] Add `reservationFailure: Option[ReservationFailure]` field to `OrderResponse`
+        (default kept on the custom `entity`/`items` `apply` overload instead of the
+        case-class field itself — Scala disallows default args on two overloaded
+        `apply` methods at once; `OrderHistoryCacheSuite.scala`, the one call site using
+        the generated 8-arg `apply`, updated to pass `reservationFailure = None`
+        explicitly)
+  - [x] Change `reserveAll`'s return type from `F[Either[String, Unit]]` to
         `F[Either[ReservationFailure, Unit]]`, constructing
         `ReservationFailure(item.sku, <message>)` for each of the three failure branches
         (message text unchanged from today, including the verbatim exception message in
         the call-failure case)
-  - [ ] Update the checkout handler in `serverEndpoint` to: keep the existing
+  - [x] Update the checkout handler in `serverEndpoint` to: keep the existing
         `logger.warn` log line using `failure.reason`, and populate the final
-        `OrderResponse`'s `reservationFailure = Some(failure)` only on this
+        `OrderResponse`'s `reservationFailure` with `failureOpt` (derived from
+        `reservation` independently of the US-4.2 stale-order fallback) only on this
         synchronous-failure branch
-  - [ ] Run `sbt test`, confirm all tests pass (Green)
+  - [x] Run `sbt test`, confirm all tests pass (Green) — 134 total, 0 failed, full suite
 
 - [ ] Task: Refactor (optional)
   - [ ] Review `reserveAll` and the checkout handler for clarity now that the failure
