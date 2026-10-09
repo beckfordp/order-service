@@ -44,5 +44,7 @@
   - [x] Run `sbt coverage test coverageReport` — 92.68% statement, 93.55% branch
         (project-wide), well above the 80% target
 
-- [ ] Task: Conductor - User Manual Verification 'Add reservationFailure to
-      OrderResponse' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Add reservationFailure to
+      OrderResponse' (Protocol in workflow.md) — verified live against real
+      Postgres/Kafka/Redis and the real inventory-service (via existing
+      kubectl port-forward on :8081); user confirmed
