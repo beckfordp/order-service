@@ -36,12 +36,13 @@
         synchronous-failure branch
   - [x] Run `sbt test`, confirm all tests pass (Green) — 134 total, 0 failed, full suite
 
-- [ ] Task: Refactor (optional)
-  - [ ] Review `reserveAll` and the checkout handler for clarity now that the failure
-        channel is structured; rerun tests after any change
+- [x] Task: Refactor (optional)
+  - [x] Reviewed `reserveAll` and the checkout handler for clarity — structured
+        `ReservationFailure` reads cleanly, no duplication introduced; no changes made
 
-- [ ] Task: Verify coverage
-  - [ ] Run `sbt coverage test coverageReport`, confirm new code ≥ 80%
+- [x] Task: Verify coverage
+  - [x] Run `sbt coverage test coverageReport` — 92.68% statement, 93.55% branch
+        (project-wide), well above the 80% target
 
 - [ ] Task: Conductor - User Manual Verification 'Add reservationFailure to
       OrderResponse' (Protocol in workflow.md)
