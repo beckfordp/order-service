@@ -60,6 +60,12 @@ object OrderItemResponse {
     )
 }
 
+final case class ReservationFailure(sku: String, reason: String)
+
+object ReservationFailure {
+  implicit val codec: Codec[ReservationFailure] = deriveCodec
+}
+
 final case class OrderResponse(
     id: String,
     customerId: String,
@@ -67,13 +73,18 @@ final case class OrderResponse(
     status: String,
     items: List[OrderItemResponse],
     createdAt: java.time.Instant,
-    updatedAt: java.time.Instant
+    updatedAt: java.time.Instant,
+    reservationFailure: Option[ReservationFailure]
 )
 
 object OrderResponse {
   implicit val codec: Codec[OrderResponse] = deriveCodec
 
-  def apply(entity: Order, items: List[OrderItem]): OrderResponse =
+  def apply(
+      entity: Order,
+      items: List[OrderItem],
+      reservationFailure: Option[ReservationFailure] = None
+  ): OrderResponse =
     OrderResponse(
       entity.id,
       entity.customerId,
@@ -81,7 +92,8 @@ object OrderResponse {
       entity.status.asString,
       items.map(OrderItemResponse(_)),
       entity.createdAt,
-      entity.updatedAt
+      entity.updatedAt,
+      reservationFailure
     )
 }
 
@@ -244,7 +256,7 @@ object OrderRoutes {
 
   /** Attempts to reserve every item in order, sequentially, short-circuiting at
     * the first item that can't be reserved (all-or-nothing - see US-4.2's spec,
-    * "Out of Scope" re: partial fulfillment). Returns `Left(reason)` for the
+    * "Out of Scope" re: partial fulfillment). Returns `Left(failure)` for the
     * first failure - a non-`Reserved` result or the client itself raising (e.g.
     * the circuit breaker open, retries exhausted) - never calling `reserve` for
     * any item after that point.
@@ -252,27 +264,36 @@ object OrderRoutes {
   private def reserveAll[F[_]: Async](
       inventoryClient: InventoryClient[F],
       items: List[OrderItem]
-  ): F[Either[String, Unit]] =
-    items.foldLeft(Async[F].pure(Right(()): Either[String, Unit])) {
-      (acc, item) =>
-        acc.flatMap {
-          case failed @ Left(_) => Async[F].pure(failed)
-          case Right(())        =>
-            inventoryClient
-              .reserve(item.sku, item.quantity, item.id)
-              .attempt
-              .map {
-                case Right(ReservationResult.Reserved)          => Right(())
-                case Right(ReservationResult.InsufficientStock) =>
-                  Left(s"insufficient stock for sku '${item.sku}'")
-                case Right(ReservationResult.UnknownSku) =>
-                  Left(s"unknown sku '${item.sku}'")
-                case Left(error) =>
-                  Left(
+  ): F[Either[ReservationFailure, Unit]] =
+    items.foldLeft(
+      Async[F].pure(Right(()): Either[ReservationFailure, Unit])
+    ) { (acc, item) =>
+      acc.flatMap {
+        case failed @ Left(_) => Async[F].pure(failed)
+        case Right(())        =>
+          inventoryClient
+            .reserve(item.sku, item.quantity, item.id)
+            .attempt
+            .map {
+              case Right(ReservationResult.Reserved)          => Right(())
+              case Right(ReservationResult.InsufficientStock) =>
+                Left(
+                  ReservationFailure(
+                    item.sku,
+                    s"insufficient stock for sku '${item.sku}'"
+                  )
+                )
+              case Right(ReservationResult.UnknownSku) =>
+                Left(ReservationFailure(item.sku, s"unknown sku '${item.sku}'"))
+              case Left(error) =>
+                Left(
+                  ReservationFailure(
+                    item.sku,
                     s"reservation call failed for sku '${item.sku}': ${error.getMessage}"
                   )
-              }
-        }
+                )
+            }
+      }
     }
 
   def serverEndpoint[F[_]: Async](
@@ -307,15 +328,19 @@ object OrderRoutes {
               }
               (order, orderItems) = created
               reservation <- reserveAll(inventoryClient, orderItems)
+              failureOpt = reservation match {
+                case Left(failure) => Some(failure)
+                case Right(())     => None
+              }
               finalOrder <- reservation match {
                 case Right(()) =>
                   logger
                     .info(Map("order_id" -> order.id))("Request completed")
                     .as((order, orderItems))
-                case Left(reason) =>
+                case Left(failure) =>
                   for {
                     _ <- logger.warn(
-                      Map("order_id" -> order.id, "reason" -> reason)
+                      Map("order_id" -> order.id, "reason" -> failure.reason)
                     )("Reservation failed")
                     // Known edge case (review finding, US-4.2): if `update` returns
                     // None - e.g. the order row vanishes between creation and this
@@ -344,7 +369,7 @@ object OrderRoutes {
                   } yield updated.getOrElse((order, orderItems))
               }
             } yield Right(
-              OrderResponse(finalOrder._1, finalOrder._2)
+              OrderResponse(finalOrder._1, finalOrder._2, failureOpt)
             ): Either[OrderError, OrderResponse]
         }
       } yield result
