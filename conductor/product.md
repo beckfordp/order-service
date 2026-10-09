@@ -40,7 +40,14 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   `reservation_failed` if any item can't be reserved or the call fails;
   otherwise it stays `pending`. No compensating release of already-reserved
   items on partial failure (inventory-service has no such endpoint); partial
-  order fulfillment is a flagged future improvement, not yet designed.
+  order fulfillment is a flagged future improvement, not yet designed. The
+  synchronous checkout response (`POST /orders` only) additionally carries
+  an ephemeral `reservationFailure: {sku, reason}` field when `status`
+  becomes `reservation_failed` on this call — naming the specific item and
+  the already-computed reason (insufficient stock / unknown sku / the raw
+  reservation-call error). Not persisted: a later `GET` of the same order
+  omits it. Not populated for orders flipped to `reservation_failed` by the
+  async `StockEventConsumer` path below.
   Checkout persists the order (minting real `order_items.id`s) before
   calling reserve, so each reserve call carries its item's real id as
   `orderItemId` — sent to inventory-service and echoed back on its async
