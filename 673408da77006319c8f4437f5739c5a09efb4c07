@@ -1,0 +1,29 @@
+Phase Completion Verification Report — Phase 1: Add reservationFailure to
+OrderResponse (track reservation-failure-detail_20261009)
+
+Automated tests:
+- Command: `CI=true sbt "testOnly orderservice.OrderRoutesSuite"` — 33/33 passed
+- Command: `CI=true sbt test` (full suite) — 134/134 passed, 0 failed, 0 errors
+- Command: `CI=true sbt "coverage; test; coverageReport"` — 92.68% statement,
+  93.55% branch coverage (project-wide), above the 80% target
+
+Manual verification steps performed:
+1. `docker compose up -d` — started Postgres, Kafka, Redis; waited for all
+   three to report healthy
+2. `sbt run` (background) — order-service started on :8080; confirmed via
+   `GET /health` returning 200
+3. `curl -X POST http://localhost:8080/orders` with body
+   `{"customerId":"cust-manual-verify","items":[{"sku":"sku-manual-1",...}]}`
+   — got `201` with `"status":"reservation_failed"` and
+   `"reservationFailure":{"sku":"sku-manual-1","reason":"unknown sku
+   'sku-manual-1'"}`. Exercised against the real inventory-service, reachable
+   via a kubectl port-forward already running on :8081 (not started by this
+   verification) — not a stub.
+4. `curl GET http://localhost:8080/orders/<id>` on the same order — got
+   `"reservationFailure":null`, confirming the field is ephemeral
+   (not persisted) exactly per spec's acceptance criteria
+5. Repeated POST with a second order/sku — same correct behavior
+6. Cleanup: killed the sbt run process, ran `docker compose down`
+   (Postgres data volume left intact, not removed)
+
+User confirmation: explicit "Yes, looks good" via AskUserQuestion.
