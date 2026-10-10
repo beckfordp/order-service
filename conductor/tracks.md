@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: Backport CORS support from pure-service-generator (TD-1.2)**
+- [x] **Track: Backport CORS support from pure-service-generator (TD-1.2)**
   *Link: [./tracks/cors_20261010/](./tracks/cors_20261010/)*
 
 ---
