@@ -9,6 +9,11 @@
 - http4s 0.23.37 (ember-server, ember-client — client used by `InventoryClient`
   for the resilience-wrapped sync reserve call to inventory-service)
 - circe 0.14.16
+- CORS — `org.http4s.server.middleware.CORS` (ships in `http4s-server`, no new
+  dependency) wraps every response (`Cors.scala`). Allow all origins, methods
+  limited to this service's five CRUD routes, `Content-Type` header allowed,
+  credentials disallowed. Ported from `pure-service-generator`'s
+  `cors_20261010` track (TD-1.2).
 - fs2-kafka 3.6.0 — consumer side (US-5.2), subscribes to
   `inventory.stock-reserved`/`inventory.stock-reservation-failed`; producer
   side added for US-5.3 (`OrderEventPublisher`, publishes `order.reserved`);
