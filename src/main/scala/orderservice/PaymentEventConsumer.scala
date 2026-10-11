@@ -39,27 +39,28 @@ object PaymentFailedEvent {
   implicit val codec: Codec[PaymentFailedEvent] = deriveCodec
 }
 
-/** Consumes `payment.settled`/`payment.failed` (payment-service, US-6.1) and
-  * transitions the matching order from `Reserved` to `Confirmed`/
-  * `PaymentFailed` via `OrderStore.updateStatusIfCurrent`, keyed by the event's
-  * `orderId` directly. A redelivered/out-of-order event for an order that's no
-  * longer `Reserved` (or an unknown `orderId`) is an idempotent no-op, logged
-  * at info - never an error, per spec.md's "Out of Scope". Publishes
-  * `order.status-changed` on a successful transition, mirroring
-  * `StockEventConsumer`'s precedent exactly.
+/** Consumes `PaymentSettled`/`PaymentFailed` envelopes on `payment-events`
+  * (payment-service, US-6.1; migrated to the domain topic + envelope shape per
+  * ADR 0009) and transitions the matching order from `Reserved` to
+  * `Confirmed`/`PaymentFailed` via `OrderStore.updateStatusIfCurrent`, keyed by
+  * the event's `orderId` directly. A redelivered/out-of-order event for an
+  * order that's no longer `Reserved` (or an unknown `orderId`) is an idempotent
+  * no-op, logged at info - never an error, per spec.md's "Out of Scope".
+  * Publishes `OrderStatusChanged` on a successful transition, mirroring
+  * `StockEventConsumer`'s precedent exactly. `payment-events` may carry other
+  * event types this consumer doesn't care about - those are silently skipped by
+  * `eventType`, not logged as malformed.
   */
 object PaymentEventConsumer {
 
-  val settledTopic: String = "payment.settled"
-  val failedTopic: String = "payment.failed"
+  val topic: String = "payment-events"
 
   private def consumerSettings[F[_]: Async](
-      config: KafkaConfig,
-      groupId: String
+      config: KafkaConfig
   ): ConsumerSettings[F, String, String] =
     ConsumerSettings[F, String, String]
       .withBootstrapServers(config.bootstrapServers)
-      .withGroupId(groupId)
+      .withGroupId("order-service-payment-events")
       .withAutoOffsetReset(AutoOffsetReset.Earliest)
 
   private def logOutcome[F[_]: Async](
@@ -107,88 +108,67 @@ object PaymentEventConsumer {
         }
     }
 
-  private def settledStream[F[_]: Async](
-      config: KafkaConfig,
+  private def handleSettled[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F]
-  ): Stream[F, Unit] =
-    KafkaConsumer
-      .stream(consumerSettings[F](config, "order-service-payment-settled"))
-      .subscribeTo(settledTopic)
-      .records
-      .evalMap { committable =>
-        val handled: F[Unit] =
-          decode[PaymentSettledEvent](committable.record.value) match {
-            case Left(error) =>
-              logger.error(
-                Map("raw" -> committable.record.value),
-                error
-              )("Failed to decode payment.settled")
-            case Right(event) =>
-              store
-                .updateStatusIfCurrent(
-                  event.orderId,
-                  OrderStatus.Reserved,
-                  OrderStatus.Confirmed
-                )
-                .flatTap(
-                  publishStatusChangedIfUpdated(
-                    publisher,
-                    OrderStatus.Confirmed.asString,
-                    _
-                  )
-                )
-                .flatMap(
-                  logOutcome(logger, event.orderId, OrderStatus.Confirmed, _)
-                )
-          }
-        handled *> committable.offset.commit
-      }
+      publisher: OrderEventPublisher[F],
+      raw: String,
+      payload: io.circe.Json
+  ): F[Unit] =
+    payload.as[PaymentSettledEvent] match {
+      case Left(error) =>
+        logger.error(Map("raw" -> raw), error)(
+          "Failed to decode PaymentSettled payload"
+        )
+      case Right(event) =>
+        store
+          .updateStatusIfCurrent(
+            event.orderId,
+            OrderStatus.Reserved,
+            OrderStatus.Confirmed
+          )
+          .flatTap(
+            publishStatusChangedIfUpdated(
+              publisher,
+              OrderStatus.Confirmed.asString,
+              _
+            )
+          )
+          .flatMap(
+            logOutcome(logger, event.orderId, OrderStatus.Confirmed, _)
+          )
+    }
 
-  private def failedStream[F[_]: Async](
-      config: KafkaConfig,
+  private def handleFailed[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F]
-  ): Stream[F, Unit] =
-    KafkaConsumer
-      .stream(consumerSettings[F](config, "order-service-payment-failed"))
-      .subscribeTo(failedTopic)
-      .records
-      .evalMap { committable =>
-        val handled: F[Unit] =
-          decode[PaymentFailedEvent](committable.record.value) match {
-            case Left(error) =>
-              logger.error(
-                Map("raw" -> committable.record.value),
-                error
-              )("Failed to decode payment.failed")
-            case Right(event) =>
-              store
-                .updateStatusIfCurrent(
-                  event.orderId,
-                  OrderStatus.Reserved,
-                  OrderStatus.PaymentFailed
-                )
-                .flatTap(
-                  publishStatusChangedIfUpdated(
-                    publisher,
-                    OrderStatus.PaymentFailed.asString,
-                    _
-                  )
-                )
-                .flatMap(
-                  logOutcome(
-                    logger,
-                    event.orderId,
-                    OrderStatus.PaymentFailed,
-                    _
-                  )
-                )
-          }
-        handled *> committable.offset.commit
-      }
+      publisher: OrderEventPublisher[F],
+      raw: String,
+      payload: io.circe.Json
+  ): F[Unit] =
+    payload.as[PaymentFailedEvent] match {
+      case Left(error) =>
+        logger.error(Map("raw" -> raw), error)(
+          "Failed to decode PaymentFailed payload"
+        )
+      case Right(event) =>
+        store
+          .updateStatusIfCurrent(
+            event.orderId,
+            OrderStatus.Reserved,
+            OrderStatus.PaymentFailed
+          )
+          .flatTap(
+            publishStatusChangedIfUpdated(
+              publisher,
+              OrderStatus.PaymentFailed.asString,
+              _
+            )
+          )
+          .flatMap(
+            logOutcome(logger, event.orderId, OrderStatus.PaymentFailed, _)
+          )
+    }
 
   def run[F[_]: Async](
       config: KafkaConfig,
@@ -196,6 +176,26 @@ object PaymentEventConsumer {
       logger: StructuredLogger[F],
       publisher: OrderEventPublisher[F]
   ): Stream[F, Unit] =
-    settledStream(config, store, logger, publisher)
-      .merge(failedStream(config, store, logger, publisher))
+    KafkaConsumer
+      .stream(consumerSettings[F](config))
+      .subscribeTo(topic)
+      .records
+      .evalMap { committable =>
+        val raw = committable.record.value
+        val handled: F[Unit] = decode[EventEnvelope](raw) match {
+          case Left(error) =>
+            logger.error(Map("raw" -> raw), error)(
+              "Failed to decode payment-events envelope"
+            )
+          case Right(envelope) =>
+            envelope.eventType match {
+              case "PaymentSettled" =>
+                handleSettled(store, logger, publisher, raw, envelope.payload)
+              case "PaymentFailed" =>
+                handleFailed(store, logger, publisher, raw, envelope.payload)
+              case _ => Async[F].unit
+            }
+        }
+        handled *> committable.offset.commit
+      }
 }

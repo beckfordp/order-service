@@ -23,10 +23,10 @@ class OrderEventPublisherSuite
   private def configFor(kafka: KafkaContainer): KafkaConfig =
     KafkaConfig(bootstrapServers = kafka.bootstrapServers)
 
-  /** Both event types now share one `order-events` topic (ADR 0009), so a
-    * fresh "earliest" consumer can see another test's leftover message
-    * first — filter for the envelope matching this test's own
-    * `correlationId` rather than just taking the first record.
+  /** Both event types now share one `order-events` topic (ADR 0009), so a fresh
+    * "earliest" consumer can see another test's leftover message first — filter
+    * for the envelope matching this test's own `correlationId` rather than just
+    * taking the first record.
     */
   private def consumeEnvelope(
       config: KafkaConfig,

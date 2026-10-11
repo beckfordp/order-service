@@ -39,8 +39,9 @@ object StockReservationFailedEvent {
   implicit val codec: Codec[StockReservationFailedEvent] = deriveCodec
 }
 
-/** Consumes `inventory.stock-reserved`/`inventory.stock-reservation-failed`
-  * (US-5.2) and updates the owning order's status via
+/** Consumes `StockReserved`/`StockReservationFailed` envelopes on
+  * `inventory-events` (US-5.2; migrated to the domain topic + envelope shape
+  * per ADR 0009) and updates the owning order's status via
   * `OrderStore.updateStatusByItemId`, keyed by each event's `orderItemId`. A
   * single correctly-attributed event is sufficient to flip an order's status
   *   - US-4.2's synchronous reserve call already verified every item succeeded
@@ -48,20 +49,20 @@ object StockReservationFailedEvent {
   *     confirming already-known-good outcomes, not discovering new ones. No
   *     match (unknown item id, or the order already left `Pending`) is an
   *     idempotent no-op, logged at info - never an error, per spec.md's "Out of
-  *     Scope".
+  *     Scope". `inventory-events` may carry other event types this consumer
+  *     doesn't care about - those are silently skipped by `eventType`, not
+  *     logged as malformed.
   */
 object StockEventConsumer {
 
-  val reservedTopic: String = "inventory.stock-reserved"
-  val reservationFailedTopic: String = "inventory.stock-reservation-failed"
+  val topic: String = "inventory-events"
 
   private def consumerSettings[F[_]: Async](
-      config: KafkaConfig,
-      groupId: String
+      config: KafkaConfig
   ): ConsumerSettings[F, String, String] =
     ConsumerSettings[F, String, String]
       .withBootstrapServers(config.bootstrapServers)
-      .withGroupId(groupId)
+      .withGroupId("order-service-inventory-events")
       .withAutoOffsetReset(AutoOffsetReset.Earliest)
 
   private def logOutcome[F[_]: Async](
@@ -138,86 +139,61 @@ object StockEventConsumer {
         }
     }
 
-  private def reservedStream[F[_]: Async](
-      config: KafkaConfig,
+  private def handleReserved[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F]
-  ): Stream[F, Unit] =
-    KafkaConsumer
-      .stream(consumerSettings[F](config, "order-service-stock-reserved"))
-      .subscribeTo(reservedTopic)
-      .records
-      .evalMap { committable =>
-        val handled: F[Unit] =
-          decode[StockReservedEvent](committable.record.value) match {
-            case Left(error) =>
-              logger.error(
-                Map("raw" -> committable.record.value),
-                error
-              )("Failed to decode inventory.stock-reserved")
-            case Right(event) =>
-              store
-                .updateStatusByItemId(event.orderItemId, OrderStatus.Reserved)
-                .flatTap(publishReservedIfUpdated(publisher, _))
-                .flatMap(
-                  logOutcome(
-                    logger,
-                    event.orderItemId,
-                    OrderStatus.Reserved,
-                    _
-                  )
-                )
-          }
-        handled *> committable.offset.commit
-      }
+      publisher: OrderEventPublisher[F],
+      raw: String,
+      payload: io.circe.Json
+  ): F[Unit] =
+    payload.as[StockReservedEvent] match {
+      case Left(error) =>
+        logger.error(Map("raw" -> raw), error)(
+          "Failed to decode StockReserved payload"
+        )
+      case Right(event) =>
+        store
+          .updateStatusByItemId(event.orderItemId, OrderStatus.Reserved)
+          .flatTap(publishReservedIfUpdated(publisher, _))
+          .flatMap(
+            logOutcome(logger, event.orderItemId, OrderStatus.Reserved, _)
+          )
+    }
 
-  private def reservationFailedStream[F[_]: Async](
-      config: KafkaConfig,
+  private def handleReservationFailed[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F]
-  ): Stream[F, Unit] =
-    KafkaConsumer
-      .stream(
-        consumerSettings[F](config, "order-service-stock-reservation-failed")
-      )
-      .subscribeTo(reservationFailedTopic)
-      .records
-      .evalMap { committable =>
-        val handled: F[Unit] =
-          decode[StockReservationFailedEvent](
-            committable.record.value
-          ) match {
-            case Left(error) =>
-              logger.error(
-                Map("raw" -> committable.record.value),
-                error
-              )("Failed to decode inventory.stock-reservation-failed")
-            case Right(event) =>
-              store
-                .updateStatusByItemId(
-                  event.orderItemId,
-                  OrderStatus.ReservationFailed
-                )
-                .flatTap(
-                  publishStatusChangedIfUpdated(
-                    publisher,
-                    OrderStatus.ReservationFailed.asString,
-                    _
-                  )
-                )
-                .flatMap(
-                  logOutcome(
-                    logger,
-                    event.orderItemId,
-                    OrderStatus.ReservationFailed,
-                    _
-                  )
-                )
-          }
-        handled *> committable.offset.commit
-      }
+      publisher: OrderEventPublisher[F],
+      raw: String,
+      payload: io.circe.Json
+  ): F[Unit] =
+    payload.as[StockReservationFailedEvent] match {
+      case Left(error) =>
+        logger.error(Map("raw" -> raw), error)(
+          "Failed to decode StockReservationFailed payload"
+        )
+      case Right(event) =>
+        store
+          .updateStatusByItemId(
+            event.orderItemId,
+            OrderStatus.ReservationFailed
+          )
+          .flatTap(
+            publishStatusChangedIfUpdated(
+              publisher,
+              OrderStatus.ReservationFailed.asString,
+              _
+            )
+          )
+          .flatMap(
+            logOutcome(
+              logger,
+              event.orderItemId,
+              OrderStatus.ReservationFailed,
+              _
+            )
+          )
+    }
 
   def run[F[_]: Async](
       config: KafkaConfig,
@@ -225,6 +201,32 @@ object StockEventConsumer {
       logger: StructuredLogger[F],
       publisher: OrderEventPublisher[F]
   ): Stream[F, Unit] =
-    reservedStream(config, store, logger, publisher)
-      .merge(reservationFailedStream(config, store, logger, publisher))
+    KafkaConsumer
+      .stream(consumerSettings[F](config))
+      .subscribeTo(topic)
+      .records
+      .evalMap { committable =>
+        val raw = committable.record.value
+        val handled: F[Unit] = decode[EventEnvelope](raw) match {
+          case Left(error) =>
+            logger.error(Map("raw" -> raw), error)(
+              "Failed to decode inventory-events envelope"
+            )
+          case Right(envelope) =>
+            envelope.eventType match {
+              case "StockReserved" =>
+                handleReserved(store, logger, publisher, raw, envelope.payload)
+              case "StockReservationFailed" =>
+                handleReservationFailed(
+                  store,
+                  logger,
+                  publisher,
+                  raw,
+                  envelope.payload
+                )
+              case _ => Async[F].unit
+            }
+        }
+        handled *> committable.offset.commit
+      }
 }

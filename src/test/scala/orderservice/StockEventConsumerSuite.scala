@@ -133,8 +133,8 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   /** Matches an envelope on `order-events` for the given orderId *and*
-    * eventType - needed now that `OrderReserved`/`OrderStatusChanged` share
-    * one topic, so a plain `_.contains(orderId)` would match either.
+    * eventType - needed now that `OrderReserved`/`OrderStatusChanged` share one
+    * topic, so a plain `_.contains(orderId)` would match either.
     */
   private def forOrderAndType(orderId: String, eventType: String)(
       raw: String
