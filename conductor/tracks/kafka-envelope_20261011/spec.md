@@ -46,16 +46,16 @@ payment-service's `OrderReservedConsumer`/`PaymentEventPublisher` (done,
   unchanged.
 
 ## Acceptance Criteria
-- [ ] `OrderEventPublisherSuite` confirms both event types land on
+- [x] `OrderEventPublisherSuite` confirms both event types land on
   `order-events`, decode as a valid `EventEnvelope`, payload round-trips.
-- [ ] `StockEventConsumerSuite` confirms: synthetic `StockReserved`/
+- [x] `StockEventConsumerSuite` confirms: synthetic `StockReserved`/
   `StockReservationFailed` envelopes on `inventory-events` still drive
   order status + downstream `OrderReserved`/`OrderStatusChanged`
   publishes correctly; a differently-typed envelope on the same topic is
   ignored; existing no-op/malformed-event resilience behavior preserved.
-- [ ] `PaymentEventConsumerSuite` confirms the same shape for
+- [x] `PaymentEventConsumerSuite` confirms the same shape for
   `PaymentSettled`/`PaymentFailed` on `payment-events`.
-- [ ] Full `sbt test` suite stays green.
+- [x] Full `sbt test` suite stays green (139/139).
 
 ## Out of Scope
 - `purekafka`-based consumer resilience (Rework 3) — separate track.
