@@ -8,18 +8,20 @@ set -euo pipefail
 # local-only broker race on this project's single-node KRaft docker-compose
 # Kafka - starting a new producer at the same moment a consumer's merged
 # stream joins its consumer groups reliably crashes the colliding consumer.
-# This track adds TWO more consumer groups (order-service-payment-settled,
-# order-service-payment-failed) joining concurrently with the same
-# OrderEventPublisher producer at boot, on top of the two StockEventConsumer
-# already has - more concurrent connection attempts, not fewer. Rather than
+# This track adds PaymentEventConsumer's consumer group
+# (order-service-payment-events) joining concurrently with the same
+# OrderEventPublisher producer at boot, alongside StockEventConsumer's own
+# group - more concurrent connection attempts, not fewer. Rather than
 # re-discover that race a second time, this script is scoped from the start
 # to what IS reliably provable live: order-service boots cleanly with
 # PaymentEventConsumer wired in alongside StockEventConsumer, and the health
 # endpoint responds. The actual consume -> transition -> publish behavior
-# (both payment.settled and payment.failed, plus the no-op/decode-failure/
-# cross-topic-routing edge cases) is proven by PaymentEventConsumerSuite's
-# Testcontainers tests instead - 8/8 passing, confirmed stable across 3
-# repeated runs, is the authoritative proof.
+# (both PaymentSettled and PaymentFailed, now on the single payment-events
+# domain topic + envelope shape per ADR 0009 - migrated by
+# kafka-envelope_20261011 - plus the no-op/decode-failure/
+# different-eventType-routing edge cases) is proven by
+# PaymentEventConsumerSuite's Testcontainers tests instead - confirmed stable
+# across repeated runs, is the authoritative proof.
 #
 # Usage: ./scripts/verify-payment-settlement-consumer-end-to-end.sh
 
@@ -83,10 +85,10 @@ sbt run >/tmp/order-service-verify.log 2>&1 &
 SBT_PID=$!
 wait_ready
 echo "   OK: order-service ready on :8080 - boots cleanly with"
-echo "       PaymentEventConsumer (2 consumer groups) wired in alongside"
-echo "       StockEventConsumer (2 consumer groups) and OrderEventPublisher"
-echo "       (1 producer), all four groups plus the producer connecting"
-echo "       concurrently at startup."
+echo "       PaymentEventConsumer (order-service-payment-events) wired in"
+echo "       alongside StockEventConsumer (order-service-inventory-events)"
+echo "       and OrderEventPublisher (1 producer), both consumer groups plus"
+echo "       the producer connecting concurrently at startup."
 
 echo
 echo "3. Confirming no startup crash was logged (e.g. the documented NPE race)..."
@@ -102,9 +104,9 @@ check "order-service health endpoint" "200" "$(curl -s -o /dev/null -w '%{http_c
 check "order-service ready endpoint" "200" "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health/ready)"
 
 echo
-echo "The consume -> transition -> publish behavior itself (payment.settled"
-echo "-> confirmed, payment.failed -> payment_failed, plus the no-op/"
-echo "decode-failure/cross-topic edge cases) is proven by"
+echo "The consume -> transition -> publish behavior itself (PaymentSettled"
+echo "-> confirmed, PaymentFailed -> payment_failed, plus the no-op/"
+echo "decode-failure/different-eventType edge cases) is proven by"
 echo "PaymentEventConsumerSuite's tests instead of live here - see this"
 echo "script's header comment for why."
 

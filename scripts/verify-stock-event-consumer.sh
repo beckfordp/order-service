@@ -13,6 +13,11 @@ set -euo pipefail
 # script drives the order to pending via a direct DB update before publishing
 # the async event, isolating the one thing this phase adds: the consumer.
 #
+# Migrated to the inventory-events domain topic + envelope shape by
+# kafka-envelope_20261011 (ADR 0009): both StockReserved and
+# StockReservationFailed now publish onto one topic, wrapped in an envelope,
+# distinguished by eventType.
+#
 # Usage: ./scripts/verify-stock-event-consumer.sh
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -63,6 +68,21 @@ publish() {
     --property key.separator=: >/dev/null 2>&1
 }
 
+envelope() {
+  local event_type="$1" correlation_id="$2" payload="$3"
+  python3 -c "
+import json, sys
+print(json.dumps({
+    'eventId': 'verify-' + '$event_type'.lower(),
+    'eventType': '$event_type',
+    'timestamp': '2026-01-01T00:00:00Z',
+    'source': 'inventory-service',
+    'correlationId': '$correlation_id',
+    'payload': json.loads(sys.argv[1]),
+}))
+" "$payload"
+}
+
 poll_for_status() {
   local order_id="$1" expected="$2"
   for _ in $(seq 1 30); do
@@ -85,12 +105,10 @@ for _ in $(seq 1 60); do
 done
 
 echo
-echo "1.5. Pre-creating both topics (avoids any startup-time surprise from auto-creation-on-subscribe)..."
+echo "1.5. Pre-creating the inventory-events topic (avoids any startup-time surprise from auto-creation-on-subscribe)..."
 docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh --create --if-not-exists \
-  --topic inventory.stock-reserved --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1 >/dev/null
-docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh --create --if-not-exists \
-  --topic inventory.stock-reservation-failed --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1 >/dev/null
-echo "   OK: topics created"
+  --topic inventory-events --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1 >/dev/null
+echo "   OK: topic created"
 echo "   giving the single-node broker's group coordinator a moment to settle..."
 sleep 10
 
@@ -126,13 +144,15 @@ docker compose exec -T postgres psql -U order -d order -c \
 check "both orders reset to pending" "pending" "$(poll_for_status "$order1_id" pending)"
 
 echo
-echo "5. Publishing a real inventory.stock-reserved message for order1's item via the broker's own console producer..."
-publish "inventory.stock-reserved" "sku-1" "{\"orderItemId\":\"${order1_item_id}\",\"sku\":\"sku-1\",\"quantity\":2,\"timestamp\":\"2026-01-01T00:00:00Z\"}"
+echo "5. Publishing a real StockReserved envelope for order1's item onto inventory-events via the broker's own console producer..."
+reserved_payload="{\"orderItemId\":\"${order1_item_id}\",\"sku\":\"sku-1\",\"quantity\":2,\"timestamp\":\"2026-01-01T00:00:00Z\"}"
+publish "inventory-events" "sku-1" "$(envelope StockReserved "$order1_item_id" "$reserved_payload")"
 check "order1 status flips to reserved" "reserved" "$(poll_for_status "$order1_id" reserved)"
 
 echo
-echo "6. Publishing a real inventory.stock-reservation-failed message for order2's item..."
-publish "inventory.stock-reservation-failed" "sku-2" "{\"orderItemId\":\"${order2_item_id}\",\"sku\":\"sku-2\",\"quantity\":1,\"timestamp\":\"2026-01-01T00:00:00Z\"}"
+echo "6. Publishing a real StockReservationFailed envelope for order2's item..."
+failed_payload="{\"orderItemId\":\"${order2_item_id}\",\"sku\":\"sku-2\",\"quantity\":1,\"timestamp\":\"2026-01-01T00:00:00Z\"}"
+publish "inventory-events" "sku-2" "$(envelope StockReservationFailed "$order2_item_id" "$failed_payload")"
 check "order2 status flips to reservation_failed" "reservation_failed" "$(poll_for_status "$order2_id" reservation_failed)"
 
 echo

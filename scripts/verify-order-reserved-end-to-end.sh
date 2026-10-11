@@ -5,22 +5,23 @@ set -euo pipefail
 #
 # Scope note (2026-10-02): this script originally attempted the full live
 # round trip - checkout -> sync reserve (stubbed) -> synthetic
-# inventory.stock-reserved -> order flips to Reserved -> order.reserved
-# published - against a real running order-service, real Postgres, real
-# Kafka. That round trip reliably hits a local-only broker race on this
-# project's single-node KRaft docker-compose Kafka: order-service's new
-# OrderEventPublisher producer (added by this very track) connects at the
-# same moment StockEventConsumer's merged stream joins its consumer groups,
-# and the stock-reserved consumer's first poll then crashes with
-# `java.lang.NullPointerException: Cannot read the array length because
+# StockReserved envelope on inventory-events -> order flips to Reserved ->
+# OrderReserved published on order-events - against a real running
+# order-service, real Postgres, real Kafka. That round trip reliably hits a
+# local-only broker race on this project's single-node KRaft docker-compose
+# Kafka: order-service's new OrderEventPublisher producer (added by this very
+# track) connects at the same moment StockEventConsumer's stream joins its
+# consumer group, and the inventory-events consumer's first poll then crashes
+# with `java.lang.NullPointerException: Cannot read the array length because
 # "bytes" is null` in fs2-kafka's String deserializer - reproduced
 # consistently across repeated attempts (readiness waits, topic pre-seeding,
-# offset-based confirmation all tried; the reservation-failed consumer,
-# which has no concurrent producer connecting, is unaffected every time).
-# Not reproducible via Testcontainers' Kafka, which StockEventConsumerSuite
-# already uses to prove this exact round trip (including this track's two
-# new tests asserting the published order.reserved payload's exact fields) -
-# 111 tests passing is the authoritative proof of the round trip itself.
+# offset-based confirmation all tried; the payment-events consumer, which has
+# no concurrent producer connecting at that exact moment, is unaffected every
+# time). Not reproducible via Testcontainers' Kafka, which
+# StockEventConsumerSuite already uses to prove this exact round trip
+# (including assertions on the published OrderReserved envelope/payload's
+# exact fields) - its full suite passing is the authoritative proof of the
+# round trip itself.
 #
 # This script now verifies what IS reliably provable live: order-service
 # boots cleanly with the new OrderEventPublisher wired into Main.scala (a
@@ -143,10 +144,10 @@ order_status="$(echo "$create_body" | python3 -c "import json,sys; print(json.lo
 check "order status is pending after sync checkout" "pending" "$order_status"
 
 echo
-echo "The async round trip (consume inventory.stock-reserved -> publish"
-echo "order.reserved with the correct fields) is proven by"
-echo "StockEventConsumerSuite's Testcontainers tests instead of live here -"
-echo "see this script's header comment for why."
+echo "The async round trip (consume StockReserved on inventory-events ->"
+echo "publish OrderReserved on order-events with the correct fields) is"
+echo "proven by StockEventConsumerSuite's Testcontainers tests instead of"
+echo "live here - see this script's header comment for why."
 
 echo
 if [ "$FAILED" -eq 0 ]; then

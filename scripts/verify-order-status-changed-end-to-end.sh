@@ -146,10 +146,11 @@ fail_order_status="$(echo "$fail_body" | python3 -c "import json,sys; print(json
 check "order status is reservation_failed after a failed sync reserve" "reservation_failed" "$fail_order_status"
 
 echo
-echo "The order.status-changed publish itself (both the synchronous path just"
-echo "exercised above, and the async StockEventConsumer path) is proven by"
-echo "OrderRoutesSuite's and StockEventConsumerSuite's tests instead of live"
-echo "here - see this script's header comment for why."
+echo "The OrderStatusChanged publish itself (both the synchronous path just"
+echo "exercised above, and the async StockEventConsumer path), now on the"
+echo "order-events domain topic per ADR 0009, is proven by OrderRoutesSuite's"
+echo "and StockEventConsumerSuite's tests instead of live here - see this"
+echo "script's header comment for why."
 
 echo
 if [ "$FAILED" -eq 0 ]; then
