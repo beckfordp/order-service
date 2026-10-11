@@ -51,20 +51,24 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   Checkout persists the order (minting real `order_items.id`s) before
   calling reserve, so each reserve call carries its item's real id as
   `orderItemId` — sent to inventory-service and echoed back on its async
-  `inventory.stock-reserved`/`inventory.stock-reservation-failed` events. A
-  background Kafka consumer (`StockEventConsumer`) listens for those events
-  and flips a still-`pending` order to `reserved`/`reservation_failed` by
-  exact `orderItemId` match — a single correctly-attributed event is
-  sufficient, since the synchronous call already verified every item's
-  outcome before leaving the order `pending`
+  `StockReserved`/`StockReservationFailed` events (both on the
+  `inventory-events` domain topic, wrapped in the shared envelope — one topic
+  per domain, ADR 0009, migrated 2026-10-11, kafka-envelope_20261011;
+  previously two per-event-type topics). A background Kafka consumer
+  (`StockEventConsumer`) subscribes to `inventory-events` and flips a
+  still-`pending` order to `reserved`/`reservation_failed` by exact
+  `orderItemId` match — a single correctly-attributed event is sufficient,
+  since the synchronous call already verified every item's outcome before
+  leaving the order `pending`. Event types this consumer doesn't recognize
+  are silently skipped, not logged as malformed
 - **Payment settlement** — a background Kafka consumer
-  (`PaymentEventConsumer`) listens for payment-service's `payment.settled`/
-  `payment.failed` events and flips a `Reserved` order to `confirmed`/
-  `payment_failed` by exact `orderId` match (unlike the stock-reservation
-  consumer, which matches by `orderItemId`). Publishes `order.status-changed`
-  on a successful transition. A redelivered/out-of-order event for an order
-  that's no longer `Reserved` (or an unknown `orderId`) is an idempotent
-  no-op
+  (`PaymentEventConsumer`) subscribes to the `payment-events` domain topic
+  and listens for payment-service's `PaymentSettled`/`PaymentFailed`
+  envelopes, flipping a `Reserved` order to `confirmed`/`payment_failed` by
+  exact `orderId` match (unlike the stock-reservation consumer, which
+  matches by `orderItemId`). Publishes `OrderStatusChanged` on a successful
+  transition. A redelivered/out-of-order event for an order that's no longer
+  `Reserved` (or an unknown `orderId`) is an idempotent no-op
 - **Order history** — `GET /orders?customerId=<id>` (required query param,
   no auth) returns that customer's orders newest-first as
   `List[OrderResponse]` (same shape as `GET /orders/{id}`). Cache-aside via
@@ -101,9 +105,12 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 - **Phase 8** (independent — can run anytime) — US-8.1, order history + Redis cache
 
 ## Events
-- Publishes: `order.reserved`, `order.status-changed`
-- Consumes: `inventory.stock-reserved`, `inventory.stock-reservation-failed`,
-  `payment.settled`, `payment.failed`
+- Publishes: `order-events` (eventType `OrderReserved` / `OrderStatusChanged`,
+  wrapped in the shared envelope — one topic per domain, ADR 0009, migrated
+  2026-10-11, kafka-envelope_20261011; previously two per-event-type topics)
+- Consumes: `inventory-events` (eventType `StockReserved` /
+  `StockReservationFailed`), `payment-events` (eventType `PaymentSettled` /
+  `PaymentFailed`) — same migration
 
 ## Out of scope for this service
 - Auth/identity (bare `customerId` for now — no user-service yet)
