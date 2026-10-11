@@ -4,12 +4,14 @@ import cats.effect.IO
 import com.dimafeng.testcontainers.KafkaContainer
 import com.dimafeng.testcontainers.munit.TestContainerForAll
 import fs2.kafka._
+import io.circe.Json
 import io.circe.parser.decode
 import io.circe.syntax._
 import munit.CatsEffectSuite
 import org.typelevel.log4cats.noop.NoOpLogger
 
 import java.time.Instant
+import java.util.UUID
 import scala.concurrent.duration._
 
 class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
@@ -32,6 +34,20 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
       .resource(producerSettings)
       .use(_.produceOne_(ProducerRecord(topic, key, json)).flatten.void)
   }
+
+  private def envelopeJson(
+      eventType: String,
+      correlationId: String,
+      payload: Json
+  ): String =
+    EventEnvelope(
+      eventId = UUID.randomUUID().toString,
+      eventType = eventType,
+      timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+      source = "inventory-service",
+      correlationId = correlationId,
+      payload = payload
+    ).asJson.noSpaces
 
   private def pollUntil[A](check: IO[Option[A]]): IO[A] =
     check.flatMap {
@@ -116,11 +132,22 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     }
   }
 
+  /** Matches an envelope on `order-events` for the given orderId *and*
+    * eventType - needed now that `OrderReserved`/`OrderStatusChanged` share
+    * one topic, so a plain `_.contains(orderId)` would match either.
+    */
+  private def forOrderAndType(orderId: String, eventType: String)(
+      raw: String
+  ): Boolean =
+    decode[EventEnvelope](raw).exists(envelope =>
+      envelope.correlationId == orderId && envelope.eventType == eventType
+    )
+
   private val oneItem =
     List(NewOrderItem("sku-1", "Widget", 999, 2))
 
   test(
-    "a synthetic stock-reserved event flips a Pending order's status to Reserved"
+    "a synthetic StockReserved envelope flips a Pending order's status to Reserved"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -135,9 +162,9 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         _ <- produce(
           config,
-          StockEventConsumer.reservedTopic,
+          StockEventConsumer.topic,
           "sku-1",
-          event.asJson.noSpaces
+          envelopeJson("StockReserved", items.head.id, event.asJson)
         )
         finalStatus <- IO.race(
           StockEventConsumer
@@ -156,7 +183,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   test(
-    "a synthetic stock-reservation-failed event flips a Pending order's status to ReservationFailed"
+    "a synthetic StockReservationFailed envelope flips a Pending order's status to ReservationFailed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -171,9 +198,13 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         _ <- produce(
           config,
-          StockEventConsumer.reservationFailedTopic,
+          StockEventConsumer.topic,
           "sku-1",
-          event.asJson.noSpaces
+          envelopeJson(
+            "StockReservationFailed",
+            items.head.id,
+            event.asJson
+          )
         )
         finalStatus <- IO.race(
           StockEventConsumer
@@ -188,6 +219,53 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
           pollForStatus(store, order.id, OrderStatus.ReservationFailed)
         )
       } yield assertEquals(finalStatus, Right(OrderStatus.ReservationFailed))
+    }
+  }
+
+  test(
+    "an envelope with a different eventType on inventory-events is ignored, not treated as malformed"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      for {
+        store <- OrderStore.inMemory[IO]
+        (order, items) <- store.create("cust-123", oneItem)
+        otherPayload = Json.obj(
+          "sku" -> Json.fromString("sku-other"),
+          "quantityAvailable" -> Json.fromInt(5),
+          "quantityReserved" -> Json.fromInt(0)
+        )
+        realEvent = StockReservedEvent(
+          items.head.id,
+          "sku-1",
+          2,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          StockEventConsumer.topic,
+          "sku-other",
+          envelopeJson("InventoryAdjusted", "irrelevant", otherPayload)
+        )
+        _ <- produce(
+          config,
+          StockEventConsumer.topic,
+          "sku-1",
+          envelopeJson("StockReserved", items.head.id, realEvent.asJson)
+        )
+        finalStatus <- IO.race(
+          StockEventConsumer
+            .run[IO](
+              config,
+              store,
+              NoOpLogger[IO],
+              OrderEventPublisher.noOp[IO]
+            )
+            .compile
+            .drain,
+          pollForStatus(store, order.id, OrderStatus.Reserved)
+        )
+      } yield assertEquals(finalStatus, Right(OrderStatus.Reserved))
     }
   }
 
@@ -213,15 +291,19 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         _ <- produce(
           config,
-          StockEventConsumer.reservedTopic,
+          StockEventConsumer.topic,
           "sku-unknown",
-          unknownEvent.asJson.noSpaces
+          envelopeJson(
+            "StockReserved",
+            "unknown-item-id",
+            unknownEvent.asJson
+          )
         )
         _ <- produce(
           config,
-          StockEventConsumer.reservedTopic,
+          StockEventConsumer.topic,
           "sku-1",
-          realEvent.asJson.noSpaces
+          envelopeJson("StockReserved", items.head.id, realEvent.asJson)
         )
         finalStatus <- IO.race(
           StockEventConsumer
@@ -263,15 +345,19 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         _ <- produce(
           config,
-          StockEventConsumer.reservationFailedTopic,
+          StockEventConsumer.topic,
           "sku-1",
-          staleEvent.asJson.noSpaces
+          envelopeJson(
+            "StockReservationFailed",
+            resolvedItems.head.id,
+            staleEvent.asJson
+          )
         )
         _ <- produce(
           config,
-          StockEventConsumer.reservedTopic,
+          StockEventConsumer.topic,
           "sku-1",
-          liveEvent.asJson.noSpaces
+          envelopeJson("StockReserved", otherItems.head.id, liveEvent.asJson)
         )
         finalStatus <- IO.race(
           StockEventConsumer
@@ -294,7 +380,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   test(
-    "a synthetic stock-reserved event also publishes order.reserved with the order's details"
+    "a synthetic StockReserved envelope also publishes OrderReserved with the order's details"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -311,9 +397,9 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
             )
             _ <- produce(
               config,
-              StockEventConsumer.reservedTopic,
+              StockEventConsumer.topic,
               "sku-1",
-              event.asJson.noSpaces
+              envelopeJson("StockReserved", items.head.id, event.asJson)
             )
             published <- IO.race(
               StockEventConsumer
@@ -322,15 +408,16 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
                 .drain,
               consumeMatching(
                 config,
-                OrderEventPublisher.reservedTopic,
-                _.contains(order.id)
+                OrderEventPublisher.topic,
+                forOrderAndType(order.id, "OrderReserved")
               )
             )
           } yield published match {
             case Left(()) =>
-              fail("consumer finished before order.reserved was published")
+              fail("consumer finished before OrderReserved was published")
             case Right(raw) =>
-              decode[OrderReservedEvent](raw) match {
+              val envelope = decode[EventEnvelope](raw).toOption.get
+              envelope.payload.as[OrderReservedEvent] match {
                 case Left(error)  => fail(s"failed to decode: $error")
                 case Right(event) =>
                   assertEquals(event.orderId, order.id)
@@ -343,7 +430,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   test(
-    "a synthetic stock-reservation-failed event never publishes order.reserved"
+    "a synthetic StockReservationFailed envelope never publishes OrderReserved"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -360,9 +447,13 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
             )
             _ <- produce(
               config,
-              StockEventConsumer.reservationFailedTopic,
+              StockEventConsumer.topic,
               "sku-1",
-              event.asJson.noSpaces
+              envelopeJson(
+                "StockReservationFailed",
+                items.head.id,
+                event.asJson
+              )
             )
             result <- IO.race(
               StockEventConsumer
@@ -372,8 +463,8 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
               pollForStatus(store, order.id, OrderStatus.ReservationFailed) *>
                 noMatchingMessageWithin(
                   config,
-                  OrderEventPublisher.reservedTopic,
-                  _.contains(order.id),
+                  OrderEventPublisher.topic,
+                  forOrderAndType(order.id, "OrderReserved"),
                   3.seconds
                 )
             )
@@ -383,7 +474,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   test(
-    "a synthetic stock-reservation-failed event also publishes order.status-changed with reservation_failed"
+    "a synthetic StockReservationFailed envelope also publishes OrderStatusChanged with reservation_failed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -400,9 +491,13 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
             )
             _ <- produce(
               config,
-              StockEventConsumer.reservationFailedTopic,
+              StockEventConsumer.topic,
               "sku-1",
-              event.asJson.noSpaces
+              envelopeJson(
+                "StockReservationFailed",
+                items.head.id,
+                event.asJson
+              )
             )
             published <- IO.race(
               StockEventConsumer
@@ -411,17 +506,18 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
                 .drain,
               consumeMatching(
                 config,
-                OrderEventPublisher.statusChangedTopic,
-                _.contains(order.id)
+                OrderEventPublisher.topic,
+                forOrderAndType(order.id, "OrderStatusChanged")
               )
             )
           } yield published match {
             case Left(()) =>
               fail(
-                "consumer finished before order.status-changed was published"
+                "consumer finished before OrderStatusChanged was published"
               )
             case Right(raw) =>
-              decode[OrderStatusChangedEvent](raw) match {
+              val envelope = decode[EventEnvelope](raw).toOption.get
+              envelope.payload.as[OrderStatusChangedEvent] match {
                 case Left(error)  => fail(s"failed to decode: $error")
                 case Right(event) =>
                   assertEquals(event.orderId, order.id)
@@ -434,7 +530,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   test(
-    "a synthetic stock-reserved event never publishes order.status-changed"
+    "a synthetic StockReserved envelope never publishes OrderStatusChanged"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -451,9 +547,9 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
             )
             _ <- produce(
               config,
-              StockEventConsumer.reservedTopic,
+              StockEventConsumer.topic,
               "sku-1",
-              event.asJson.noSpaces
+              envelopeJson("StockReserved", items.head.id, event.asJson)
             )
             result <- IO.race(
               StockEventConsumer
@@ -463,8 +559,8 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
               pollForStatus(store, order.id, OrderStatus.Reserved) *>
                 noMatchingMessageWithin(
                   config,
-                  OrderEventPublisher.statusChangedTopic,
-                  _.contains(order.id),
+                  OrderEventPublisher.topic,
+                  forOrderAndType(order.id, "OrderStatusChanged"),
                   3.seconds
                 )
             )

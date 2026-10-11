@@ -1,0 +1,8 @@
+{
+  "track_id": "kafka-envelope_20261011",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-11T00:00:00Z",
+  "updated_at": "2026-10-11T00:00:00Z",
+  "description": "Migrate order-service's publish (order.reserved/order.status-changed) and consume (inventory + payment events) to order-events/inventory-events/payment-events domain topics with a shared envelope, per ADR 0009 / PLAN.md Rework 2"
+}

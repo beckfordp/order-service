@@ -23,7 +23,16 @@ class OrderEventPublisherSuite
   private def configFor(kafka: KafkaContainer): KafkaConfig =
     KafkaConfig(bootstrapServers = kafka.bootstrapServers)
 
-  private def consumeOne(config: KafkaConfig, topic: String): IO[String] = {
+  /** Both event types now share one `order-events` topic (ADR 0009), so a
+    * fresh "earliest" consumer can see another test's leftover message
+    * first — filter for the envelope matching this test's own
+    * `correlationId` rather than just taking the first record.
+    */
+  private def consumeEnvelope(
+      config: KafkaConfig,
+      topic: String,
+      correlationId: String
+  ): IO[String] = {
     val consumerSettings =
       ConsumerSettings[IO, String, String]
         .withBootstrapServers(config.bootstrapServers)
@@ -34,21 +43,27 @@ class OrderEventPublisherSuite
       for {
         _ <- consumer.subscribeTo(topic)
         record <- consumer.stream
+          .map(_.record.value)
+          .filter(raw =>
+            decode[EventEnvelope](raw).exists(
+              _.correlationId == correlationId
+            )
+          )
           .take(1)
           .compile
           .lastOrError
           .timeout(15.seconds)
-      } yield record.record.value
+      } yield record
     }
   }
 
   test(
-    "publishReserved produces exactly one message on order.reserved"
+    "publishReserved produces one message on order-events, wrapped in an envelope"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
       val event = OrderReservedEvent(
-        orderId = "order-1",
+        orderId = "order-reserved-1",
         customerId = "cust-123",
         totalCents = 4999,
         timestamp = Instant.parse("2026-01-01T00:00:00Z")
@@ -56,21 +71,29 @@ class OrderEventPublisherSuite
       for {
         consumed <- OrderEventPublisher
           .resource[IO](config, NoOpLogger[IO])
-          .use(_.publishReserved(event)) *> consumeOne(
+          .use(_.publishReserved(event)) *> consumeEnvelope(
           config,
-          OrderEventPublisher.reservedTopic
+          OrderEventPublisher.topic,
+          event.orderId
         )
-      } yield assertEquals(decode[OrderReservedEvent](consumed), Right(event))
+        envelope = decode[EventEnvelope](consumed).toOption.get
+      } yield {
+        assertEquals(envelope.eventType, "OrderReserved")
+        assertEquals(envelope.source, "order-service")
+        assertEquals(envelope.correlationId, "order-reserved-1")
+        assert(envelope.eventId.nonEmpty)
+        assertEquals(envelope.payload.as[OrderReservedEvent], Right(event))
+      }
     }
   }
 
   test(
-    "publishStatusChanged produces exactly one message on order.status-changed"
+    "publishStatusChanged produces one message on order-events, wrapped in an envelope"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
       val event = OrderStatusChangedEvent(
-        orderId = "order-1",
+        orderId = "order-status-1",
         customerId = "cust-123",
         status = "reservation_failed",
         timestamp = Instant.parse("2026-01-01T00:00:00Z")
@@ -78,14 +101,22 @@ class OrderEventPublisherSuite
       for {
         consumed <- OrderEventPublisher
           .resource[IO](config, NoOpLogger[IO])
-          .use(_.publishStatusChanged(event)) *> consumeOne(
+          .use(_.publishStatusChanged(event)) *> consumeEnvelope(
           config,
-          OrderEventPublisher.statusChangedTopic
+          OrderEventPublisher.topic,
+          event.orderId
         )
-      } yield assertEquals(
-        decode[OrderStatusChangedEvent](consumed),
-        Right(event)
-      )
+        envelope = decode[EventEnvelope](consumed).toOption.get
+      } yield {
+        assertEquals(envelope.eventType, "OrderStatusChanged")
+        assertEquals(envelope.source, "order-service")
+        assertEquals(envelope.correlationId, "order-status-1")
+        assert(envelope.eventId.nonEmpty)
+        assertEquals(
+          envelope.payload.as[OrderStatusChangedEvent],
+          Right(event)
+        )
+      }
     }
   }
 

@@ -4,12 +4,14 @@ import cats.effect.IO
 import com.dimafeng.testcontainers.KafkaContainer
 import com.dimafeng.testcontainers.munit.TestContainerForAll
 import fs2.kafka._
+import io.circe.Json
 import io.circe.parser.decode
 import io.circe.syntax._
 import munit.CatsEffectSuite
 import org.typelevel.log4cats.noop.NoOpLogger
 
 import java.time.Instant
+import java.util.UUID
 import scala.concurrent.duration._
 
 class PaymentEventConsumerSuite
@@ -34,6 +36,20 @@ class PaymentEventConsumerSuite
       .resource(producerSettings)
       .use(_.produceOne_(ProducerRecord(topic, key, json)).flatten.void)
   }
+
+  private def envelopeJson(
+      eventType: String,
+      correlationId: String,
+      payload: Json
+  ): String =
+    EventEnvelope(
+      eventId = UUID.randomUUID().toString,
+      eventType = eventType,
+      timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+      source = "payment-service",
+      correlationId = correlationId,
+      payload = payload
+    ).asJson.noSpaces
 
   private def pollUntil[A](check: IO[Option[A]]): IO[A] =
     check.flatMap {
@@ -89,11 +105,21 @@ class PaymentEventConsumerSuite
     }
   }
 
+  /** Matches an envelope on `order-events` for the given orderId *and*
+    * eventType - `OrderReserved`/`OrderStatusChanged` share one topic now.
+    */
+  private def forOrderAndType(orderId: String, eventType: String)(
+      raw: String
+  ): Boolean =
+    decode[EventEnvelope](raw).exists(envelope =>
+      envelope.correlationId == orderId && envelope.eventType == eventType
+    )
+
   private val oneItem =
     List(NewOrderItem("sku-1", "Widget", 999, 2))
 
   test(
-    "a synthetic payment.settled event flips a Reserved order's status to Confirmed"
+    "a synthetic PaymentSettled envelope flips a Reserved order's status to Confirmed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -109,9 +135,9 @@ class PaymentEventConsumerSuite
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.settledTopic,
+          PaymentEventConsumer.topic,
           order.id,
-          event.asJson.noSpaces
+          envelopeJson("PaymentSettled", order.id, event.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -130,7 +156,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a synthetic payment.failed event flips a Reserved order's status to PaymentFailed"
+    "a synthetic PaymentFailed envelope flips a Reserved order's status to PaymentFailed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -146,9 +172,9 @@ class PaymentEventConsumerSuite
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.failedTopic,
+          PaymentEventConsumer.topic,
           order.id,
-          event.asJson.noSpaces
+          envelopeJson("PaymentFailed", order.id, event.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -163,6 +189,53 @@ class PaymentEventConsumerSuite
           pollForStatus(store, order.id, OrderStatus.PaymentFailed)
         )
       } yield assertEquals(finalStatus, Right(OrderStatus.PaymentFailed))
+    }
+  }
+
+  test(
+    "an envelope with a different eventType on payment-events is ignored, not treated as malformed"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      for {
+        store <- OrderStore.inMemory[IO]
+        (order, _) <- store.create("cust-123", oneItem)
+        _ <- store.update(order.id, OrderStatus.Reserved)
+        realEvent = PaymentSettledEvent(
+          order.id,
+          "payment-1",
+          order.totalCents,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        otherPayload = Json.obj(
+          "paymentId" -> Json.fromString("payment-irrelevant"),
+          "reason" -> Json.fromString("refunded")
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          "payment-irrelevant",
+          envelopeJson("PaymentRefunded", "irrelevant", otherPayload)
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          order.id,
+          envelopeJson("PaymentSettled", order.id, realEvent.asJson)
+        )
+        finalStatus <- IO.race(
+          PaymentEventConsumer
+            .run[IO](
+              config,
+              store,
+              NoOpLogger[IO],
+              OrderEventPublisher.noOp[IO]
+            )
+            .compile
+            .drain,
+          pollForStatus(store, order.id, OrderStatus.Confirmed)
+        )
+      } yield assertEquals(finalStatus, Right(OrderStatus.Confirmed))
     }
   }
 
@@ -190,15 +263,19 @@ class PaymentEventConsumerSuite
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.settledTopic,
+          PaymentEventConsumer.topic,
           stalePendingOrder.id,
-          staleEvent.asJson.noSpaces
+          envelopeJson(
+            "PaymentSettled",
+            stalePendingOrder.id,
+            staleEvent.asJson
+          )
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.settledTopic,
+          PaymentEventConsumer.topic,
           liveOrder.id,
-          liveEvent.asJson.noSpaces
+          envelopeJson("PaymentSettled", liveOrder.id, liveEvent.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -243,15 +320,19 @@ class PaymentEventConsumerSuite
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.settledTopic,
+          PaymentEventConsumer.topic,
           "unknown-order-id",
-          unknownEvent.asJson.noSpaces
+          envelopeJson(
+            "PaymentSettled",
+            "unknown-order-id",
+            unknownEvent.asJson
+          )
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.settledTopic,
+          PaymentEventConsumer.topic,
           order.id,
-          realEvent.asJson.noSpaces
+          envelopeJson("PaymentSettled", order.id, realEvent.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -270,7 +351,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a malformed payment.settled event is a no-op and doesn't block later events"
+    "a malformed envelope is a no-op and doesn't block later events"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -286,15 +367,15 @@ class PaymentEventConsumerSuite
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.settledTopic,
+          PaymentEventConsumer.topic,
           "bad-key",
           "{not valid json"
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.settledTopic,
+          PaymentEventConsumer.topic,
           order.id,
-          realEvent.asJson.noSpaces
+          envelopeJson("PaymentSettled", order.id, realEvent.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -313,7 +394,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "payment.settled and payment.failed route to their own distinct target statuses, not the other's"
+    "PaymentSettled and PaymentFailed route to their own distinct target statuses, not the other's"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -337,15 +418,15 @@ class PaymentEventConsumerSuite
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.settledTopic,
+          PaymentEventConsumer.topic,
           settledOrder.id,
-          settledEvent.asJson.noSpaces
+          envelopeJson("PaymentSettled", settledOrder.id, settledEvent.asJson)
         )
         _ <- produce(
           config,
-          PaymentEventConsumer.failedTopic,
+          PaymentEventConsumer.topic,
           failedOrder.id,
-          failedEvent.asJson.noSpaces
+          envelopeJson("PaymentFailed", failedOrder.id, failedEvent.asJson)
         )
         result <- IO.race(
           PaymentEventConsumer
@@ -370,7 +451,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a synthetic payment.settled event also publishes order.status-changed with status=confirmed"
+    "a synthetic PaymentSettled envelope also publishes OrderStatusChanged with status=confirmed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -388,9 +469,9 @@ class PaymentEventConsumerSuite
             )
             _ <- produce(
               config,
-              PaymentEventConsumer.settledTopic,
+              PaymentEventConsumer.topic,
               order.id,
-              event.asJson.noSpaces
+              envelopeJson("PaymentSettled", order.id, event.asJson)
             )
             published <- IO.race(
               PaymentEventConsumer
@@ -399,17 +480,18 @@ class PaymentEventConsumerSuite
                 .drain,
               consumeMatching(
                 config,
-                OrderEventPublisher.statusChangedTopic,
-                _.contains(order.id)
+                OrderEventPublisher.topic,
+                forOrderAndType(order.id, "OrderStatusChanged")
               )
             )
           } yield published match {
             case Left(()) =>
               fail(
-                "consumer finished before order.status-changed was published"
+                "consumer finished before OrderStatusChanged was published"
               )
             case Right(raw) =>
-              decode[OrderStatusChangedEvent](raw) match {
+              val envelope = decode[EventEnvelope](raw).toOption.get
+              envelope.payload.as[OrderStatusChangedEvent] match {
                 case Left(error)  => fail(s"failed to decode: $error")
                 case Right(event) =>
                   assertEquals(event.orderId, order.id)
@@ -422,7 +504,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a synthetic payment.failed event also publishes order.status-changed with status=payment_failed"
+    "a synthetic PaymentFailed envelope also publishes OrderStatusChanged with status=payment_failed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -440,9 +522,9 @@ class PaymentEventConsumerSuite
             )
             _ <- produce(
               config,
-              PaymentEventConsumer.failedTopic,
+              PaymentEventConsumer.topic,
               order.id,
-              event.asJson.noSpaces
+              envelopeJson("PaymentFailed", order.id, event.asJson)
             )
             published <- IO.race(
               PaymentEventConsumer
@@ -451,17 +533,18 @@ class PaymentEventConsumerSuite
                 .drain,
               consumeMatching(
                 config,
-                OrderEventPublisher.statusChangedTopic,
-                _.contains(order.id)
+                OrderEventPublisher.topic,
+                forOrderAndType(order.id, "OrderStatusChanged")
               )
             )
           } yield published match {
             case Left(()) =>
               fail(
-                "consumer finished before order.status-changed was published"
+                "consumer finished before OrderStatusChanged was published"
               )
             case Right(raw) =>
-              decode[OrderStatusChangedEvent](raw) match {
+              val envelope = decode[EventEnvelope](raw).toOption.get
+              envelope.payload.as[OrderStatusChangedEvent] match {
                 case Left(error)  => fail(s"failed to decode: $error")
                 case Right(event) =>
                   assertEquals(event.orderId, order.id)
