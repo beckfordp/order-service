@@ -1,0 +1,6 @@
+Task: Outbox table migration (Phase 1, tasks 1-2)
+
+- Added V7__create_outbox_events.sql: outbox_events table (id/aggregate_id/payload/trace_parent/correlation_id/created_at).
+- Added MigrationsSuite test asserting the table's columns exist (Red then Green, combined in this commit).
+- Why: ADR 0008's transactional outbox pattern - Kafka-bound events are written here instead of a direct producer call, closing TD-3's dual-write hazard.
+- Files: src/main/resources/db/migration/V7__create_outbox_events.sql, src/test/scala/orderservice/MigrationsSuite.scala
