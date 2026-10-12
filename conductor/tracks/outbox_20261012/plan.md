@@ -1,8 +1,8 @@
 # Plan — TD-3.2: Transactional outbox for order-service (ADR 0008)
 
 ## Phase 1 — Outbox table + atomic store writes
-- [ ] Task: Write failing `MigrationsSuite` test asserting `outbox_events` exists with columns `id`/`aggregate_id`/`payload`/`trace_parent`/`correlation_id`/`created_at` (Red)
-- [ ] Task: Add `V7__create_outbox_events.sql` migration to make it pass (Green)
+- [x] Task: Write failing `MigrationsSuite` test asserting `outbox_events` exists with columns `id`/`aggregate_id`/`payload`/`trace_parent`/`correlation_id`/`created_at` (Red) `dfc2e13`
+- [x] Task: Add `V7__create_outbox_events.sql` migration to make it pass (Green) `dfc2e13`
 - [ ] Task: Write failing `OrderStoreSuite` tests: `update` (OrderRoutes' checkout-failure path) writes a matching outbox row in the same transaction as its state-change UPDATE (Red)
 - [ ] Task: Extend `OrderStore.update` to accept the envelope-building inputs and write the outbox row inside its existing `session.transaction` (Green)
 - [ ] Task: Write failing tests: `updateStatusByItemId` writes a matching outbox row atomically (Red); extend it to do so (Green)
