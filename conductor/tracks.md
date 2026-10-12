@@ -11,6 +11,7 @@ folder), so `/conductor:implement` cannot pick these up by accident. Reorder fre
 priorities change. When ready to work on one, run `/conductor:newTrack <title>` to go
 through the spec/plan questions and promote it into a real track above.
 
+- TD-3.2 / ADR 0008: transactional outbox — add `outbox_events` table (Flyway migration), write to it in the same transaction as the order/order_items state change, drop the direct `OrderEventPublisher` calls
 - fix: reservation-failure response falls back to stale `pending` status if OrderStore.update races to None (US-4.2 review finding)
 - future: surface StockEventConsumer startup/fiber failure (e.g. Kafka unreachable) via /health/ready or a distinct error log, instead of the server silently running with no consumer (US-5.2 review finding)
 
