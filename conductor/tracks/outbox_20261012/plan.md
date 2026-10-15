@@ -10,11 +10,11 @@
 - [x] Task: Write failing atomicity test: a state-change write that doesn't match (e.g. `updateStatusIfCurrent` with a stale `expected` status, returning `None`) writes no outbox row either (Red); confirm the existing `None`-short-circuit path already satisfies this (Green) `ed79de1`
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Outbox table + atomic store writes' (Protocol in workflow.md) `494dcf5` — reduced-prompting mode: automated-test verification only (146 passed), no interactive walkthrough; see git note on `494dcf5`
 
-## Phase 2 — Wire call sites to the outbox, not the publisher
+## Phase 2 — Wire call sites to the outbox, not the publisher [checkpoint: 5922112]
 - [x] Task: `OrderRoutes`' checkout-failure path: replace the `publisher.publishStatusChanged(...)` call with passing the envelope inputs into `store.update` (Red: existing route test asserts outbox row rather than publisher invocation; Green: wire it) `c4cbac6`
 - [x] Task: `StockEventConsumer`'s `handleReserved`/`handleReservationFailed`: same swap for `updateStatusByItemId` (Red/Green) `c4cbac6`
 - [x] Task: `PaymentEventConsumer`'s `handleSettled`/`handleFailed`: same swap for `updateStatusIfCurrent` (Red/Green) `c4cbac6`
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Wire call sites to the outbox' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Wire call sites to the outbox' (Protocol in workflow.md) `5922112` — reduced-prompting mode: automated-test verification only (146 passed), no interactive walkthrough; see git note on `5922112`
 
 ## Phase 3 — Delete OrderEventPublisher
 - [ ] Task: Delete `OrderEventPublisher.scala` and `OrderEventPublisherSuite.scala`
