@@ -11,9 +11,9 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Outbox table + atomic store writes' (Protocol in workflow.md) `494dcf5` — reduced-prompting mode: automated-test verification only (146 passed), no interactive walkthrough; see git note on `494dcf5`
 
 ## Phase 2 — Wire call sites to the outbox, not the publisher
-- [ ] Task: `OrderRoutes`' checkout-failure path: replace the `publisher.publishStatusChanged(...)` call with passing the envelope inputs into `store.update` (Red: existing route test asserts outbox row rather than publisher invocation; Green: wire it)
-- [ ] Task: `StockEventConsumer`'s `handleReserved`/`handleReservationFailed`: same swap for `updateStatusByItemId` (Red/Green)
-- [ ] Task: `PaymentEventConsumer`'s `handleSettled`/`handleFailed`: same swap for `updateStatusIfCurrent` (Red/Green)
+- [x] Task: `OrderRoutes`' checkout-failure path: replace the `publisher.publishStatusChanged(...)` call with passing the envelope inputs into `store.update` (Red: existing route test asserts outbox row rather than publisher invocation; Green: wire it) `c4cbac6`
+- [x] Task: `StockEventConsumer`'s `handleReserved`/`handleReservationFailed`: same swap for `updateStatusByItemId` (Red/Green) `c4cbac6`
+- [x] Task: `PaymentEventConsumer`'s `handleSettled`/`handleFailed`: same swap for `updateStatusIfCurrent` (Red/Green) `c4cbac6`
 - [ ] Task: Conductor - User Manual Verification 'Phase 2: Wire call sites to the outbox' (Protocol in workflow.md)
 
 ## Phase 3 — Delete OrderEventPublisher
