@@ -1,0 +1,14 @@
+Task: delete OrderEventPublisher and remove its wiring entirely (TD-3.2, ADR 0008 Phase 3, all three tasks).
+
+Changes:
+- Deleted OrderEventPublisher.scala and OrderEventPublisherSuite.scala.
+- OrderRoutes.scala: removed publisher param from serverEndpoint/routes.
+- StockEventConsumer.scala: removed publisher param from run/handleReserved/handleReservationFailed; deleted the now-dead publishReservedIfUpdated/publishStatusChangedIfUpdated helpers.
+- PaymentEventConsumer.scala: removed publisher param from run/handleSettled/handleFailed; deleted the now-dead publishStatusChangedIfUpdated helper.
+- Main.scala: removed the OrderEventPublisher.resource(...).use { ... } wrapper entirely, unwrapped its body one level, dropped the publisher arg from StockEventConsumer.run/PaymentEventConsumer.run/OrderRoutes.serverEndpoint.
+- Test files (OrderDocsSuite, OrderRoutesSuite, StockEventConsumerSuite, PaymentEventConsumerSuite): dropped the now-removed publisher argument from every call site; OrderRoutesSuite's now-dead noOpPublisher/capturingPublisher helpers deleted too.
+- OrderStore.scala's doc comments already correctly referred to OrderEventPublisher as 'now-deleted' from Phase 1 - left as-is, now accurate.
+
+Why: ADR 0008's stated scope - once the outbox write is wired in (Phases 1-2), there's no direct-publish code path left to keep. Confirmed via grep: no remaining reference to OrderEventPublisher anywhere in src/ except three historical doc-comment mentions in OrderStore.scala.
+
+Tests: sbt scalafmtCheck test - 143 passed, 0 failed (146 at Phase 2's end, minus OrderEventPublisherSuite's own 3 deleted tests).
