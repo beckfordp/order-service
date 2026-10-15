@@ -1,0 +1,13 @@
+Phase 1 verification report (TD-3.2, ADR 0008) - Outbox table + atomic store writes.
+
+Automated test command: sbt scalafmtCheck test
+Result: 146 passed, 0 failed, 0 ignored (includes 6 new outbox-atomicity tests against a real Testcontainers Postgres instance).
+
+What was verified:
+- V7__create_outbox_events.sql migration creates outbox_events with id/aggregate_id/payload/trace_parent/correlation_id/created_at.
+- OrderStore.update/updateStatusByItemId/updateStatusIfCurrent each write a matching outbox row (correct aggregate_id/correlation_id = orderId, payload decodes back to the expected EventEnvelope/event shape) inside the SAME Postgres transaction as their own state-change UPDATE.
+- Atomicity proven both directions: a successful state-change writes exactly one outbox row; a no-op update (unknown id / stale expected-status / order no longer Pending, all returning None) writes zero outbox rows - confirmed against a real Postgres instance, not mocked.
+
+Reduced-prompting mode (.claude/prompt-off, off since 2026-10-01): no interactive manual-verification walkthrough performed - this automated-test proof substitutes for it, per the /prompt skill's documented behavior.
+
+Not yet done: Phase 2 (wiring OrderRoutes/StockEventConsumer/PaymentEventConsumer to actually use this instead of calling OrderEventPublisher) and Phase 3 (deleting OrderEventPublisher).
