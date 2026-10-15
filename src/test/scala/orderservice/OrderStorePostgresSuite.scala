@@ -4,6 +4,8 @@ import cats.effect.IO
 import cats.syntax.all._
 import com.dimafeng.testcontainers.PostgreSQLContainer
 import com.dimafeng.testcontainers.munit.TestContainerForAll
+import io.circe.parser.decode
+import io.circe.syntax._
 import munit.CatsEffectSuite
 import org.testcontainers.utility.DockerImageName
 import org.typelevel.otel4s.metrics.Meter
@@ -37,6 +39,47 @@ class OrderStorePostgresSuite extends CatsEffectSuite with TestContainerForAll {
       NewOrderItem("sku-1", "Widget", 999, 2),
       NewOrderItem("sku-2", "Gadget", 500, 3)
     )
+
+  /** Raw-JDBC read of outbox_events for a given aggregate_id - mirrors
+    * MigrationsSuite's own raw-JDBC pattern; this track's production code
+    * never reads this table back (only a future Debezium connector does),
+    * so there's no Skunk read path to reuse here.
+    */
+  private def outboxRowsFor(
+      postgres: PostgreSQLContainer,
+      aggregateId: String
+  ): IO[List[(String, String, String)]] =
+    IO {
+      val conn = DriverManager.getConnection(
+        postgres.jdbcUrl,
+        postgres.username,
+        postgres.password
+      )
+      try {
+        val rs = conn
+          .createStatement()
+          .executeQuery(
+            "select aggregate_id, correlation_id, payload::text from outbox_events " +
+              s"where aggregate_id = '$aggregateId'"
+          )
+        Iterator
+          .unfold(())(_ =>
+            if (rs.next())
+              Some(
+                (
+                  (
+                    rs.getString("aggregate_id"),
+                    rs.getString("correlation_id"),
+                    rs.getString("payload")
+                  ),
+                  ()
+                )
+              )
+            else None
+          )
+          .toList
+      } finally conn.close()
+    }
 
   test("create persists an entity and returns it with a generated id") {
     withContainers { postgres =>
@@ -616,6 +659,238 @@ class OrderStorePostgresSuite extends CatsEffectSuite with TestContainerForAll {
             assertEquals(read2, updated)
             assert(deleted, "expected delete to report the entity existed")
             assertEquals(read3, None)
+          }
+        }
+    }
+  }
+
+  test(
+    "update writes a matching outbox row in the same transaction as the state-change UPDATE"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val outboxEvent = PendingOutboxEvent(
+        "OrderStatusChanged",
+        ref =>
+          OrderStatusChangedEvent(
+            ref.orderId,
+            ref.customerId,
+            OrderStatus.ReservationFailed.asString,
+            java.time.Instant.EPOCH
+          ).asJson
+      )
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            updated <- store.update(
+              created.id,
+              OrderStatus.ReservationFailed,
+              Some(outboxEvent)
+            )
+            rows <- outboxRowsFor(postgres, created.id)
+          } yield {
+            assert(updated.isDefined)
+            assertEquals(rows.size, 1)
+            val (aggregateId, correlationId, payloadJson) = rows.head
+            assertEquals(aggregateId, created.id)
+            assertEquals(correlationId, created.id)
+            val envelope = decode[EventEnvelope](payloadJson)
+            assertEquals(envelope.map(_.eventType), Right("OrderStatusChanged"))
+            assertEquals(envelope.map(_.correlationId), Right(created.id))
+            val payload =
+              envelope.flatMap(_.payload.as[OrderStatusChangedEvent])
+            assertEquals(
+              payload.map(_.status),
+              Right(OrderStatus.ReservationFailed.asString)
+            )
+          }
+        }
+    }
+  }
+
+  test("update writes no outbox row when it returns None (unknown id)") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val unknownId = java.util.UUID.randomUUID().toString
+      val outboxEvent = PendingOutboxEvent(
+        "OrderStatusChanged",
+        ref =>
+          OrderStatusChangedEvent(
+            ref.orderId,
+            ref.customerId,
+            "reservation_failed",
+            java.time.Instant.EPOCH
+          ).asJson
+      )
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            updated <- store.update(
+              unknownId,
+              OrderStatus.ReservationFailed,
+              Some(outboxEvent)
+            )
+            rows <- outboxRowsFor(postgres, unknownId)
+          } yield {
+            assertEquals(updated, None)
+            assertEquals(rows, Nil)
+          }
+        }
+    }
+  }
+
+  test(
+    "updateStatusByItemId writes a matching outbox row in the same transaction as its UPDATE"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val outboxEvent = PendingOutboxEvent(
+        "OrderReserved",
+        ref =>
+          OrderReservedEvent(
+            ref.orderId,
+            ref.customerId,
+            ref.totalCents,
+            java.time.Instant.EPOCH
+          ).asJson
+      )
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, items) <- store.create("cust-123", oneItem)
+            updated <- store.updateStatusByItemId(
+              items.head.id,
+              OrderStatus.Reserved,
+              Some(outboxEvent)
+            )
+            rows <- outboxRowsFor(postgres, created.id)
+          } yield {
+            assert(updated.isDefined)
+            assertEquals(rows.size, 1)
+            val (aggregateId, correlationId, payloadJson) = rows.head
+            assertEquals(aggregateId, created.id)
+            assertEquals(correlationId, created.id)
+            val envelope = decode[EventEnvelope](payloadJson)
+            assertEquals(envelope.map(_.eventType), Right("OrderReserved"))
+            val payload = envelope.flatMap(_.payload.as[OrderReservedEvent])
+            assertEquals(payload.map(_.orderId), Right(created.id))
+            assertEquals(payload.map(_.totalCents), Right(created.totalCents))
+          }
+        }
+    }
+  }
+
+  test(
+    "updateStatusByItemId writes no outbox row for an order that's no longer Pending"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val outboxEvent = PendingOutboxEvent(
+        "OrderReserved",
+        ref =>
+          OrderReservedEvent(
+            ref.orderId,
+            ref.customerId,
+            ref.totalCents,
+            java.time.Instant.EPOCH
+          ).asJson
+      )
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, items) <- store.create("cust-123", oneItem)
+            _ <- store.update(created.id, OrderStatus.ReservationFailed)
+            updated <- store.updateStatusByItemId(
+              items.head.id,
+              OrderStatus.Reserved,
+              Some(outboxEvent)
+            )
+            rows <- outboxRowsFor(postgres, created.id)
+          } yield {
+            assertEquals(updated, None)
+            assertEquals(rows, Nil)
+          }
+        }
+    }
+  }
+
+  test(
+    "updateStatusIfCurrent writes a matching outbox row in the same transaction as its UPDATE"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val outboxEvent = PendingOutboxEvent(
+        "OrderStatusChanged",
+        ref =>
+          OrderStatusChangedEvent(
+            ref.orderId,
+            ref.customerId,
+            "confirmed",
+            java.time.Instant.EPOCH
+          ).asJson
+      )
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            _ <- store.update(created.id, OrderStatus.Reserved)
+            updated <- store.updateStatusIfCurrent(
+              created.id,
+              OrderStatus.Reserved,
+              OrderStatus.Confirmed,
+              Some(outboxEvent)
+            )
+            rows <- outboxRowsFor(postgres, created.id)
+          } yield {
+            assert(updated.isDefined)
+            assertEquals(rows.size, 1)
+            val envelope = decode[EventEnvelope](rows.head._3)
+            assertEquals(envelope.map(_.eventType), Right("OrderStatusChanged"))
+            val payload =
+              envelope.flatMap(_.payload.as[OrderStatusChangedEvent])
+            assertEquals(payload.map(_.status), Right("confirmed"))
+          }
+        }
+    }
+  }
+
+  test(
+    "updateStatusIfCurrent writes no outbox row when the order's current status doesn't match expected (atomicity)"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val outboxEvent = PendingOutboxEvent(
+        "OrderStatusChanged",
+        ref =>
+          OrderStatusChangedEvent(
+            ref.orderId,
+            ref.customerId,
+            "confirmed",
+            java.time.Instant.EPOCH
+          ).asJson
+      )
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            // order is still Pending, not Reserved - expected status won't match
+            updated <- store.updateStatusIfCurrent(
+              created.id,
+              OrderStatus.Reserved,
+              OrderStatus.Confirmed,
+              Some(outboxEvent)
+            )
+            rows <- outboxRowsFor(postgres, created.id)
+          } yield {
+            assertEquals(updated, None)
+            assertEquals(rows, Nil)
           }
         }
     }

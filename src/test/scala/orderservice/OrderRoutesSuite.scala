@@ -81,17 +81,20 @@ class OrderRoutesSuite extends CatsEffectSuite {
       ): IO[List[(Order, List[OrderItem])]] = IO.raiseError(error)
       def update(
           id: String,
-          status: OrderStatus
+          status: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] =
         IO.raiseError(error)
       def updateStatusByItemId(
           orderItemId: String,
-          newStatus: OrderStatus
+          newStatus: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
       def updateStatusIfCurrent(
           id: String,
           expected: OrderStatus,
-          newStatus: OrderStatus
+          newStatus: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
       def delete(id: String): IO[Boolean] = IO.raiseError(error)
       def ping: IO[Boolean] = IO.raiseError(error)
@@ -1138,20 +1141,23 @@ class OrderRoutesSuite extends CatsEffectSuite {
           callCount.update(_ + 1) *> baseStore.listByCustomer(customerId)
         def update(
             id: String,
-            status: OrderStatus
+            status: OrderStatus,
+            outboxEvent: Option[PendingOutboxEvent] = None
         ): IO[Option[(Order, List[OrderItem])]] =
-          baseStore.update(id, status)
+          baseStore.update(id, status, outboxEvent)
         def updateStatusByItemId(
             orderItemId: String,
-            newStatus: OrderStatus
+            newStatus: OrderStatus,
+            outboxEvent: Option[PendingOutboxEvent] = None
         ): IO[Option[UpdatedOrderRef]] =
-          baseStore.updateStatusByItemId(orderItemId, newStatus)
+          baseStore.updateStatusByItemId(orderItemId, newStatus, outboxEvent)
         def updateStatusIfCurrent(
             id: String,
             expected: OrderStatus,
-            newStatus: OrderStatus
+            newStatus: OrderStatus,
+            outboxEvent: Option[PendingOutboxEvent] = None
         ): IO[Option[UpdatedOrderRef]] =
-          baseStore.updateStatusIfCurrent(id, expected, newStatus)
+          baseStore.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
         def delete(id: String): IO[Boolean] = baseStore.delete(id)
         def ping: IO[Boolean] = baseStore.ping
       }

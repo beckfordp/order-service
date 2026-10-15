@@ -4,6 +4,8 @@ import cats.effect.{Async, Ref, Resource, Sync}
 import cats.effect.std.Console
 import cats.syntax.all._
 import fs2.io.net.Network
+import io.circe.Json
+import io.circe.syntax._
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.metrics.Meter
 import skunk.{Codec, Session}
@@ -50,6 +52,20 @@ final case class UpdatedOrderRef(
     totalCents: Int
 )
 
+/** Describes the outbox row a state-changing `OrderStore` call should write
+  * atomically alongside its own UPDATE (ADR 0008, TD-3.2) - replacing the old
+  * pattern of a separate, non-transactional `OrderEventPublisher` call after
+  * the store returned. `payloadFor` is deferred rather than a pre-built `Json`
+  * because `updateStatusByItemId`/`updateStatusIfCurrent` only learn the
+  * order's id/customerId/totalCents from the UPDATE's own result (the caller
+  * doesn't have them beforehand) - `update`'s caller does already have them,
+  * but takes the same shape for one consistent API across all three methods.
+  */
+final case class PendingOutboxEvent(
+    eventType: String,
+    payloadFor: UpdatedOrderRef => Json
+)
+
 trait OrderStore[F[_]] {
   def create(
       customerId: String,
@@ -59,16 +75,19 @@ trait OrderStore[F[_]] {
   def listByCustomer(customerId: String): F[List[(Order, List[OrderItem])]]
   def update(
       id: String,
-      status: OrderStatus
+      status: OrderStatus,
+      outboxEvent: Option[PendingOutboxEvent] = None
   ): F[Option[(Order, List[OrderItem])]]
   def updateStatusByItemId(
       orderItemId: String,
-      newStatus: OrderStatus
+      newStatus: OrderStatus,
+      outboxEvent: Option[PendingOutboxEvent] = None
   ): F[Option[UpdatedOrderRef]]
   def updateStatusIfCurrent(
       id: String,
       expected: OrderStatus,
-      newStatus: OrderStatus
+      newStatus: OrderStatus,
+      outboxEvent: Option[PendingOutboxEvent] = None
   ): F[Option[UpdatedOrderRef]]
   def delete(id: String): F[Boolean]
   def ping: F[Boolean]
@@ -77,6 +96,29 @@ trait OrderStore[F[_]] {
 object OrderStore {
 
   private val defaultStatus = OrderStatus.Pending
+  private val eventSource = "order-service"
+
+  /** Mints `eventId`/`timestamp` and assembles the full envelope - mirrors the
+    * now-deleted `OrderEventPublisher.envelopeFor`, reused by both
+    * `inMemory`/`inMemoryWithOutbox` and `postgres` below so the envelope shape
+    * (per `system-design.md`'s "Envelope") is built in exactly one place.
+    */
+  private def buildEnvelope[F[_]: Sync](
+      eventType: String,
+      correlationId: String,
+      payload: Json
+  ): F[EventEnvelope] =
+    for {
+      eventId <- Sync[F].delay(UUID.randomUUID().toString)
+      timestamp <- Sync[F].realTimeInstant
+    } yield EventEnvelope(
+      eventId = eventId,
+      eventType = eventType,
+      timestamp = timestamp,
+      source = eventSource,
+      correlationId = correlationId,
+      payload = payload
+    )
 
   // Column stays plain `text` at the DB level (hardened by a CHECK constraint,
   // not a native Postgres enum type - see V2__add_order_status_check.sql); this
@@ -85,148 +127,198 @@ object OrderStore {
   private val orderStatus: Codec[OrderStatus] =
     text.eimap(OrderStatus.fromString)(_.asString)
 
-  def inMemory[F[_]: Sync]: F[OrderStore[F]] =
+  def inMemory[F[_]: Sync]: F[OrderStore[F]] = inMemoryWithOutbox[F].map(_._1)
+
+  /** Same as `inMemory`, but also returns a `Ref` capturing every outbox write
+    * (aggregateId, envelope) - for tests that need to assert a call site passed
+    * the right `PendingOutboxEvent` through to the store, not just that it
+    * stopped calling the old `OrderEventPublisher`. Kept as a separate
+    * constructor (rather than changing `inMemory`'s own signature) so the ~40
+    * existing `OrderStore.inMemory[IO]` call sites that don't care about outbox
+    * behavior need no changes.
+    */
+  def inMemoryWithOutbox[F[_]: Sync]
+      : F[(OrderStore[F], Ref[F, List[(String, EventEnvelope)]])] =
     for {
       ordersRef <- Ref.of[F, Map[String, Order]](Map.empty)
       itemsRef <- Ref.of[F, Map[String, List[OrderItem]]](Map.empty)
-    } yield new OrderStore[F] {
-      def create(
-          customerId: String,
-          items: List[NewOrderItem]
-      ): F[(Order, List[OrderItem])] =
-        for {
-          id <- Sync[F].delay(java.util.UUID.randomUUID().toString)
-          now <- Sync[F].realTimeInstant
-          totalCents = items.map(i => i.unitPriceCents * i.quantity).sum
-          entity = Order(id, customerId, totalCents, defaultStatus, now, now)
-          persistedItems <- items.traverse { item =>
-            Sync[F].delay(java.util.UUID.randomUUID().toString).map { itemId =>
-              OrderItem(
-                itemId,
-                id,
-                item.sku,
-                item.productName,
-                item.unitPriceCents,
-                item.quantity
+      outboxRef <- Ref.of[F, List[(String, EventEnvelope)]](Nil)
+    } yield {
+      def writeOutboxIfPresent(
+          ref: UpdatedOrderRef,
+          outboxEvent: Option[PendingOutboxEvent]
+      ): F[Unit] =
+        outboxEvent match {
+          case None       => Sync[F].unit
+          case Some(spec) =>
+            buildEnvelope[F](spec.eventType, ref.orderId, spec.payloadFor(ref))
+              .flatMap(envelope =>
+                outboxRef.update(_ :+ (ref.orderId -> envelope))
               )
-            }
-          }
-          _ <- ordersRef.update(_ + (id -> entity))
-          _ <- itemsRef.update(_ + (id -> persistedItems))
-        } yield (entity, persistedItems)
+        }
 
-      def get(id: String): F[Option[(Order, List[OrderItem])]] =
-        for {
-          orders <- ordersRef.get
-          items <- itemsRef.get
-        } yield orders.get(id).map(order => (order, items.getOrElse(id, Nil)))
-
-      def listByCustomer(
-          customerId: String
-      ): F[List[(Order, List[OrderItem])]] =
-        for {
-          orders <- ordersRef.get
-          items <- itemsRef.get
-        } yield orders.values
-          .filter(_.customerId == customerId)
-          .toList
-          .sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse)
-          .map(order => (order, items.getOrElse(order.id, Nil)))
-
-      def update(
-          id: String,
-          status: OrderStatus
-      ): F[Option[(Order, List[OrderItem])]] =
-        for {
-          now <- Sync[F].realTimeInstant
-          updated <- ordersRef.modify { entities =>
-            entities.get(id) match {
-              case None           => (entities, None)
-              case Some(existing) =>
-                val next =
-                  existing.copy(
-                    status = status,
-                    updatedAt = now
+      val store = new OrderStore[F] {
+        def create(
+            customerId: String,
+            items: List[NewOrderItem]
+        ): F[(Order, List[OrderItem])] =
+          for {
+            id <- Sync[F].delay(java.util.UUID.randomUUID().toString)
+            now <- Sync[F].realTimeInstant
+            totalCents = items.map(i => i.unitPriceCents * i.quantity).sum
+            entity = Order(id, customerId, totalCents, defaultStatus, now, now)
+            persistedItems <- items.traverse { item =>
+              Sync[F].delay(java.util.UUID.randomUUID().toString).map {
+                itemId =>
+                  OrderItem(
+                    itemId,
+                    id,
+                    item.sku,
+                    item.productName,
+                    item.unitPriceCents,
+                    item.quantity
                   )
-                (entities + (id -> next), Some(next))
+              }
             }
-          }
-          result <- updated match {
-            case None        => Sync[F].pure(None)
-            case Some(order) =>
-              itemsRef.get.map(items => Some((order, items.getOrElse(id, Nil))))
-          }
-        } yield result
+            _ <- ordersRef.update(_ + (id -> entity))
+            _ <- itemsRef.update(_ + (id -> persistedItems))
+          } yield (entity, persistedItems)
 
-      def updateStatusByItemId(
-          orderItemId: String,
-          newStatus: OrderStatus
-      ): F[Option[UpdatedOrderRef]] =
-        for {
-          items <- itemsRef.get
-          maybeOrderId = items.collectFirst {
-            case (orderId, orderItems)
-                if orderItems.exists(_.id == orderItemId) =>
-              orderId
-          }
-          now <- Sync[F].realTimeInstant
-          updated <- maybeOrderId match {
-            case None          => Sync[F].pure(None)
-            case Some(orderId) =>
-              ordersRef.modify { entities =>
-                entities.get(orderId) match {
-                  case Some(existing)
-                      if existing.status == OrderStatus.Pending =>
-                    val next =
-                      existing.copy(status = newStatus, updatedAt = now)
-                    (
-                      entities + (orderId -> next),
-                      Some(
-                        UpdatedOrderRef(
-                          next.id,
-                          next.customerId,
-                          next.totalCents
+        def get(id: String): F[Option[(Order, List[OrderItem])]] =
+          for {
+            orders <- ordersRef.get
+            items <- itemsRef.get
+          } yield orders.get(id).map(order => (order, items.getOrElse(id, Nil)))
+
+        def listByCustomer(
+            customerId: String
+        ): F[List[(Order, List[OrderItem])]] =
+          for {
+            orders <- ordersRef.get
+            items <- itemsRef.get
+          } yield orders.values
+            .filter(_.customerId == customerId)
+            .toList
+            .sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse)
+            .map(order => (order, items.getOrElse(order.id, Nil)))
+
+        def update(
+            id: String,
+            status: OrderStatus,
+            outboxEvent: Option[PendingOutboxEvent] = None
+        ): F[Option[(Order, List[OrderItem])]] =
+          for {
+            now <- Sync[F].realTimeInstant
+            updated <- ordersRef.modify { entities =>
+              entities.get(id) match {
+                case None           => (entities, None)
+                case Some(existing) =>
+                  val next =
+                    existing.copy(
+                      status = status,
+                      updatedAt = now
+                    )
+                  (entities + (id -> next), Some(next))
+              }
+            }
+            _ <- updated match {
+              case None        => Sync[F].unit
+              case Some(order) =>
+                writeOutboxIfPresent(
+                  UpdatedOrderRef(order.id, order.customerId, order.totalCents),
+                  outboxEvent
+                )
+            }
+            result <- updated match {
+              case None        => Sync[F].pure(None)
+              case Some(order) =>
+                itemsRef.get.map(items =>
+                  Some((order, items.getOrElse(id, Nil)))
+                )
+            }
+          } yield result
+
+        def updateStatusByItemId(
+            orderItemId: String,
+            newStatus: OrderStatus,
+            outboxEvent: Option[PendingOutboxEvent] = None
+        ): F[Option[UpdatedOrderRef]] =
+          for {
+            items <- itemsRef.get
+            maybeOrderId = items.collectFirst {
+              case (orderId, orderItems)
+                  if orderItems.exists(_.id == orderItemId) =>
+                orderId
+            }
+            now <- Sync[F].realTimeInstant
+            updated <- maybeOrderId match {
+              case None          => Sync[F].pure(None)
+              case Some(orderId) =>
+                ordersRef.modify { entities =>
+                  entities.get(orderId) match {
+                    case Some(existing)
+                        if existing.status == OrderStatus.Pending =>
+                      val next =
+                        existing.copy(status = newStatus, updatedAt = now)
+                      (
+                        entities + (orderId -> next),
+                        Some(
+                          UpdatedOrderRef(
+                            next.id,
+                            next.customerId,
+                            next.totalCents
+                          )
                         )
                       )
-                    )
-                  case _ => (entities, None)
+                    case _ => (entities, None)
+                  }
                 }
-              }
-          }
-        } yield updated
-
-      def updateStatusIfCurrent(
-          id: String,
-          expected: OrderStatus,
-          newStatus: OrderStatus
-      ): F[Option[UpdatedOrderRef]] =
-        for {
-          now <- Sync[F].realTimeInstant
-          updated <- ordersRef.modify { entities =>
-            entities.get(id) match {
-              case Some(existing) if existing.status == expected =>
-                val next = existing.copy(status = newStatus, updatedAt = now)
-                (
-                  entities + (id -> next),
-                  Some(
-                    UpdatedOrderRef(next.id, next.customerId, next.totalCents)
-                  )
-                )
-              case _ => (entities, None)
             }
-          }
-        } yield updated
+            _ <- updated match {
+              case None      => Sync[F].unit
+              case Some(ref) => writeOutboxIfPresent(ref, outboxEvent)
+            }
+          } yield updated
 
-      def delete(id: String): F[Boolean] =
-        for {
-          existed <- ordersRef.modify { entities =>
-            if (entities.contains(id)) (entities - id, true)
-            else (entities, false)
-          }
-          _ <- itemsRef.update(_ - id)
-        } yield existed
+        def updateStatusIfCurrent(
+            id: String,
+            expected: OrderStatus,
+            newStatus: OrderStatus,
+            outboxEvent: Option[PendingOutboxEvent] = None
+        ): F[Option[UpdatedOrderRef]] =
+          for {
+            now <- Sync[F].realTimeInstant
+            updated <- ordersRef.modify { entities =>
+              entities.get(id) match {
+                case Some(existing) if existing.status == expected =>
+                  val next = existing.copy(status = newStatus, updatedAt = now)
+                  (
+                    entities + (id -> next),
+                    Some(
+                      UpdatedOrderRef(next.id, next.customerId, next.totalCents)
+                    )
+                  )
+                case _ => (entities, None)
+              }
+            }
+            _ <- updated match {
+              case None      => Sync[F].unit
+              case Some(ref) => writeOutboxIfPresent(ref, outboxEvent)
+            }
+          } yield updated
 
-      def ping: F[Boolean] = Sync[F].pure(true)
+        def delete(id: String): F[Boolean] =
+          for {
+            existed <- ordersRef.modify { entities =>
+              if (entities.contains(id)) (entities - id, true)
+              else (entities, false)
+            }
+            _ <- itemsRef.update(_ - id)
+          } yield existed
+
+        def ping: F[Boolean] = Sync[F].pure(true)
+      }
+      (store, outboxRef)
     }
 
   private val insertOrder: skunk.Query[
@@ -305,6 +397,18 @@ object OrderStore {
       RETURNING id, customer_id, total_cents
     """.query(uuid *: text *: int4)
 
+  // `payload` is bound as `$text` then cast `::jsonb` in-SQL - avoids adding
+  // a skunk-circe dependency just for one write path that nothing in this
+  // service ever reads back (only a future Debezium connector, TD-3.1,
+  // does). `trace_parent` isn't set by any column here - no code anywhere
+  // in this service propagates trace context into Kafka headers yet (see
+  // ADR 0010's own note); it stays NULL at its column default.
+  private val insertOutboxEvent: skunk.Command[(UUID, String, String, String)] =
+    sql"""
+      INSERT INTO outbox_events (id, aggregate_id, payload, correlation_id)
+      VALUES ($uuid, $text, $text::jsonb, $text)
+    """.command
+
   private val deleteOrder: skunk.Query[UUID, UUID] =
     sql"""
       DELETE FROM "order"
@@ -376,6 +480,38 @@ object OrderStore {
                 )
                 a <- result.liftTo[F]
               } yield a
+
+            /** Writes the outbox row for `ref` using `session` - caller is
+              * responsible for calling this from inside the same
+              * `session.transaction.use` block as the state-change UPDATE it's
+              * meant to be atomic with (ADR 0008's whole point: Kafka delivery
+              * becomes a property of that one Postgres transaction committing).
+              */
+            def insertOutboxRow(
+                session: Session[F],
+                ref: UpdatedOrderRef,
+                outboxEvent: PendingOutboxEvent
+            ): F[Unit] =
+              for {
+                envelope <- buildEnvelope[F](
+                  outboxEvent.eventType,
+                  ref.orderId,
+                  outboxEvent.payloadFor(ref)
+                )
+                outboxId <- Sync[F].delay(UUID.randomUUID())
+                _ <- session
+                  .prepare(insertOutboxEvent)
+                  .flatMap(
+                    _.execute(
+                      (
+                        outboxId,
+                        ref.orderId,
+                        envelope.asJson.noSpaces,
+                        ref.orderId
+                      )
+                    )
+                  )
+              } yield ()
 
             def fetchItems(id: String, uuid: UUID): F[List[OrderItem]] =
               timed("select_items") {
@@ -524,7 +660,8 @@ object OrderStore {
 
               def update(
                   id: String,
-                  status: OrderStatus
+                  status: OrderStatus,
+                  outboxEvent: Option[PendingOutboxEvent] = None
               ): F[Option[(Order, List[OrderItem])]] =
                 scala.util.Try(UUID.fromString(id)).toOption match {
                   case None       => Sync[F].pure(None)
@@ -532,9 +669,25 @@ object OrderStore {
                     for {
                       row <- timed("update") {
                         pool.use { session =>
-                          session
-                            .prepare(updateOrder)
-                            .flatMap(_.option((status, uuid)))
+                          session.transaction.use { _ =>
+                            for {
+                              updated <- session
+                                .prepare(updateOrder)
+                                .flatMap(_.option((status, uuid)))
+                              _ <- (updated, outboxEvent) match {
+                                case (
+                                      Some((customerId, totalCents, _, _, _)),
+                                      Some(event)
+                                    ) =>
+                                  insertOutboxRow(
+                                    session,
+                                    UpdatedOrderRef(id, customerId, totalCents),
+                                    event
+                                  )
+                                case _ => Sync[F].unit
+                              }
+                            } yield updated
+                          }
                         }
                       }
                       result <- row match {
@@ -569,27 +722,38 @@ object OrderStore {
 
               def updateStatusByItemId(
                   orderItemId: String,
-                  newStatus: OrderStatus
+                  newStatus: OrderStatus,
+                  outboxEvent: Option[PendingOutboxEvent] = None
               ): F[Option[UpdatedOrderRef]] =
                 scala.util.Try(UUID.fromString(orderItemId)).toOption match {
                   case None           => Sync[F].pure(None)
                   case Some(itemUuid) =>
                     timed("update_status_by_item_id") {
                       pool.use { session =>
-                        session
-                          .prepare(updateOrderStatusByItemId)
-                          .flatMap(
-                            _.option(
-                              (newStatus, OrderStatus.Pending, itemUuid)
-                            )
-                          )
-                          .map(_.map { case (orderId, customerId, totalCents) =>
-                            UpdatedOrderRef(
-                              orderId.toString,
-                              customerId,
-                              totalCents
-                            )
-                          })
+                        session.transaction.use { _ =>
+                          for {
+                            updated <- session
+                              .prepare(updateOrderStatusByItemId)
+                              .flatMap(
+                                _.option(
+                                  (newStatus, OrderStatus.Pending, itemUuid)
+                                )
+                              )
+                              .map(_.map {
+                                case (orderId, customerId, totalCents) =>
+                                  UpdatedOrderRef(
+                                    orderId.toString,
+                                    customerId,
+                                    totalCents
+                                  )
+                              })
+                            _ <- (updated, outboxEvent) match {
+                              case (Some(ref), Some(event)) =>
+                                insertOutboxRow(session, ref, event)
+                              case _ => Sync[F].unit
+                            }
+                          } yield updated
+                        }
                       }
                     }
                 }
@@ -597,23 +761,34 @@ object OrderStore {
               def updateStatusIfCurrent(
                   id: String,
                   expected: OrderStatus,
-                  newStatus: OrderStatus
+                  newStatus: OrderStatus,
+                  outboxEvent: Option[PendingOutboxEvent] = None
               ): F[Option[UpdatedOrderRef]] =
                 scala.util.Try(UUID.fromString(id)).toOption match {
                   case None       => Sync[F].pure(None)
                   case Some(uuid) =>
                     timed("update_status_if_current") {
                       pool.use { session =>
-                        session
-                          .prepare(updateOrderStatusIfCurrent)
-                          .flatMap(_.option((newStatus, uuid, expected)))
-                          .map(_.map { case (orderId, customerId, totalCents) =>
-                            UpdatedOrderRef(
-                              orderId.toString,
-                              customerId,
-                              totalCents
-                            )
-                          })
+                        session.transaction.use { _ =>
+                          for {
+                            updated <- session
+                              .prepare(updateOrderStatusIfCurrent)
+                              .flatMap(_.option((newStatus, uuid, expected)))
+                              .map(_.map {
+                                case (orderId, customerId, totalCents) =>
+                                  UpdatedOrderRef(
+                                    orderId.toString,
+                                    customerId,
+                                    totalCents
+                                  )
+                              })
+                            _ <- (updated, outboxEvent) match {
+                              case (Some(ref), Some(event)) =>
+                                insertOutboxRow(session, ref, event)
+                              case _ => Sync[F].unit
+                            }
+                          } yield updated
+                        }
                       }
                     }
                 }

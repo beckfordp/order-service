@@ -20,16 +20,19 @@ class HealthRoutesSuite extends CatsEffectSuite {
       ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
       def update(
           id: String,
-          status: OrderStatus
+          status: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def updateStatusByItemId(
           orderItemId: String,
-          newStatus: OrderStatus
+          newStatus: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def updateStatusIfCurrent(
           id: String,
           expected: OrderStatus,
-          newStatus: OrderStatus
+          newStatus: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def delete(id: String): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(true)
@@ -48,16 +51,19 @@ class HealthRoutesSuite extends CatsEffectSuite {
       ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
       def update(
           id: String,
-          status: OrderStatus
+          status: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def updateStatusByItemId(
           orderItemId: String,
-          newStatus: OrderStatus
+          newStatus: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def updateStatusIfCurrent(
           id: String,
           expected: OrderStatus,
-          newStatus: OrderStatus
+          newStatus: OrderStatus,
+          outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def delete(id: String): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(false)
