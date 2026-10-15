@@ -1,0 +1,13 @@
+Phase 2 verification report (TD-3.2, ADR 0008) - Wire call sites to the outbox, not the publisher.
+
+Automated test command: sbt scalafmtCheck test
+Result: 146 passed, 0 failed, 0 ignored.
+
+What was verified:
+- OrderRoutes' checkout-failure path, StockEventConsumer's handleReserved/handleReservationFailed, and PaymentEventConsumer's handleSettled/handleFailed all now write to outbox_events (via the Phase 1 atomic store methods) instead of calling OrderEventPublisher.
+- Rewrote the tests that used to prove a real Kafka publish happened (spinning up a real OrderEventPublisher + a second Kafka consumer against the Testcontainers broker) to instead poll the in-memory outbox ref - correctly reflects that these call sites no longer touch Kafka at all, and is faster/simpler than the old double-consumer round trip.
+- Confirmed via full suite run that nothing regressed elsewhere (order creation, history cache, inventory client, CORS, docs, config, migrations, resilience example - all still passing).
+
+Reduced-prompting mode (.claude/prompt-off, off since 2026-10-01): no interactive manual-verification walkthrough - this automated-test proof substitutes for it.
+
+Not yet done: Phase 3 (deleting OrderEventPublisher itself and the now-dead publisher parameter/helper threading left in place deliberately this phase).
