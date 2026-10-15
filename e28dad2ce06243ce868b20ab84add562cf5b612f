@@ -1,0 +1,13 @@
+Phase 3 verification report (TD-3.2, ADR 0008) - Delete OrderEventPublisher.
+
+Automated test command: sbt scalafmtCheck test
+Result: 143 passed, 0 failed, 0 ignored.
+
+What was verified:
+- OrderEventPublisher.scala and its test suite are gone.
+- grep -rn OrderEventPublisher across src/ finds only three historical doc-comment mentions in OrderStore.scala (already phrased as 'now-deleted' back when they were written in Phase 1) - no live code reference anywhere.
+- Full suite still green after removing the publisher parameter from Main.scala, OrderRoutes, StockEventConsumer, PaymentEventConsumer and every call site threading it through.
+
+Reduced-prompting mode (.claude/prompt-off, off since 2026-10-01): no interactive manual-verification walkthrough - this automated-test proof substitutes for it.
+
+TD-3.2 (transactional outbox for order-service, ADR 0008) is now fully implemented end-to-end at the application level: order-service writes outbox_events rows atomically with its state changes and calls no Kafka producer directly. What's NOT yet true: nothing actually delivers those rows to Kafka yet - that's TD-3.1 (Kafka Connect + Debezium connector, gluon-root infra, a separate track) and is explicitly out of scope here per spec.md.
