@@ -1,0 +1,12 @@
+Task: wire OrderRoutes/StockEventConsumer/PaymentEventConsumer call sites to the outbox instead of OrderEventPublisher (TD-3.2, ADR 0008 Phase 2, all three tasks).
+
+Changes:
+- OrderRoutes.scala: checkout-failure path now passes a PendingOutboxEvent (OrderStatusChanged/reservation_failed) into store.update, instead of a separate publisher.publishStatusChanged call after it.
+- StockEventConsumer.scala: handleReserved passes a PendingOutboxEvent (OrderReserved) into updateStatusByItemId; handleReservationFailed passes one (OrderStatusChanged/reservation_failed). Both capture 'now' via Async[F].realTimeInstant before the store call, since PendingOutboxEvent.payloadFor needs it but can't produce its own effect.
+- PaymentEventConsumer.scala: handleSettled/handleFailed, same pattern, into updateStatusIfCurrent (OrderStatusChanged/confirmed or payment_failed).
+- OrderRoutesSuite.scala: the two tests asserting publisher behavior for the checkout-failure path now use OrderStore.inMemoryWithOutbox and assert the outbox ref instead.
+- StockEventConsumerSuite.scala, PaymentEventConsumerSuite.scala: the tests that previously spun up a real OrderEventPublisher + a second Kafka consumer to prove a publish happened now use inMemoryWithOutbox and poll the in-memory outbox ref instead - simpler and faster than a real Kafka round trip, and correctly reflects that nothing publishes to Kafka from these call sites any more. Removed the now-dead consumeMatching/noMatchingMessageWithin/forOrderAndType helpers these tests no longer need.
+
+Left deliberately alone (Phase 3's job): the publisher parameter is still threaded through OrderRoutes.serverEndpoint/routes, StockEventConsumer.run, PaymentEventConsumer.run - now unused internally but not yet removed, since OrderEventPublisher itself isn't deleted until Phase 3. The now-dead publishReservedIfUpdated/publishStatusChangedIfUpdated helpers and OrderRoutesSuite's capturingPublisher are left for the same reason.
+
+Tests: sbt scalafmtCheck test - 146 passed, 0 failed (same count as Phase 1 end - these were test rewrites, not new tests).
