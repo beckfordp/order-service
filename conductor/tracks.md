@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: Transactional outbox for order-service (TD-3.2, ADR 0008)**
+- [~] **Track: Transactional outbox for order-service (TD-3.2, ADR 0008)**
   *Link: [./tracks/outbox_20261012/](./tracks/outbox_20261012/)*
 
 ---
