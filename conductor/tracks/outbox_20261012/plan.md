@@ -17,7 +17,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Wire call sites to the outbox' (Protocol in workflow.md) `5922112` — reduced-prompting mode: automated-test verification only (146 passed), no interactive walkthrough; see git note on `5922112`
 
 ## Phase 3 — Delete OrderEventPublisher
-- [ ] Task: Delete `OrderEventPublisher.scala` and `OrderEventPublisherSuite.scala`
-- [ ] Task: Remove `OrderEventPublisher.resource(...).use { ... }` wiring and publisher parameter threading from `Main.scala`, `OrderRoutes`, `StockEventConsumer`, `PaymentEventConsumer`
-- [ ] Task: Run full test suite, confirm no regressions, confirm nothing still references `OrderEventPublisher`
+- [x] Task: Delete `OrderEventPublisher.scala` and `OrderEventPublisherSuite.scala` `4f65161`
+- [x] Task: Remove `OrderEventPublisher.resource(...).use { ... }` wiring and publisher parameter threading from `Main.scala`, `OrderRoutes`, `StockEventConsumer`, `PaymentEventConsumer` `4f65161`
+- [x] Task: Run full test suite, confirm no regressions, confirm nothing still references `OrderEventPublisher` `4f65161`
 - [ ] Task: Conductor - User Manual Verification 'Phase 3: Delete OrderEventPublisher' (Protocol in workflow.md)
