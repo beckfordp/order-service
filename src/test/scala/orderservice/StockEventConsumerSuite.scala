@@ -72,75 +72,37 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
       )
     ).timeout(15.seconds)
 
-  /** Scans from the beginning for the first message matching `predicate`,
-    * instead of blindly taking the first message ever - tests sharing this
-    * suite's one Testcontainers Kafka instance can run concurrently, each with
-    * a real (non-noOp) publisher writing to the same topic, so "the first
-    * message on the topic" isn't reliably "this test's own message."
+  /** Polls an `inMemoryWithOutbox` ref for an outbox row matching `orderId`
+    * and `eventType` - the outbox write (ADR 0008, TD-3.2) replaces the old
+    * real-Kafka-publish-and-reconsume round trip these tests used to need;
+    * the write lands in-process, synchronously with the consumer's own
+    * store call, so polling in-memory state is both simpler and faster than
+    * a second Kafka consumer ever was.
     */
-  private def consumeMatching(
-      config: KafkaConfig,
-      topic: String,
-      predicate: String => Boolean
-  ): IO[String] = {
-    val consumerSettings =
-      ConsumerSettings[IO, String, String]
-        .withBootstrapServers(config.bootstrapServers)
-        .withGroupId(s"test-${java.util.UUID.randomUUID()}")
-        .withAutoOffsetReset(AutoOffsetReset.Earliest)
+  private def pollForOutboxEvent(
+      outboxRef: cats.effect.Ref[IO, List[(String, EventEnvelope)]],
+      orderId: String,
+      eventType: String
+  ): IO[EventEnvelope] =
+    pollUntil(
+      outboxRef.get.map(
+        _.collectFirst {
+          case (id, envelope)
+              if id == orderId && envelope.eventType == eventType =>
+            envelope
+        }
+      )
+    ).timeout(15.seconds)
 
-    KafkaConsumer.resource(consumerSettings).use { consumer =>
-      for {
-        _ <- consumer.subscribeTo(topic)
-        record <- consumer.stream
-          .map(_.record.value)
-          .filter(predicate)
-          .take(1)
-          .compile
-          .lastOrError
-          .timeout(15.seconds)
-      } yield record
-    }
-  }
-
-  /** Returns true if no message matching `predicate` arrives on the topic
-    * within the window - used to assert a negative (nothing published for *this
-    * test's* order), tolerant of other tests having already published unrelated
-    * messages to the same topic in this shared container.
-    */
-  private def noMatchingMessageWithin(
-      config: KafkaConfig,
-      topic: String,
-      predicate: String => Boolean,
-      window: FiniteDuration
-  ): IO[Boolean] = {
-    val consumerSettings =
-      ConsumerSettings[IO, String, String]
-        .withBootstrapServers(config.bootstrapServers)
-        .withGroupId(s"test-${java.util.UUID.randomUUID()}")
-        .withAutoOffsetReset(AutoOffsetReset.Earliest)
-
-    KafkaConsumer.resource(consumerSettings).use { consumer =>
-      for {
-        _ <- consumer.subscribeTo(topic)
-        records <- consumer.stream
-          .map(_.record.value)
-          .interruptAfter(window)
-          .compile
-          .toList
-      } yield !records.exists(predicate)
-    }
-  }
-
-  /** Matches an envelope on `order-events` for the given orderId *and*
-    * eventType - needed now that `OrderReserved`/`OrderStatusChanged` share one
-    * topic, so a plain `_.contains(orderId)` would match either.
-    */
-  private def forOrderAndType(orderId: String, eventType: String)(
-      raw: String
-  ): Boolean =
-    decode[EventEnvelope](raw).exists(envelope =>
-      envelope.correlationId == orderId && envelope.eventType == eventType
+  private def outboxHasNo(
+      outboxRef: cats.effect.Ref[IO, List[(String, EventEnvelope)]],
+      orderId: String,
+      eventType: String
+  ): IO[Boolean] =
+    outboxRef.get.map(
+      !_.exists { case (id, envelope) =>
+        id == orderId && envelope.eventType == eventType
+      }
     )
 
   private val oneItem =
@@ -380,191 +342,161 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   test(
-    "a synthetic StockReserved envelope also publishes OrderReserved with the order's details"
+    "a synthetic StockReserved envelope also writes an OrderReserved outbox row with the order's details"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
-      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use {
-        publisher =>
-          for {
-            store <- OrderStore.inMemory[IO]
-            (order, items) <- store.create("cust-123", oneItem)
-            event = StockReservedEvent(
-              items.head.id,
-              "sku-1",
-              2,
-              Instant.parse("2026-01-01T00:00:00Z")
-            )
-            _ <- produce(
-              config,
-              StockEventConsumer.topic,
-              "sku-1",
-              envelopeJson("StockReserved", items.head.id, event.asJson)
-            )
-            published <- IO.race(
-              StockEventConsumer
-                .run[IO](config, store, NoOpLogger[IO], publisher)
-                .compile
-                .drain,
-              consumeMatching(
-                config,
-                OrderEventPublisher.topic,
-                forOrderAndType(order.id, "OrderReserved")
-              )
-            )
-          } yield published match {
-            case Left(()) =>
-              fail("consumer finished before OrderReserved was published")
-            case Right(raw) =>
-              val envelope = decode[EventEnvelope](raw).toOption.get
-              envelope.payload.as[OrderReservedEvent] match {
-                case Left(error)  => fail(s"failed to decode: $error")
-                case Right(event) =>
-                  assertEquals(event.orderId, order.id)
-                  assertEquals(event.customerId, "cust-123")
-                  assertEquals(event.totalCents, order.totalCents)
-              }
+      for {
+        storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+        (store, outboxRef) = storeAndOutbox
+        (order, items) <- store.create("cust-123", oneItem)
+        event = StockReservedEvent(
+          items.head.id,
+          "sku-1",
+          2,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          StockEventConsumer.topic,
+          "sku-1",
+          envelopeJson("StockReserved", items.head.id, event.asJson)
+        )
+        outboxed <- IO.race(
+          StockEventConsumer
+            .run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO])
+            .compile
+            .drain,
+          pollForOutboxEvent(outboxRef, order.id, "OrderReserved")
+        )
+      } yield outboxed match {
+        case Left(()) =>
+          fail("consumer finished before the OrderReserved outbox row appeared")
+        case Right(envelope) =>
+          envelope.payload.as[OrderReservedEvent] match {
+            case Left(error)  => fail(s"failed to decode: $error")
+            case Right(event) =>
+              assertEquals(event.orderId, order.id)
+              assertEquals(event.customerId, "cust-123")
+              assertEquals(event.totalCents, order.totalCents)
           }
       }
     }
   }
 
   test(
-    "a synthetic StockReservationFailed envelope never publishes OrderReserved"
+    "a synthetic StockReservationFailed envelope never writes an OrderReserved outbox row"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
-      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use {
-        publisher =>
-          for {
-            store <- OrderStore.inMemory[IO]
-            (order, items) <- store.create("cust-123", oneItem)
-            event = StockReservationFailedEvent(
-              items.head.id,
-              "sku-1",
-              2,
-              Instant.parse("2026-01-01T00:00:00Z")
-            )
-            _ <- produce(
-              config,
-              StockEventConsumer.topic,
-              "sku-1",
-              envelopeJson(
-                "StockReservationFailed",
-                items.head.id,
-                event.asJson
-              )
-            )
-            result <- IO.race(
-              StockEventConsumer
-                .run[IO](config, store, NoOpLogger[IO], publisher)
-                .compile
-                .drain,
-              pollForStatus(store, order.id, OrderStatus.ReservationFailed) *>
-                noMatchingMessageWithin(
-                  config,
-                  OrderEventPublisher.topic,
-                  forOrderAndType(order.id, "OrderReserved"),
-                  3.seconds
-                )
-            )
-          } yield assertEquals(result, Right(true))
+      for {
+        storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+        (store, outboxRef) = storeAndOutbox
+        (order, items) <- store.create("cust-123", oneItem)
+        event = StockReservationFailedEvent(
+          items.head.id,
+          "sku-1",
+          2,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          StockEventConsumer.topic,
+          "sku-1",
+          envelopeJson("StockReservationFailed", items.head.id, event.asJson)
+        )
+        result <- IO.race(
+          StockEventConsumer
+            .run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO])
+            .compile
+            .drain,
+          pollForStatus(store, order.id, OrderStatus.ReservationFailed)
+        )
+        noOutboxRow <- outboxHasNo(outboxRef, order.id, "OrderReserved")
+      } yield {
+        assertEquals(result, Right(OrderStatus.ReservationFailed))
+        assert(noOutboxRow)
       }
     }
   }
 
   test(
-    "a synthetic StockReservationFailed envelope also publishes OrderStatusChanged with reservation_failed"
+    "a synthetic StockReservationFailed envelope also writes an OrderStatusChanged outbox row with reservation_failed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
-      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use {
-        publisher =>
-          for {
-            store <- OrderStore.inMemory[IO]
-            (order, items) <- store.create("cust-123", oneItem)
-            event = StockReservationFailedEvent(
-              items.head.id,
-              "sku-1",
-              2,
-              Instant.parse("2026-01-01T00:00:00Z")
-            )
-            _ <- produce(
-              config,
-              StockEventConsumer.topic,
-              "sku-1",
-              envelopeJson(
-                "StockReservationFailed",
-                items.head.id,
-                event.asJson
-              )
-            )
-            published <- IO.race(
-              StockEventConsumer
-                .run[IO](config, store, NoOpLogger[IO], publisher)
-                .compile
-                .drain,
-              consumeMatching(
-                config,
-                OrderEventPublisher.topic,
-                forOrderAndType(order.id, "OrderStatusChanged")
-              )
-            )
-          } yield published match {
-            case Left(()) =>
-              fail(
-                "consumer finished before OrderStatusChanged was published"
-              )
-            case Right(raw) =>
-              val envelope = decode[EventEnvelope](raw).toOption.get
-              envelope.payload.as[OrderStatusChangedEvent] match {
-                case Left(error)  => fail(s"failed to decode: $error")
-                case Right(event) =>
-                  assertEquals(event.orderId, order.id)
-                  assertEquals(event.customerId, "cust-123")
-                  assertEquals(event.status, "reservation_failed")
-              }
+      for {
+        storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+        (store, outboxRef) = storeAndOutbox
+        (order, items) <- store.create("cust-123", oneItem)
+        event = StockReservationFailedEvent(
+          items.head.id,
+          "sku-1",
+          2,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          StockEventConsumer.topic,
+          "sku-1",
+          envelopeJson("StockReservationFailed", items.head.id, event.asJson)
+        )
+        outboxed <- IO.race(
+          StockEventConsumer
+            .run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO])
+            .compile
+            .drain,
+          pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
+        )
+      } yield outboxed match {
+        case Left(()) =>
+          fail(
+            "consumer finished before the OrderStatusChanged outbox row appeared"
+          )
+        case Right(envelope) =>
+          envelope.payload.as[OrderStatusChangedEvent] match {
+            case Left(error)  => fail(s"failed to decode: $error")
+            case Right(event) =>
+              assertEquals(event.orderId, order.id)
+              assertEquals(event.customerId, "cust-123")
+              assertEquals(event.status, "reservation_failed")
           }
       }
     }
   }
 
   test(
-    "a synthetic StockReserved envelope never publishes OrderStatusChanged"
+    "a synthetic StockReserved envelope never writes an OrderStatusChanged outbox row"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
-      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use {
-        publisher =>
-          for {
-            store <- OrderStore.inMemory[IO]
-            (order, items) <- store.create("cust-123", oneItem)
-            event = StockReservedEvent(
-              items.head.id,
-              "sku-1",
-              2,
-              Instant.parse("2026-01-01T00:00:00Z")
-            )
-            _ <- produce(
-              config,
-              StockEventConsumer.topic,
-              "sku-1",
-              envelopeJson("StockReserved", items.head.id, event.asJson)
-            )
-            result <- IO.race(
-              StockEventConsumer
-                .run[IO](config, store, NoOpLogger[IO], publisher)
-                .compile
-                .drain,
-              pollForStatus(store, order.id, OrderStatus.Reserved) *>
-                noMatchingMessageWithin(
-                  config,
-                  OrderEventPublisher.topic,
-                  forOrderAndType(order.id, "OrderStatusChanged"),
-                  3.seconds
-                )
-            )
-          } yield assertEquals(result, Right(true))
+      for {
+        storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+        (store, outboxRef) = storeAndOutbox
+        (order, items) <- store.create("cust-123", oneItem)
+        event = StockReservedEvent(
+          items.head.id,
+          "sku-1",
+          2,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          StockEventConsumer.topic,
+          "sku-1",
+          envelopeJson("StockReserved", items.head.id, event.asJson)
+        )
+        result <- IO.race(
+          StockEventConsumer
+            .run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO])
+            .compile
+            .drain,
+          pollForStatus(store, order.id, OrderStatus.Reserved)
+        )
+        noOutboxRow <- outboxHasNo(outboxRef, order.id, "OrderStatusChanged")
+      } yield {
+        assertEquals(result, Right(OrderStatus.Reserved))
+        assert(noOutboxRow)
       }
     }
   }

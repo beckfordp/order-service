@@ -4,6 +4,7 @@ import cats.effect.Async
 import cats.syntax.all._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
+import io.circe.syntax._
 import org.http4s.HttpRoutes
 import org.typelevel.log4cats.StructuredLogger
 import sttp.model.StatusCode
@@ -348,23 +349,23 @@ object OrderRoutes {
                     // which still reports `pending` instead of `reservation_failed`.
                     // Accepted risk: requires the just-created order to disappear
                     // within the same request. Not fixed; tracked in the backlog.
-                    updated <- store.update(
-                      order.id,
-                      OrderStatus.ReservationFailed
-                    )
-                    _ <- updated match {
-                      case Some((updatedOrder, _)) =>
-                        Async[F].realTimeInstant.flatMap { now =>
-                          publisher.publishStatusChanged(
-                            OrderStatusChangedEvent(
-                              updatedOrder.id,
-                              updatedOrder.customerId,
-                              OrderStatus.ReservationFailed.asString,
-                              now
-                            )
+                    updated <- Async[F].realTimeInstant.flatMap { now =>
+                      store.update(
+                        order.id,
+                        OrderStatus.ReservationFailed,
+                        Some(
+                          PendingOutboxEvent(
+                            "OrderStatusChanged",
+                            ref =>
+                              OrderStatusChangedEvent(
+                                ref.orderId,
+                                ref.customerId,
+                                OrderStatus.ReservationFailed.asString,
+                                now
+                              ).asJson
                           )
-                        }
-                      case None => Async[F].unit
+                        )
+                      )
                     }
                   } yield updated.getOrElse((order, orderItems))
               }

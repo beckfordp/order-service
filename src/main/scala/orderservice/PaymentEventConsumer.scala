@@ -7,6 +7,7 @@ import fs2.kafka._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
+import io.circe.syntax._
 import org.typelevel.log4cats.StructuredLogger
 
 import java.time.Instant
@@ -121,22 +122,29 @@ object PaymentEventConsumer {
           "Failed to decode PaymentSettled payload"
         )
       case Right(event) =>
-        store
-          .updateStatusIfCurrent(
-            event.orderId,
-            OrderStatus.Reserved,
-            OrderStatus.Confirmed
-          )
-          .flatTap(
-            publishStatusChangedIfUpdated(
-              publisher,
-              OrderStatus.Confirmed.asString,
-              _
+        Async[F].realTimeInstant.flatMap { now =>
+          store
+            .updateStatusIfCurrent(
+              event.orderId,
+              OrderStatus.Reserved,
+              OrderStatus.Confirmed,
+              Some(
+                PendingOutboxEvent(
+                  "OrderStatusChanged",
+                  ref =>
+                    OrderStatusChangedEvent(
+                      ref.orderId,
+                      ref.customerId,
+                      OrderStatus.Confirmed.asString,
+                      now
+                    ).asJson
+                )
+              )
             )
-          )
-          .flatMap(
-            logOutcome(logger, event.orderId, OrderStatus.Confirmed, _)
-          )
+            .flatMap(
+              logOutcome(logger, event.orderId, OrderStatus.Confirmed, _)
+            )
+        }
     }
 
   private def handleFailed[F[_]: Async](
@@ -152,22 +160,29 @@ object PaymentEventConsumer {
           "Failed to decode PaymentFailed payload"
         )
       case Right(event) =>
-        store
-          .updateStatusIfCurrent(
-            event.orderId,
-            OrderStatus.Reserved,
-            OrderStatus.PaymentFailed
-          )
-          .flatTap(
-            publishStatusChangedIfUpdated(
-              publisher,
-              OrderStatus.PaymentFailed.asString,
-              _
+        Async[F].realTimeInstant.flatMap { now =>
+          store
+            .updateStatusIfCurrent(
+              event.orderId,
+              OrderStatus.Reserved,
+              OrderStatus.PaymentFailed,
+              Some(
+                PendingOutboxEvent(
+                  "OrderStatusChanged",
+                  ref =>
+                    OrderStatusChangedEvent(
+                      ref.orderId,
+                      ref.customerId,
+                      OrderStatus.PaymentFailed.asString,
+                      now
+                    ).asJson
+                )
+              )
             )
-          )
-          .flatMap(
-            logOutcome(logger, event.orderId, OrderStatus.PaymentFailed, _)
-          )
+            .flatMap(
+              logOutcome(logger, event.orderId, OrderStatus.PaymentFailed, _)
+            )
+        }
     }
 
   def run[F[_]: Async](

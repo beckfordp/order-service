@@ -74,46 +74,24 @@ class PaymentEventConsumerSuite
       )
     ).timeout(15.seconds)
 
-  /** Scans from the beginning for the first message matching `predicate`,
-    * instead of blindly taking the first message ever - tests sharing this
-    * suite's one Testcontainers Kafka instance can run concurrently, each with
-    * a real (non-noOp) publisher writing to the same topic, so "the first
-    * message on the topic" isn't reliably "this test's own message."
+  /** Polls an `inMemoryWithOutbox` ref for an outbox row matching `orderId`
+    * and `eventType` - the outbox write (ADR 0008, TD-3.4) replaces the old
+    * real-Kafka-publish-and-reconsume round trip these tests used to need.
     */
-  private def consumeMatching(
-      config: KafkaConfig,
-      topic: String,
-      predicate: String => Boolean
-  ): IO[String] = {
-    val consumerSettings =
-      ConsumerSettings[IO, String, String]
-        .withBootstrapServers(config.bootstrapServers)
-        .withGroupId(s"test-${java.util.UUID.randomUUID()}")
-        .withAutoOffsetReset(AutoOffsetReset.Earliest)
-
-    KafkaConsumer.resource(consumerSettings).use { consumer =>
-      for {
-        _ <- consumer.subscribeTo(topic)
-        record <- consumer.stream
-          .map(_.record.value)
-          .filter(predicate)
-          .take(1)
-          .compile
-          .lastOrError
-          .timeout(15.seconds)
-      } yield record
-    }
-  }
-
-  /** Matches an envelope on `order-events` for the given orderId *and*
-    * eventType - `OrderReserved`/`OrderStatusChanged` share one topic now.
-    */
-  private def forOrderAndType(orderId: String, eventType: String)(
-      raw: String
-  ): Boolean =
-    decode[EventEnvelope](raw).exists(envelope =>
-      envelope.correlationId == orderId && envelope.eventType == eventType
-    )
+  private def pollForOutboxEvent(
+      outboxRef: cats.effect.Ref[IO, List[(String, EventEnvelope)]],
+      orderId: String,
+      eventType: String
+  ): IO[EventEnvelope] =
+    pollUntil(
+      outboxRef.get.map(
+        _.collectFirst {
+          case (id, envelope)
+              if id == orderId && envelope.eventType == eventType =>
+            envelope
+        }
+      )
+    ).timeout(15.seconds)
 
   private val oneItem =
     List(NewOrderItem("sku-1", "Widget", 999, 2))
@@ -451,106 +429,102 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a synthetic PaymentSettled envelope also publishes OrderStatusChanged with status=confirmed"
+    "a synthetic PaymentSettled envelope also writes an OrderStatusChanged outbox row with status=confirmed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
-      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use {
-        publisher =>
-          for {
-            store <- OrderStore.inMemory[IO]
-            (order, _) <- store.create("cust-123", oneItem)
-            _ <- store.update(order.id, OrderStatus.Reserved)
-            event = PaymentSettledEvent(
-              order.id,
-              "payment-1",
-              order.totalCents,
-              Instant.parse("2026-01-01T00:00:00Z")
-            )
-            _ <- produce(
+      for {
+        storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+        (store, outboxRef) = storeAndOutbox
+        (order, _) <- store.create("cust-123", oneItem)
+        _ <- store.update(order.id, OrderStatus.Reserved)
+        event = PaymentSettledEvent(
+          order.id,
+          "payment-1",
+          order.totalCents,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          order.id,
+          envelopeJson("PaymentSettled", order.id, event.asJson)
+        )
+        outboxed <- IO.race(
+          PaymentEventConsumer
+            .run[IO](
               config,
-              PaymentEventConsumer.topic,
-              order.id,
-              envelopeJson("PaymentSettled", order.id, event.asJson)
+              store,
+              NoOpLogger[IO],
+              OrderEventPublisher.noOp[IO]
             )
-            published <- IO.race(
-              PaymentEventConsumer
-                .run[IO](config, store, NoOpLogger[IO], publisher)
-                .compile
-                .drain,
-              consumeMatching(
-                config,
-                OrderEventPublisher.topic,
-                forOrderAndType(order.id, "OrderStatusChanged")
-              )
-            )
-          } yield published match {
-            case Left(()) =>
-              fail(
-                "consumer finished before OrderStatusChanged was published"
-              )
-            case Right(raw) =>
-              val envelope = decode[EventEnvelope](raw).toOption.get
-              envelope.payload.as[OrderStatusChangedEvent] match {
-                case Left(error)  => fail(s"failed to decode: $error")
-                case Right(event) =>
-                  assertEquals(event.orderId, order.id)
-                  assertEquals(event.customerId, "cust-123")
-                  assertEquals(event.status, "confirmed")
-              }
+            .compile
+            .drain,
+          pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
+        )
+      } yield outboxed match {
+        case Left(()) =>
+          fail(
+            "consumer finished before the OrderStatusChanged outbox row appeared"
+          )
+        case Right(envelope) =>
+          envelope.payload.as[OrderStatusChangedEvent] match {
+            case Left(error)  => fail(s"failed to decode: $error")
+            case Right(event) =>
+              assertEquals(event.orderId, order.id)
+              assertEquals(event.customerId, "cust-123")
+              assertEquals(event.status, "confirmed")
           }
       }
     }
   }
 
   test(
-    "a synthetic PaymentFailed envelope also publishes OrderStatusChanged with status=payment_failed"
+    "a synthetic PaymentFailed envelope also writes an OrderStatusChanged outbox row with status=payment_failed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
-      OrderEventPublisher.resource[IO](config, NoOpLogger[IO]).use {
-        publisher =>
-          for {
-            store <- OrderStore.inMemory[IO]
-            (order, _) <- store.create("cust-123", oneItem)
-            _ <- store.update(order.id, OrderStatus.Reserved)
-            event = PaymentFailedEvent(
-              order.id,
-              "payment-1",
-              order.totalCents,
-              Instant.parse("2026-01-01T00:00:00Z")
-            )
-            _ <- produce(
+      for {
+        storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+        (store, outboxRef) = storeAndOutbox
+        (order, _) <- store.create("cust-123", oneItem)
+        _ <- store.update(order.id, OrderStatus.Reserved)
+        event = PaymentFailedEvent(
+          order.id,
+          "payment-1",
+          order.totalCents,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          order.id,
+          envelopeJson("PaymentFailed", order.id, event.asJson)
+        )
+        outboxed <- IO.race(
+          PaymentEventConsumer
+            .run[IO](
               config,
-              PaymentEventConsumer.topic,
-              order.id,
-              envelopeJson("PaymentFailed", order.id, event.asJson)
+              store,
+              NoOpLogger[IO],
+              OrderEventPublisher.noOp[IO]
             )
-            published <- IO.race(
-              PaymentEventConsumer
-                .run[IO](config, store, NoOpLogger[IO], publisher)
-                .compile
-                .drain,
-              consumeMatching(
-                config,
-                OrderEventPublisher.topic,
-                forOrderAndType(order.id, "OrderStatusChanged")
-              )
-            )
-          } yield published match {
-            case Left(()) =>
-              fail(
-                "consumer finished before OrderStatusChanged was published"
-              )
-            case Right(raw) =>
-              val envelope = decode[EventEnvelope](raw).toOption.get
-              envelope.payload.as[OrderStatusChangedEvent] match {
-                case Left(error)  => fail(s"failed to decode: $error")
-                case Right(event) =>
-                  assertEquals(event.orderId, order.id)
-                  assertEquals(event.customerId, "cust-123")
-                  assertEquals(event.status, "payment_failed")
-              }
+            .compile
+            .drain,
+          pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
+        )
+      } yield outboxed match {
+        case Left(()) =>
+          fail(
+            "consumer finished before the OrderStatusChanged outbox row appeared"
+          )
+        case Right(envelope) =>
+          envelope.payload.as[OrderStatusChangedEvent] match {
+            case Left(error)  => fail(s"failed to decode: $error")
+            case Right(event) =>
+              assertEquals(event.orderId, order.id)
+              assertEquals(event.customerId, "cust-123")
+              assertEquals(event.status, "payment_failed")
           }
       }
     }

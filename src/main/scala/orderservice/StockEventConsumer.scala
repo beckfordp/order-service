@@ -7,6 +7,7 @@ import fs2.kafka._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
+import io.circe.syntax._
 import org.typelevel.log4cats.StructuredLogger
 
 import java.time.Instant
@@ -152,12 +153,28 @@ object StockEventConsumer {
           "Failed to decode StockReserved payload"
         )
       case Right(event) =>
-        store
-          .updateStatusByItemId(event.orderItemId, OrderStatus.Reserved)
-          .flatTap(publishReservedIfUpdated(publisher, _))
-          .flatMap(
-            logOutcome(logger, event.orderItemId, OrderStatus.Reserved, _)
-          )
+        Async[F].realTimeInstant.flatMap { now =>
+          store
+            .updateStatusByItemId(
+              event.orderItemId,
+              OrderStatus.Reserved,
+              Some(
+                PendingOutboxEvent(
+                  "OrderReserved",
+                  ref =>
+                    OrderReservedEvent(
+                      ref.orderId,
+                      ref.customerId,
+                      ref.totalCents,
+                      now
+                    ).asJson
+                )
+              )
+            )
+            .flatMap(
+              logOutcome(logger, event.orderItemId, OrderStatus.Reserved, _)
+            )
+        }
     }
 
   private def handleReservationFailed[F[_]: Async](
@@ -173,26 +190,33 @@ object StockEventConsumer {
           "Failed to decode StockReservationFailed payload"
         )
       case Right(event) =>
-        store
-          .updateStatusByItemId(
-            event.orderItemId,
-            OrderStatus.ReservationFailed
-          )
-          .flatTap(
-            publishStatusChangedIfUpdated(
-              publisher,
-              OrderStatus.ReservationFailed.asString,
-              _
-            )
-          )
-          .flatMap(
-            logOutcome(
-              logger,
+        Async[F].realTimeInstant.flatMap { now =>
+          store
+            .updateStatusByItemId(
               event.orderItemId,
               OrderStatus.ReservationFailed,
-              _
+              Some(
+                PendingOutboxEvent(
+                  "OrderStatusChanged",
+                  ref =>
+                    OrderStatusChangedEvent(
+                      ref.orderId,
+                      ref.customerId,
+                      OrderStatus.ReservationFailed.asString,
+                      now
+                    ).asJson
+                )
+              )
             )
-          )
+            .flatMap(
+              logOutcome(
+                logger,
+                event.orderItemId,
+                OrderStatus.ReservationFailed,
+                _
+              )
+            )
+        }
     }
 
   def run[F[_]: Async](

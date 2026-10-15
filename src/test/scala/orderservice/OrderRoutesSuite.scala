@@ -1,6 +1,7 @@
 package orderservice
 
 import cats.effect.IO
+import io.circe.syntax._
 import munit.CatsEffectSuite
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.implicits._
@@ -220,7 +221,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
   }
 
   test(
-    "POST /orders publishes order.status-changed with reservation_failed when an item can't be reserved"
+    "POST /orders writes an outbox row (OrderStatusChanged, reservation_failed) when an item can't be reserved"
   ) {
     val failsSecondItem: InventoryClient[IO] =
       new InventoryClient[IO] {
@@ -240,49 +241,58 @@ class OrderRoutesSuite extends CatsEffectSuite {
       )
     )
     for {
-      store <- OrderStore.inMemory[IO]
-      published <- IO.ref(List.empty[OrderStatusChangedEvent])
+      storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+      (store, outboxRef) = storeAndOutbox
       routes = OrderRoutes.routes[IO](
         store,
         NoOpLogger[IO],
         failsSecondItem,
         noOpHistoryCache,
-        capturingPublisher(published)
+        noOpPublisher
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
       )
       entity <- response.as[OrderResponse]
-      events <- published.get
+      outboxed <- outboxRef.get
     } yield {
       assertEquals(entity.status, "reservation_failed")
-      assertEquals(events.map(_.orderId), List(entity.id))
-      assertEquals(events.map(_.customerId), List("cust-123"))
-      assertEquals(events.map(_.status), List("reservation_failed"))
+      assertEquals(outboxed.map(_._1), List(entity.id))
+      assertEquals(outboxed.map(_._2.eventType), List("OrderStatusChanged"))
+      val events = outboxed.map(_._2.payload.as[OrderStatusChangedEvent])
+      assertEquals(events.flatMap(_.toOption.map(_.orderId)), List(entity.id))
+      assertEquals(
+        events.flatMap(_.toOption.map(_.customerId)),
+        List("cust-123")
+      )
+      assertEquals(
+        events.flatMap(_.toOption.map(_.status)),
+        List("reservation_failed")
+      )
     }
   }
 
   test(
-    "POST /orders does not publish order.status-changed when reservation succeeds"
+    "POST /orders writes no outbox row when reservation succeeds"
   ) {
     for {
-      store <- OrderStore.inMemory[IO]
-      published <- IO.ref(List.empty[OrderStatusChangedEvent])
+      storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+      (store, outboxRef) = storeAndOutbox
       routes = OrderRoutes.routes[IO](
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
         noOpHistoryCache,
-        capturingPublisher(published)
+        noOpPublisher
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
       )
       entity <- response.as[OrderResponse]
-      events <- published.get
+      outboxed <- outboxRef.get
     } yield {
       assertEquals(entity.status, "pending")
-      assertEquals(events, Nil)
+      assertEquals(outboxed, Nil)
     }
   }
 
