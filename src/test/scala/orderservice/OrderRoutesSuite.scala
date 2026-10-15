@@ -49,25 +49,6 @@ class OrderRoutesSuite extends CatsEffectSuite {
         IO.unit
     }
 
-  /** Used by every test that isn't specifically exercising order.status-changed
-    * publishing - never actually produces to Kafka.
-    */
-  private val noOpPublisher: OrderEventPublisher[IO] =
-    OrderEventPublisher.noOp[IO]
-
-  /** Captures publishStatusChanged calls into `ref` for assertions; never
-    * actually produces to Kafka. publishReserved is a no-op - not this track's
-    * concern.
-    */
-  private def capturingPublisher(
-      ref: cats.effect.Ref[IO, List[OrderStatusChangedEvent]]
-  ): OrderEventPublisher[IO] =
-    new OrderEventPublisher[IO] {
-      def publishReserved(event: OrderReservedEvent): IO[Unit] = IO.unit
-      def publishStatusChanged(event: OrderStatusChangedEvent): IO[Unit] =
-        ref.update(_ :+ event)
-    }
-
   private def failingStore(error: Throwable): OrderStore[IO] =
     new OrderStore[IO] {
       def create(
@@ -108,8 +89,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders").withEntity(
         createRequest
@@ -152,8 +132,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         failsSecondItem,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
@@ -203,8 +182,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         unknownSecondItem,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
@@ -247,8 +225,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         failsSecondItem,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
@@ -282,8 +259,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -314,8 +290,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         raisingClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -362,8 +337,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         client,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       _ <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
@@ -381,8 +355,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders")
         .withEntity(CreateOrderRequest("cust-123", Nil))
@@ -406,8 +379,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders")
         .withEntity(
@@ -436,8 +408,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders")
         .withEntity(
@@ -464,8 +435,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -491,8 +461,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.GET, uri"/orders" / "unknown-id")
@@ -517,8 +486,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders").withEntity(
         createRequest
@@ -555,8 +523,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         failingStore(boom),
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders").withEntity(
         createRequest
@@ -583,8 +550,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -626,8 +592,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.GET, uri"/orders" / "unknown-id")
@@ -653,8 +618,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -681,8 +645,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.PATCH, uri"/orders" / "unknown-id")
@@ -707,8 +670,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -743,8 +705,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -775,8 +736,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -811,8 +771,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -853,8 +812,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.PATCH, uri"/orders" / "unknown-id")
@@ -883,8 +841,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -911,8 +868,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.DELETE, uri"/orders" / "unknown-id")
@@ -937,8 +893,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -978,8 +933,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.DELETE, uri"/orders" / "unknown-id")
@@ -1005,8 +959,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -1033,8 +986,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.PUT, uri"/orders" / "unknown-id")
@@ -1061,8 +1013,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
             store,
             NoOpLogger[IO],
             alwaysSucceedsInventoryClient,
-            noOpHistoryCache,
-            noOpPublisher
+            noOpHistoryCache
           )
         )
         request = Request[IO](Method.POST, uri"/orders").withEntity(
@@ -1084,8 +1035,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       response <- routes.orNotFound.run(
         Request[IO](
@@ -1107,8 +1057,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        noOpHistoryCache,
-        noOpPublisher
+        noOpHistoryCache
       )
       firstPost <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
@@ -1176,8 +1125,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         countingStore,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
-        cache,
-        noOpPublisher
+        cache
       )
       _ <- routes.orNotFound.run(
         Request[IO](Method.POST, uri"/orders").withEntity(createRequest)

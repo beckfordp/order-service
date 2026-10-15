@@ -91,59 +91,9 @@ object StockEventConsumer {
         )
     }
 
-  /** On a successful transition, publishes `order.reserved` with the order's
-    * details - skipped entirely on the no-op case (unknown item id, or the
-    * order already left `Pending`), since nothing changed to tell
-    * payment-service about.
-    */
-  private def publishReservedIfUpdated[F[_]: Async](
-      publisher: OrderEventPublisher[F],
-      updated: Option[UpdatedOrderRef]
-  ): F[Unit] =
-    updated match {
-      case None           => Async[F].unit
-      case Some(orderRef) =>
-        Async[F].realTimeInstant.flatMap { now =>
-          publisher.publishReserved(
-            OrderReservedEvent(
-              orderRef.orderId,
-              orderRef.customerId,
-              orderRef.totalCents,
-              now
-            )
-          )
-        }
-    }
-
-  /** On a successful transition, publishes `order.status-changed` with the
-    * given `status` - skipped entirely on the no-op case (unknown item id, or
-    * the order already left `Pending`), since nothing changed to tell
-    * notification-service about.
-    */
-  private def publishStatusChangedIfUpdated[F[_]: Async](
-      publisher: OrderEventPublisher[F],
-      status: String,
-      updated: Option[UpdatedOrderRef]
-  ): F[Unit] =
-    updated match {
-      case None           => Async[F].unit
-      case Some(orderRef) =>
-        Async[F].realTimeInstant.flatMap { now =>
-          publisher.publishStatusChanged(
-            OrderStatusChangedEvent(
-              orderRef.orderId,
-              orderRef.customerId,
-              status,
-              now
-            )
-          )
-        }
-    }
-
   private def handleReserved[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F],
       raw: String,
       payload: io.circe.Json
   ): F[Unit] =
@@ -180,7 +130,6 @@ object StockEventConsumer {
   private def handleReservationFailed[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F],
       raw: String,
       payload: io.circe.Json
   ): F[Unit] =
@@ -222,8 +171,7 @@ object StockEventConsumer {
   def run[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
-      logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F]
+      logger: StructuredLogger[F]
   ): Stream[F, Unit] =
     KafkaConsumer
       .stream(consumerSettings[F](config))
@@ -239,15 +187,9 @@ object StockEventConsumer {
           case Right(envelope) =>
             envelope.eventType match {
               case "StockReserved" =>
-                handleReserved(store, logger, publisher, raw, envelope.payload)
+                handleReserved(store, logger, raw, envelope.payload)
               case "StockReservationFailed" =>
-                handleReservationFailed(
-                  store,
-                  logger,
-                  publisher,
-                  raw,
-                  envelope.payload
-                )
+                handleReservationFailed(store, logger, raw, envelope.payload)
               case _ => Async[F].unit
             }
         }

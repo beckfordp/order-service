@@ -26,8 +26,7 @@ class OrderDocsSuite extends CatsEffectSuite {
       endpoint = OrderRoutes.serverEndpoint[IO](
         store,
         NoOpLogger[IO],
-        inventoryClient,
-        OrderEventPublisher.noOp[IO]
+        inventoryClient
       )
       routes = Docs.routes[IO]("Order Service", "1.0", List(endpoint))
       request = Request[IO](Method.POST, uri"/orders")

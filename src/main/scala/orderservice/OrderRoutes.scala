@@ -300,8 +300,7 @@ object OrderRoutes {
   def serverEndpoint[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      inventoryClient: InventoryClient[F],
-      publisher: OrderEventPublisher[F]
+      inventoryClient: InventoryClient[F]
   ): ServerEndpoint[Any, F] =
     createOrderEndpoint.serverLogic[F] { req =>
       for {
@@ -524,12 +523,11 @@ object OrderRoutes {
       store: OrderStore[F],
       logger: StructuredLogger[F],
       inventoryClient: InventoryClient[F],
-      historyCache: OrderHistoryCache[F],
-      publisher: OrderEventPublisher[F]
+      historyCache: OrderHistoryCache[F]
   ): HttpRoutes[F] =
     Http4sServerInterpreter[F]().toRoutes(
       List(
-        serverEndpoint(store, logger, inventoryClient, publisher),
+        serverEndpoint(store, logger, inventoryClient),
         listOrdersServerEndpoint(store, logger, historyCache),
         getOrderServerEndpoint(store, logger),
         updateOrderServerEndpoint(store, logger),

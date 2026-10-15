@@ -119,12 +119,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -156,12 +151,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.PaymentFailed)
@@ -203,12 +193,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -257,12 +242,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, liveOrder.id, OrderStatus.Confirmed)
@@ -314,12 +294,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -357,12 +332,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -408,12 +378,7 @@ class PaymentEventConsumerSuite
         )
         result <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           for {
@@ -452,12 +417,7 @@ class PaymentEventConsumerSuite
         )
         outboxed <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
@@ -503,12 +463,7 @@ class PaymentEventConsumerSuite
         )
         outboxed <- IO.race(
           PaymentEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")

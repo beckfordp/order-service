@@ -89,30 +89,9 @@ object PaymentEventConsumer {
         )
     }
 
-  private def publishStatusChangedIfUpdated[F[_]: Async](
-      publisher: OrderEventPublisher[F],
-      status: String,
-      updated: Option[UpdatedOrderRef]
-  ): F[Unit] =
-    updated match {
-      case None           => Async[F].unit
-      case Some(orderRef) =>
-        Async[F].realTimeInstant.flatMap { now =>
-          publisher.publishStatusChanged(
-            OrderStatusChangedEvent(
-              orderRef.orderId,
-              orderRef.customerId,
-              status,
-              now
-            )
-          )
-        }
-    }
-
   private def handleSettled[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F],
       raw: String,
       payload: io.circe.Json
   ): F[Unit] =
@@ -150,7 +129,6 @@ object PaymentEventConsumer {
   private def handleFailed[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F],
       raw: String,
       payload: io.circe.Json
   ): F[Unit] =
@@ -188,8 +166,7 @@ object PaymentEventConsumer {
   def run[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
-      logger: StructuredLogger[F],
-      publisher: OrderEventPublisher[F]
+      logger: StructuredLogger[F]
   ): Stream[F, Unit] =
     KafkaConsumer
       .stream(consumerSettings[F](config))
@@ -205,9 +182,9 @@ object PaymentEventConsumer {
           case Right(envelope) =>
             envelope.eventType match {
               case "PaymentSettled" =>
-                handleSettled(store, logger, publisher, raw, envelope.payload)
+                handleSettled(store, logger, raw, envelope.payload)
               case "PaymentFailed" =>
-                handleFailed(store, logger, publisher, raw, envelope.payload)
+                handleFailed(store, logger, raw, envelope.payload)
               case _ => Async[F].unit
             }
         }

@@ -130,12 +130,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
@@ -170,12 +165,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.ReservationFailed)
@@ -217,12 +207,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
@@ -269,12 +254,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
@@ -323,12 +303,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](
-              config,
-              store,
-              NoOpLogger[IO],
-              OrderEventPublisher.noOp[IO]
-            )
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, otherOrder.id, OrderStatus.Reserved)
@@ -364,7 +339,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         outboxed <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO])
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderReserved")
@@ -407,7 +382,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         result <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO])
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.ReservationFailed)
@@ -443,7 +418,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         outboxed <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO])
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
@@ -488,7 +463,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         result <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], OrderEventPublisher.noOp[IO])
+            .run[IO](config, store, NoOpLogger[IO])
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
