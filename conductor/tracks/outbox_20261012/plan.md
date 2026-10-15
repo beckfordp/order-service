@@ -3,11 +3,11 @@
 ## Phase 1 — Outbox table + atomic store writes
 - [x] Task: Write failing `MigrationsSuite` test asserting `outbox_events` exists with columns `id`/`aggregate_id`/`payload`/`trace_parent`/`correlation_id`/`created_at` (Red) `dfc2e13`
 - [x] Task: Add `V7__create_outbox_events.sql` migration to make it pass (Green) `dfc2e13`
-- [ ] Task: Write failing `OrderStoreSuite` tests: `update` (OrderRoutes' checkout-failure path) writes a matching outbox row in the same transaction as its state-change UPDATE (Red)
-- [ ] Task: Extend `OrderStore.update` to accept the envelope-building inputs and write the outbox row inside its existing `session.transaction` (Green)
-- [ ] Task: Write failing tests: `updateStatusByItemId` writes a matching outbox row atomically (Red); extend it to do so (Green)
-- [ ] Task: Write failing tests: `updateStatusIfCurrent` writes a matching outbox row atomically (Red); extend it to do so (Green)
-- [ ] Task: Write failing atomicity test: a state-change write that doesn't match (e.g. `updateStatusIfCurrent` with a stale `expected` status, returning `None`) writes no outbox row either (Red); confirm the existing `None`-short-circuit path already satisfies this (Green)
+- [x] Task: Write failing `OrderStoreSuite` tests: `update` (OrderRoutes' checkout-failure path) writes a matching outbox row in the same transaction as its state-change UPDATE (Red) `ed79de1`
+- [x] Task: Extend `OrderStore.update` to accept the envelope-building inputs and write the outbox row inside its existing `session.transaction` (Green) `ed79de1`
+- [x] Task: Write failing tests: `updateStatusByItemId` writes a matching outbox row atomically (Red); extend it to do so (Green) `ed79de1`
+- [x] Task: Write failing tests: `updateStatusIfCurrent` writes a matching outbox row atomically (Red); extend it to do so (Green) `ed79de1`
+- [x] Task: Write failing atomicity test: a state-change write that doesn't match (e.g. `updateStatusIfCurrent` with a stale `expected` status, returning `None`) writes no outbox row either (Red); confirm the existing `None`-short-circuit path already satisfies this (Green) `ed79de1`
 - [ ] Task: Conductor - User Manual Verification 'Phase 1: Outbox table + atomic store writes' (Protocol in workflow.md)
 
 ## Phase 2 — Wire call sites to the outbox, not the publisher
