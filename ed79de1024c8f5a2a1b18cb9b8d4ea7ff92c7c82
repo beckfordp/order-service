@@ -1,0 +1,11 @@
+Task: extend OrderStore.update/updateStatusByItemId/updateStatusIfCurrent to write the outbox row atomically (TD-3.2, ADR 0008 Phase 1, tasks 3-5).
+
+Changes:
+- OrderStore.scala: new PendingOutboxEvent (eventType + payloadFor: UpdatedOrderRef => Json), buildEnvelope helper (mints eventId/timestamp, assembles EventEnvelope). Trait gains outboxEvent: Option[PendingOutboxEvent] = None on update/updateStatusByItemId/updateStatusIfCurrent. inMemory interpreter captures outbox writes via a new inMemoryWithOutbox constructor (Ref[F, List[(String, EventEnvelope)]]) for test assertions. postgres interpreter wraps each method's UPDATE + conditional outbox INSERT in one session.transaction.use block (insertOutboxRow helper) - the actual atomicity this track exists for.
+- OrderStorePostgresSuite.scala: 6 new tests - update/updateStatusByItemId/updateStatusIfCurrent each get a success-path atomicity test (outbox row written, decodes to the right envelope/event) and a no-op test (None result writes no outbox row).
+- HealthRoutesSuite.scala, OrderRoutesSuite.scala: hand-rolled OrderStore[IO] test stubs updated to the new 3/4-arg trait signatures (compile-only change, no behavior change).
+- Cors.scala, Main.scala: scalafmt reformatting only, no behavior change.
+
+Why: ADR 0008 (transactional outbox) - these three methods are exactly the ones that currently precede a separate, non-transactional OrderEventPublisher.publishX call from OrderRoutes/StockEventConsumer/PaymentEventConsumer. Writing the outbox row inside the same Postgres transaction as the state-change UPDATE is what actually closes TD-3's dual-write hazard; Phase 2 (next) swaps those three call sites over to use it.
+
+Tests: sbt test - 146 passed, 0 failed (was 140 before this task; +6 new outbox tests).
