@@ -12,7 +12,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Per-consumer stream supervision' (Protocol in workflow.md) `1d9381f` — reduced-prompting mode: automated-test verification only (146 passed), no interactive walkthrough; see git note on `1d9381f`
 
 ## Phase 3 — Dead-letter routing
-- [ ] Task: Write failing tests: a message that fails processing after retries lands on `inventory-events-dlq`/`payment-events-dlq` respectively, and the stream keeps consuming subsequent messages (Red)
-- [ ] Task: Wrap each consumer's per-message processing branch in `purekafka.consumer.DeadLetter` (Green)
-- [ ] Task: Run the full existing test suite, confirm no regressions in business logic (status updates, TD-3.2's outbox writes)
-- [ ] Task: Conductor - User Manual Verification 'Phase 3: Dead-letter routing' (Protocol in workflow.md)
+- [x] Task: Write failing tests: a message that fails processing after retries lands on `inventory-events-dlq`/`payment-events-dlq` respectively, and the stream keeps consuming subsequent messages (Red) `1a9bc17`
+- [x] Task: Wrap each consumer's per-message processing branch in `purekafka.consumer.DeadLetter` (Green) `1a9bc17` — significant finding: this absorbs essentially all app-level failures before `StreamSupervisor` ever sees them, which required rewriting Phase 2's own isolation test (synthetic streams, not real business logic); see git note on `1a9bc17`
+- [x] Task: Run the full existing test suite, confirm no regressions in business logic (status updates, TD-3.2's outbox writes) `1a9bc17` — 147 passed, 0 failed
+- [x] Task: Conductor - User Manual Verification 'Phase 3: Dead-letter routing' (Protocol in workflow.md)
