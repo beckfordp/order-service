@@ -9,6 +9,7 @@ import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
 import io.circe.syntax._
 import org.typelevel.log4cats.StructuredLogger
+import purekafka.consumer.DeadLetter
 
 import java.time.Instant
 
@@ -177,7 +178,8 @@ object StockEventConsumer {
   def run[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
-      logger: StructuredLogger[F]
+      logger: StructuredLogger[F],
+      deadLetter: DeadLetter[F, String, String]
   ): Stream[F, Unit] =
     KafkaConsumer
       .stream(consumerSettings[F](config))
@@ -196,15 +198,26 @@ object StockEventConsumer {
                   "Failed to decode inventory-events envelope"
                 )
               case Right(envelope) =>
+                // Decode failures above are a different, already-accepted
+                // gap (logged and dropped, never retried) - only a
+                // message that decodes fine but fails *processing* (e.g.
+                // a transient store error) gets the bounded-retry-then-DLQ
+                // treatment, via purekafka.consumer.DeadLetter (TD-2.4,
+                // ADR 0010).
+                val key = committable.record.key.getOrElse("")
                 envelope.eventType match {
                   case "StockReserved" =>
-                    handleReserved(store, logger, raw, envelope.payload)
+                    deadLetter.guard(topic, key, raw)(
+                      handleReserved(store, logger, raw, envelope.payload)
+                    )
                   case "StockReservationFailed" =>
-                    handleReservationFailed(
-                      store,
-                      logger,
-                      raw,
-                      envelope.payload
+                    deadLetter.guard(topic, key, raw)(
+                      handleReservationFailed(
+                        store,
+                        logger,
+                        raw,
+                        envelope.payload
+                      )
                     )
                   case _ => Async[F].unit
                 }

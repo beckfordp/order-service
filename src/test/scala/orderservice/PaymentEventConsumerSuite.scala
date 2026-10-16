@@ -9,6 +9,9 @@ import io.circe.parser.decode
 import io.circe.syntax._
 import munit.CatsEffectSuite
 import org.typelevel.log4cats.noop.NoOpLogger
+import org.typelevel.otel4s.metrics.Meter
+import purekafka.consumer.DeadLetter
+import purekafka.resilience.RetryConfig
 
 import java.time.Instant
 import java.util.UUID
@@ -17,6 +20,20 @@ import scala.concurrent.duration._
 class PaymentEventConsumerSuite
     extends CatsEffectSuite
     with TestContainerForAll {
+
+  /** A `DeadLetter` whose `guard` never actually triggers in these tests -
+    * every `handleSettled`/`handleFailed` call here succeeds on its first
+    * attempt, so this is only ever a transparent pass-through.
+    * `KafkaConsumersSuite` is where DLQ routing itself (the failure path)
+    * is actually exercised.
+    */
+  private def noOpDeadLetter: IO[DeadLetter[IO, String, String]] = {
+    import org.typelevel.otel4s.metrics.Meter.Implicits.noop
+    DeadLetter.fromPublish[IO, String, String](
+      RetryConfig(maxRetries = 0, baseDelay = 1.milli),
+      (_, _, _) => IO.unit
+    )(NoOpLogger[IO])(summon[Meter[IO]])
+  }
 
   override val containerDef: KafkaContainer.Def = KafkaContainer.Def()
 
@@ -124,6 +141,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
@@ -141,7 +159,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -156,6 +174,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
@@ -173,7 +192,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.PaymentFailed)
@@ -188,6 +207,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
@@ -215,7 +235,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -230,6 +250,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (stalePendingOrder, _) <- store.create("cust-123", oneItem)
         (liveOrder, _) <- store.create("cust-456", oneItem)
@@ -264,7 +285,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, liveOrder.id, OrderStatus.Confirmed)
@@ -283,6 +304,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
@@ -316,7 +338,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -331,6 +353,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
@@ -354,7 +377,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -369,6 +392,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (settledOrder, _) <- store.create("cust-123", oneItem)
         _ <- store.update(settledOrder.id, OrderStatus.Reserved)
@@ -400,7 +424,7 @@ class PaymentEventConsumerSuite
         )
         result <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           for {
@@ -421,6 +445,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, _) <- store.create("cust-123", oneItem)
@@ -439,7 +464,7 @@ class PaymentEventConsumerSuite
         )
         outboxed <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
@@ -467,6 +492,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, _) <- store.create("cust-123", oneItem)
@@ -485,7 +511,7 @@ class PaymentEventConsumerSuite
         )
         outboxed <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
@@ -513,6 +539,7 @@ class PaymentEventConsumerSuite
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
@@ -531,7 +558,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)

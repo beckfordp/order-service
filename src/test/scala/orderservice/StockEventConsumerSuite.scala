@@ -9,6 +9,9 @@ import io.circe.parser.decode
 import io.circe.syntax._
 import munit.CatsEffectSuite
 import org.typelevel.log4cats.noop.NoOpLogger
+import org.typelevel.otel4s.metrics.Meter
+import purekafka.consumer.DeadLetter
+import purekafka.resilience.RetryConfig
 
 import java.time.Instant
 import java.util.UUID
@@ -20,6 +23,20 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
 
   private def configFor(kafka: KafkaContainer): KafkaConfig =
     KafkaConfig(bootstrapServers = kafka.bootstrapServers)
+
+  /** A `DeadLetter` whose `guard` never actually triggers in these tests -
+    * every `handleReserved`/`handleReservationFailed` call here succeeds on
+    * its first attempt, so this is only ever a transparent pass-through.
+    * `KafkaConsumersSuite` is where DLQ routing itself (the failure path)
+    * is actually exercised.
+    */
+  private def noOpDeadLetter: IO[DeadLetter[IO, String, String]] = {
+    import org.typelevel.otel4s.metrics.Meter.Implicits.noop
+    DeadLetter.fromPublish[IO, String, String](
+      RetryConfig(maxRetries = 0, baseDelay = 1.milli),
+      (_, _, _) => IO.unit
+    )(NoOpLogger[IO])(summon[Meter[IO]])
+  }
 
   private def produce(
       config: KafkaConfig,
@@ -141,6 +158,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, items) <- store.create("cust-123", oneItem)
         event = StockReservedEvent(
@@ -157,7 +175,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
@@ -172,6 +190,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, items) <- store.create("cust-123", oneItem)
         event = StockReservationFailedEvent(
@@ -192,7 +211,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.ReservationFailed)
@@ -207,6 +226,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, items) <- store.create("cust-123", oneItem)
         otherPayload = Json.obj(
@@ -234,7 +254,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
@@ -249,6 +269,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, items) <- store.create("cust-123", oneItem)
         unknownEvent = StockReservedEvent(
@@ -281,7 +302,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
@@ -296,6 +317,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (resolvedOrder, resolvedItems) <- store.create("cust-123", oneItem)
         _ <- store.update(resolvedOrder.id, OrderStatus.Reserved)
@@ -330,7 +352,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, otherOrder.id, OrderStatus.Reserved)
@@ -349,6 +371,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, items) <- store.create("cust-123", oneItem)
@@ -366,7 +389,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         outboxed <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderReserved")
@@ -392,6 +415,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, items) <- store.create("cust-123", oneItem)
@@ -409,7 +433,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         result <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.ReservationFailed)
@@ -428,6 +452,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, items) <- store.create("cust-123", oneItem)
@@ -445,7 +470,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         outboxed <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
@@ -473,6 +498,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, items) <- store.create("cust-123", oneItem)
@@ -490,7 +516,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         result <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)
@@ -509,6 +535,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
+        deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, items) <- store.create("cust-123", oneItem)
         event = StockReservedEvent(
@@ -526,7 +553,7 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         )
         finalStatus <- IO.race(
           StockEventConsumer
-            .run[IO](config, store, NoOpLogger[IO])
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Reserved)

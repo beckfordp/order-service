@@ -80,16 +80,183 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
 
   private val oneItem = List(NewOrderItem("sku-1", "Widget", 999, 2))
 
-  /** Delegates everything to `base`, except `updateStatusByItemId` for
-    * `failOnItemId` - that call raises exactly once (simulating a transient
-    * failure, e.g. a DB blip), then succeeds on retry. Crashes
-    * `StockEventConsumer`'s own `evalMap` for that one event, which is what
-    * should trigger `StreamSupervisor`'s restart.
+  test(
+    "wrapping two streams individually in StreamSupervisor, then merging, isolates a crash in one from the other (TD-2.2/TD-2.4) - the exact wiring pattern KafkaConsumers.supervised uses"
+  ) {
+    // A *synthetic*-stream test, not a real-consumer one, by necessity: once
+    // DeadLetter wraps every processing branch (below, this same phase), it
+    // absorbs essentially all application-level failures internally (retry,
+    // then DLQ-and-swallow on exhaustion) before they ever reach
+    // StreamSupervisor - confirmed empirically: the original version of this
+    // test, built on a failing-once OrderStore decorator exactly like Phase
+    // 1/2's own tests use, now observes zero restarts, because DeadLetter's
+    // own bounded retry catches the one-time failure first. That's a strictly
+    // better real-world outcome (fewer unnecessary whole-stream restarts),
+    // but it means a real consumer's business logic is no longer a
+    // reliable way to *trigger* a StreamSupervisor restart in a fast,
+    // deterministic unit test. purekafka's own StreamSupervisorSuite already
+    // proves restart-with-backoff against a synthetic Stream[F, O] for
+    // exactly this reason - this test proves the *merge-isolation* property
+    // the same way, directly, rather than depending on real Kafka I/O or
+    // real business logic having an exploitable crash path.
+    Metrics.test[IO]("kafka-consumers-suite").use { testMeter =>
+      for {
+        attempts <- Ref.of[IO, Int](0)
+        healthyRuns <- Ref.of[IO, Int](0)
+        failingBuild: IO[fs2.Stream[IO, Unit]] = attempts.updateAndGet(_ + 1).map {
+          attempt =>
+            if (attempt < 3) fs2.Stream.raiseError[IO](
+              new RuntimeException(s"synthetic crash, attempt $attempt")
+            )
+            else fs2.Stream.sleep[IO](10.seconds) // never completes on its own
+        }
+        healthyBuild: IO[fs2.Stream[IO, Unit]] = IO.pure(
+          fs2.Stream.eval(healthyRuns.update(_ + 1)) >> fs2.Stream.sleep[IO](
+            10.seconds
+          )
+        )
+        supervisorConfig = purekafka.consumer.StreamSupervisorConfig(
+          baseDelay = 50.millis,
+          maxDelay = 200.millis
+        )
+        failing = purekafka.consumer.StreamSupervisor.supervise[IO, Unit](
+          supervisorConfig
+        )(NoOpLogger[IO])(testMeter.meter)(failingBuild)
+        healthy = purekafka.consumer.StreamSupervisor.supervise[IO, Unit](
+          supervisorConfig
+        )(NoOpLogger[IO])(testMeter.meter)(healthyBuild)
+        merged = failing.merge(healthy)
+        _ <- merged.compile.drain.background.use { _ =>
+          // The healthy stream should start running almost immediately,
+          // regardless of the failing one's restart loop - if merging
+          // supervised the *combined* stream as one unit instead of each
+          // individually, the failing stream's repeated crashes would keep
+          // tearing down and restarting the healthy one too, and
+          // healthyRuns would climb in lockstep with the failing stream's
+          // own restart count instead of settling at 1 immediately.
+          IO.sleep(500.millis)
+        }
+        finalAttempts <- attempts.get
+        finalHealthyRuns <- healthyRuns.get
+        metrics <- testMeter.collectMetrics
+        restarts = metrics
+          .filter(_.getName == "purekafka.stream.restarts")
+          .flatMap(_.getLongSumData.getPoints.asScala)
+          .map(_.getValue)
+          .sum
+      } yield {
+        assert(
+          finalAttempts >= 3,
+          s"expected the failing stream to have been (re)built at least 3 times, got $finalAttempts"
+        )
+        assertEquals(
+          finalHealthyRuns,
+          1,
+          "the healthy stream should only have started once - a restart in the failing stream must not have torn it down"
+        )
+        assert(
+          restarts >= 1L,
+          s"expected at least 1 purekafka.stream.restarts, got $restarts"
+        )
+      }
+    }
+  }
+
+  test(
+    "a message that fails processing every time is routed to <topic>-dlq after exhausting retries, and the stream keeps consuming later messages (TD-2.4)"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      Metrics.test[IO]("kafka-consumers-dlq-suite").use { testMeter =>
+        for {
+          baseStore <- OrderStore.inMemory[IO]
+          (poisonOrder, poisonItems) <- baseStore.create("cust-poison", oneItem)
+          (healthyOrder, healthyItems) <- baseStore.create(
+            "cust-healthy",
+            oneItem
+          )
+          poisonItemId = poisonItems.head.id
+          healthyItemId = healthyItems.head.id
+          store = alwaysFailOn(baseStore, poisonItemId)
+          poisonEvent = StockReservedEvent(
+            poisonItemId,
+            "sku-1",
+            2,
+            Instant.parse("2026-01-01T00:00:00Z")
+          )
+          healthyEvent = StockReservedEvent(
+            healthyItemId,
+            "sku-1",
+            2,
+            Instant.parse("2026-01-01T00:00:00Z")
+          )
+          _ <- produce(
+            config,
+            StockEventConsumer.topic,
+            "sku-1",
+            envelopeJson(
+              "inventory-service",
+              "StockReserved",
+              poisonItemId,
+              poisonEvent.asJson
+            )
+          )
+          _ <- produce(
+            config,
+            StockEventConsumer.topic,
+            "sku-1",
+            envelopeJson(
+              "inventory-service",
+              "StockReserved",
+              healthyItemId,
+              healthyEvent.asJson
+            )
+          )
+          healthyFinal <-
+            KafkaConsumers
+              .supervised[IO](config, store, NoOpLogger[IO], testMeter.meter)
+              .compile
+              .drain
+              .background
+              .use { _ =>
+                // Proves the stream didn't get stuck/killed on the poison
+                // message - a later, healthy message on the same topic
+                // still gets processed and updates order status normally.
+                pollForStatus(store, healthyOrder.id, OrderStatus.Reserved)
+                  .timeout(20.seconds)
+              }
+          dlqMessages <- consumeOneFrom(
+            config,
+            s"${StockEventConsumer.topic}-dlq"
+          )
+          metrics <- testMeter.collectMetrics
+          dlqPublished = metrics
+            .filter(_.getName == "purekafka.dlq.published")
+            .flatMap(_.getLongSumData.getPoints.asScala)
+            .map(_.getValue)
+            .sum
+        } yield {
+          assertEquals(healthyFinal, OrderStatus.Reserved)
+          assert(
+            dlqMessages.exists(_.contains(poisonItemId)),
+            s"expected a DLQ message mentioning $poisonItemId, got $dlqMessages"
+          )
+          assert(
+            dlqPublished >= 1L,
+            s"expected at least 1 purekafka.dlq.published, got $dlqPublished"
+          )
+        }
+      }
+    }
+  }
+
+  /** Like `failOnceOn`, but fails every time for `failOnItemId` - never
+    * recovers. Used to prove `DeadLetter` actually exhausts its retry budget
+    * and routes to the DLQ, rather than eventually succeeding.
     */
-  private def failOnceOn(
+  private def alwaysFailOn(
       base: OrderStore[IO],
-      failOnItemId: String,
-      alreadyFailed: Ref[IO, Boolean]
+      failOnItemId: String
   ): OrderStore[IO] = new OrderStore[IO] {
     def create(customerId: String, items: List[NewOrderItem]) =
       base.create(customerId, items)
@@ -106,13 +273,9 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
         outboxEvent: Option[PendingOutboxEvent] = None
     ) =
       if (orderItemId == failOnItemId)
-        alreadyFailed.get.flatMap {
-          case true  => base.updateStatusByItemId(orderItemId, newStatus, outboxEvent)
-          case false =>
-            alreadyFailed.set(true) *> IO.raiseError(
-              new RuntimeException("synthetic transient store failure")
-            )
-        }
+        IO.raiseError(
+          new RuntimeException("synthetic permanent store failure")
+        )
       else base.updateStatusByItemId(orderItemId, newStatus, outboxEvent)
     def updateStatusIfCurrent(
         id: String,
@@ -124,97 +287,26 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
     def ping = base.ping
   }
 
-  test(
-    "a crash in StockEventConsumer's stream restarts it (via purekafka's StreamSupervisor) without affecting PaymentEventConsumer's own, concurrently-processing stream (TD-2.2/TD-2.4)"
-  ) {
-    withContainers { kafka =>
-      val config = configFor(kafka)
-      Metrics.test[IO]("kafka-consumers-suite").use { testMeter =>
-        for {
-          baseStore <- OrderStore.inMemory[IO]
-          alreadyFailed <- Ref.of[IO, Boolean](false)
-          (stockOrder, stockItems) <- baseStore.create("cust-stock", oneItem)
-          failingItemId = stockItems.head.id
-          store = failOnceOn(baseStore, failingItemId, alreadyFailed)
-          (paymentOrder, _) <- baseStore.create("cust-payment", oneItem)
-          _ <- baseStore.update(paymentOrder.id, OrderStatus.Reserved)
-          stockEvent = StockReservedEvent(
-            failingItemId,
-            "sku-1",
-            2,
-            Instant.parse("2026-01-01T00:00:00Z")
-          )
-          paymentEvent = PaymentSettledEvent(
-            paymentOrder.id,
-            "payment-1",
-            paymentOrder.totalCents,
-            Instant.parse("2026-01-01T00:00:00Z")
-          )
-          _ <- produce(
-            config,
-            StockEventConsumer.topic,
-            "sku-1",
-            envelopeJson(
-              "inventory-service",
-              "StockReserved",
-              failingItemId,
-              stockEvent.asJson
-            )
-          )
-          _ <- produce(
-            config,
-            PaymentEventConsumer.topic,
-            paymentOrder.id,
-            envelopeJson(
-              "payment-service",
-              "PaymentSettled",
-              paymentOrder.id,
-              paymentEvent.asJson
-            )
-          )
-          // Run the merged, supervised stream in the background rather than
-          // racing it: a race would cancel the whole stream (including
-          // StockEventConsumer's not-yet-finished restart-then-retry
-          // sequence) the instant the *first* of two awaited conditions
-          // resolves, which is exactly what happened on the first attempt
-          // at this test (PaymentEventConsumer's immediate success raced
-          // out StockEventConsumer's still-in-flight retry).
-          (paymentResult, stockFinal) <-
-            KafkaConsumers
-              .supervised[IO](config, store, NoOpLogger[IO], testMeter.meter)
-              .compile
-              .drain
-              .background
-              .use { _ =>
-                // PaymentEventConsumer's own stream is never touched by the
-                // StockEventConsumer-side crash+restart above - if it were,
-                // this poll would stall behind Stock's ~1s restart delay
-                // instead of completing immediately. IO.both runs both
-                // polls concurrently rather than one after the other, so
-                // Payment's quick success is actually observed while Stock
-                // is still mid-retry, not just after it too has finished.
-                IO.both(
-                  pollForStatus(store, paymentOrder.id, OrderStatus.Confirmed)
-                    .timeout(20.seconds),
-                  pollForStatus(store, stockOrder.id, OrderStatus.Reserved)
-                    .timeout(20.seconds)
-                )
-              }
-          metrics <- testMeter.collectMetrics
-          restarts = metrics
-            .filter(_.getName == "purekafka.stream.restarts")
-            .flatMap(_.getLongSumData.getPoints.asScala)
-            .map(_.getValue)
-            .sum
-        } yield {
-          assertEquals(paymentResult, OrderStatus.Confirmed)
-          assertEquals(stockFinal, OrderStatus.Reserved)
-          assert(
-            restarts >= 1L,
-            s"expected at least 1 purekafka.stream.restarts, got $restarts"
-          )
-        }
-      }
-    }
+  /** Consumes whatever's on `topic` right now (from the beginning) within a
+    * short window, for asserting on DLQ contents directly - a plain,
+    * one-shot read, not a long-running consumer group.
+    */
+  private def consumeOneFrom(
+      config: KafkaConfig,
+      topic: String
+  ): IO[List[String]] = {
+    val consumerSettings =
+      ConsumerSettings[IO, String, String]
+        .withBootstrapServers(config.bootstrapServers)
+        .withGroupId(s"dlq-check-${UUID.randomUUID()}")
+        .withAutoOffsetReset(AutoOffsetReset.Earliest)
+    KafkaConsumer
+      .stream(consumerSettings)
+      .subscribeTo(topic)
+      .records
+      .map(_.record.value)
+      .interruptAfter(5.seconds)
+      .compile
+      .toList
   }
 }
