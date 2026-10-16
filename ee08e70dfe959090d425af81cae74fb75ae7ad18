@@ -1,0 +1,10 @@
+Task: add io.github.beckfordp:purekafka dependency (TD-2.2/TD-2.4, ADR 0010).
+
+Added purekafkaVersion = "0.1.0+35-b414429d" (sbt-dynver's untagged format,
+no release tag exists yet for purekafka) alongside purerestlibVersion in
+build.sbt, plus the library dependency line. Resolves from ~/.ivy2/local
+(published there via 'sbt publishLocal' in the sibling purerest checkout),
+checked before the existing GitHub Packages resolver — no new resolver
+needed, no network/token required for this dependency specifically.
+
+Confirmed: sbt compile succeeds cleanly.
