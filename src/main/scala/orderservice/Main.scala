@@ -37,11 +37,8 @@ object Main extends IOApp.Simple {
               )("order-service starting")
               _ <- OrderStore.postgres[IO](config.postgres, meter).use {
                 store =>
-                  StockEventConsumer
-                    .run[IO](config.kafka, store, logger)
-                    .merge(
-                      PaymentEventConsumer.run[IO](config.kafka, store, logger)
-                    )
+                  KafkaConsumers
+                    .supervised[IO](config.kafka, store, logger, meter)
                     .compile
                     .drain
                     .background
