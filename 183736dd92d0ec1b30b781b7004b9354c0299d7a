@@ -1,0 +1,42 @@
+Phase 3 verification report — Dead-letter routing (TD-2.2/TD-2.4, ADR 0010)
+
+Scope: wrap each consumer's per-message processing branch (StockEventConsumer,
+PaymentEventConsumer) in purekafka.consumer.DeadLetter, so a message that fails
+processing after exhausting retries is routed to <topic>-dlq instead of
+crashing/blocking the stream.
+
+What was proven:
+- A permanently-failing message (poison item id, OrderStore decorator always
+  raises for it) lands on inventory-events-dlq after DeadLetter's retry budget
+  is exhausted — confirmed by directly consuming the DLQ topic and asserting
+  the message body mentions the poison item id.
+- A healthy message produced on the same topic, same partition key, right
+  after the poison one, is still processed normally (order status reaches
+  Reserved) — the stream does not get stuck or killed by the poison message.
+- purekafka.dlq.published metric increments (>= 1) when routing occurs.
+- All existing null-safety (Phase 1) and stream-supervision (Phase 2) tests
+  still pass with DeadLetter wired in.
+
+Significant architectural finding:
+Once DeadLetter wraps a consumer's processing branches, it absorbs virtually
+all application-level failures via its own internal Retry *before* they ever
+reach the outer StreamSupervisor. Confirmed empirically: re-running Phase 2's
+original isolation test (built on a failing-once OrderStore decorator) now
+shows purekafka.stream.restarts == 0, where it previously was >= 1 once
+DeadLetter was layered on top. This is a net-positive real-world outcome
+(fewer unnecessary whole-stream restarts for transient failures that
+DeadLetter's own retry already handles), but it invalidated the original
+test's premise.
+
+Fix: rewrote KafkaConsumersSuite's Phase 2 test to use purely synthetic
+Stream[IO, Unit] builds (matching purekafka's own StreamSupervisorSuite
+convention) to prove the merge-isolation property directly, independent of
+real consumer business logic. Added a new, separate Phase 3 test (above) to
+prove DLQ routing using the real consumers end-to-end against a live Kafka
+container.
+
+Verification: sbt scalafmt scalafmtCheck test — 147 passed, 0 failed, 0
+errors; scalafmtCheck clean.
+
+Mode: reduced-prompting (automated-test verification only; no interactive
+walkthrough), per .claude/prompt-off.
