@@ -7,9 +7,9 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Dependency + null-safety' (Protocol in workflow.md) `ff15c46` — reduced-prompting mode: automated-test verification only (145 passed), no interactive walkthrough; see git note on `ff15c46`
 
 ## Phase 2 — Per-consumer stream supervision
-- [ ] Task: Write failing test: a synthetic stream error in `StockEventConsumer`'s own stream triggers a `purekafka.consumer.StreamSupervisor` restart, without killing or restarting `PaymentEventConsumer`'s separately-supervised stream (Red)
-- [ ] Task: Wrap each of `StockEventConsumer.run`/`PaymentEventConsumer.run`'s `Stream[F, Unit]` individually in `StreamSupervisor` inside `Main.scala`, *then* merge the two supervised streams (Green)
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Per-consumer stream supervision' (Protocol in workflow.md)
+- [x] Task: Write failing test: a synthetic stream error in `StockEventConsumer`'s own stream triggers a `purekafka.consumer.StreamSupervisor` restart, without killing or restarting `PaymentEventConsumer`'s separately-supervised stream (Red) `ea1b27e`
+- [x] Task: Wrap each of `StockEventConsumer.run`/`PaymentEventConsumer.run`'s `Stream[F, Unit]` individually in `StreamSupervisor` inside `Main.scala`, *then* merge the two supervised streams (Green) `ea1b27e` — extracted into a new, directly-testable `KafkaConsumers.supervised`; see git note on `ea1b27e` for a test-design detour (IO.race cancelling the whole stream too early, fixed via `.background.use` + `IO.both`)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Per-consumer stream supervision' (Protocol in workflow.md)
 
 ## Phase 3 — Dead-letter routing
 - [ ] Task: Write failing tests: a message that fails processing after retries lands on `inventory-events-dlq`/`payment-events-dlq` respectively, and the stream keeps consuming subsequent messages (Red)
