@@ -4,7 +4,7 @@ This file tracks all major tracks for the project.
 
 - [x] **Track: Transactional outbox for order-service (TD-3.2, ADR 0008)**
   *Link: [./tracks/outbox_20261012/](./tracks/outbox_20261012/)*
-- [ ] **Track: order-service adopts purekafka (TD-2.2/TD-2.4, ADR 0010)**
+- [x] **Track: order-service adopts purekafka (TD-2.2/TD-2.4, ADR 0010)**
   *Link: [./tracks/purekafka-adoption_20261016/](./tracks/purekafka-adoption_20261016/)*
 
 ---
