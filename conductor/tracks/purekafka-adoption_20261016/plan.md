@@ -1,7 +1,7 @@
 # Plan — TD-2.2/TD-2.4: order-service adopts purekafka (ADR 0010)
 
 ## Phase 1 — Dependency + null-safety
-- [ ] Task: Add `io.github.beckfordp:purekafka` dependency to `build.sbt` (same resolver pattern as `purerestlib`); confirm `sbt compile` succeeds
+- [x] Task: Add `io.github.beckfordp:purekafka` dependency to `build.sbt` (same resolver pattern as `purerestlib`); confirm `sbt compile` succeeds `ee08e70`
 - [ ] Task: Write failing tests: a null key and a null value record don't crash `StockEventConsumer`/`PaymentEventConsumer` (Red)
 - [ ] Task: Switch both consumers' `ConsumerSettings[F, String, String]` to `Option[String]` key/value, matching payment-service's TD-2.1 fix (Green)
 - [ ] Task: Conductor - User Manual Verification 'Phase 1: Dependency + null-safety' (Protocol in workflow.md)
