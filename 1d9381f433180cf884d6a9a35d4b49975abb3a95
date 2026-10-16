@@ -1,0 +1,21 @@
+Phase 2 verification report (TD-2.2/TD-2.4, ADR 0010) - Per-consumer stream supervision.
+
+Reduced-prompting mode active: automated-test verification only, no
+interactive manual-verification walkthrough.
+
+Automated test command: sbt scalafmtCheck test
+Result: 146 passed, 0 failed, 0 errors.
+
+What this proves: StockEventConsumer and PaymentEventConsumer are each
+individually wrapped in purekafka's StreamSupervisor before merging in
+Main.scala (via the new, directly-testable KafkaConsumers.supervised),
+not the merged stream supervised as one unit. Proven against real
+Testcontainers Kafka with a genuinely crashing consumer (a failing-once
+OrderStore decorator, not a synthetic in-process stream): Stock restarts
+and recovers independently while Payment's own concurrent processing is
+provably unaffected (confirmed its poll resolves immediately, not stalled
+behind Stock's backoff delay).
+
+Remaining for this track: Phase 3 (per-consumer DeadLetter routing for
+messages that fail processing after retries, distinct from the whole-
+stream crash-and-restart this phase covers).
