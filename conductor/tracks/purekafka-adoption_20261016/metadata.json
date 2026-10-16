@@ -1,0 +1,8 @@
+{
+  "track_id": "purekafka-adoption_20261016",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-10-16T18:55:59Z",
+  "updated_at": "2026-10-16T18:55:59Z",
+  "description": "TD-2.2 / TD-2.4 (ADR 0010): StockEventConsumer and PaymentEventConsumer adopt purekafka's stream supervision (restart-with-backoff) and dead-letter routing, plus the null-safety fix that makes StreamSupervisor's restart actually effective"
+}
