@@ -6,10 +6,10 @@
 - [x] Task: Switch both consumers' `ConsumerSettings[F, String, String]` to `Option[String]` key/value, matching payment-service's TD-2.1 fix (Green) `163ad2f`
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Dependency + null-safety' (Protocol in workflow.md) `ff15c46` — reduced-prompting mode: automated-test verification only (145 passed), no interactive walkthrough; see git note on `ff15c46`
 
-## Phase 2 — Per-consumer stream supervision
+## Phase 2 — Per-consumer stream supervision [checkpoint: 1d9381f]
 - [x] Task: Write failing test: a synthetic stream error in `StockEventConsumer`'s own stream triggers a `purekafka.consumer.StreamSupervisor` restart, without killing or restarting `PaymentEventConsumer`'s separately-supervised stream (Red) `ea1b27e`
 - [x] Task: Wrap each of `StockEventConsumer.run`/`PaymentEventConsumer.run`'s `Stream[F, Unit]` individually in `StreamSupervisor` inside `Main.scala`, *then* merge the two supervised streams (Green) `ea1b27e` — extracted into a new, directly-testable `KafkaConsumers.supervised`; see git note on `ea1b27e` for a test-design detour (IO.race cancelling the whole stream too early, fixed via `.background.use` + `IO.both`)
-- [x] Task: Conductor - User Manual Verification 'Phase 2: Per-consumer stream supervision' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Per-consumer stream supervision' (Protocol in workflow.md) `1d9381f` — reduced-prompting mode: automated-test verification only (146 passed), no interactive walkthrough; see git note on `1d9381f`
 
 ## Phase 3 — Dead-letter routing
 - [ ] Task: Write failing tests: a message that fails processing after retries lands on `inventory-events-dlq`/`payment-events-dlq` respectively, and the stream keeps consuming subsequent messages (Red)
