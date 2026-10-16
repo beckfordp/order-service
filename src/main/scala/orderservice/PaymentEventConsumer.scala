@@ -56,10 +56,16 @@ object PaymentEventConsumer {
 
   val topic: String = "payment-events"
 
+  // Key/value typed as Option[String] (via fs2-kafka's null-safe
+  // Deserializer.option) rather than plain String: a plain String
+  // deserializer throws on a null key or value, which kills this whole
+  // background consumer stream silently - see TD-2.2, ADR 0010. Mirrors
+  // payment-service's OrderReservedConsumer, which fixed the identical
+  // crash risk first (TD-2.1).
   private def consumerSettings[F[_]: Async](
       config: KafkaConfig
-  ): ConsumerSettings[F, String, String] =
-    ConsumerSettings[F, String, String]
+  ): ConsumerSettings[F, Option[String], Option[String]] =
+    ConsumerSettings[F, Option[String], Option[String]]
       .withBootstrapServers(config.bootstrapServers)
       .withGroupId("order-service-payment-events")
       .withAutoOffsetReset(AutoOffsetReset.Earliest)
@@ -173,19 +179,25 @@ object PaymentEventConsumer {
       .subscribeTo(topic)
       .records
       .evalMap { committable =>
-        val raw = committable.record.value
-        val handled: F[Unit] = decode[EventEnvelope](raw) match {
-          case Left(error) =>
-            logger.error(Map("raw" -> raw), error)(
-              "Failed to decode payment-events envelope"
+        val handled: F[Unit] = committable.record.value match {
+          case None =>
+            logger.error(Map.empty)(
+              "Received payment-events record with a null value - skipping"
             )
-          case Right(envelope) =>
-            envelope.eventType match {
-              case "PaymentSettled" =>
-                handleSettled(store, logger, raw, envelope.payload)
-              case "PaymentFailed" =>
-                handleFailed(store, logger, raw, envelope.payload)
-              case _ => Async[F].unit
+          case Some(raw) =>
+            decode[EventEnvelope](raw) match {
+              case Left(error) =>
+                logger.error(Map("raw" -> raw), error)(
+                  "Failed to decode payment-events envelope"
+                )
+              case Right(envelope) =>
+                envelope.eventType match {
+                  case "PaymentSettled" =>
+                    handleSettled(store, logger, raw, envelope.payload)
+                  case "PaymentFailed" =>
+                    handleFailed(store, logger, raw, envelope.payload)
+                  case _ => Async[F].unit
+                }
             }
         }
         handled *> committable.offset.commit

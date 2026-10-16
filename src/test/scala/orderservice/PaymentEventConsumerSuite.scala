@@ -37,6 +37,28 @@ class PaymentEventConsumerSuite
       .use(_.produceOne_(ProducerRecord(topic, key, json)).flatten.void)
   }
 
+  /** Sends a record with a literal `null` value - a plain `String` value
+    * serializer throws on `null` at serialize time, so `Serializer.option`
+    * (the producer-side counterpart to the consumer's `Deserializer.option`)
+    * is needed to actually get a null-valued record onto the wire. TD-2.2's
+    * own null-safety fix (`Option[String]` deserializer) is what should make
+    * a record like this an ignorable no-op instead of a fiber-killing crash.
+    */
+  private def produceNullValue(
+      config: KafkaConfig,
+      topic: String,
+      key: String
+  ): IO[Unit] = {
+    val producerSettings =
+      ProducerSettings[IO, String, Option[String]](
+        Serializer[IO, String],
+        Serializer.option(Serializer[IO, String])
+      ).withBootstrapServers(config.bootstrapServers)
+    KafkaProducer
+      .resource(producerSettings)
+      .use(_.produceOne_(ProducerRecord(topic, key, None)).flatten.void)
+  }
+
   private def envelopeJson(
       eventType: String,
       correlationId: String,
@@ -482,6 +504,39 @@ class PaymentEventConsumerSuite
               assertEquals(event.status, "payment_failed")
           }
       }
+    }
+  }
+
+  test(
+    "a record with a null value doesn't crash the consumer, and a later valid event still updates order status (TD-2.2)"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      for {
+        store <- OrderStore.inMemory[IO]
+        (order, _) <- store.create("cust-123", oneItem)
+        _ <- store.update(order.id, OrderStatus.Reserved)
+        event = PaymentSettledEvent(
+          order.id,
+          "payment-1",
+          order.totalCents,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produceNullValue(config, PaymentEventConsumer.topic, order.id)
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          order.id,
+          envelopeJson("PaymentSettled", order.id, event.asJson)
+        )
+        finalStatus <- IO.race(
+          PaymentEventConsumer
+            .run[IO](config, store, NoOpLogger[IO])
+            .compile
+            .drain,
+          pollForStatus(store, order.id, OrderStatus.Confirmed)
+        )
+      } yield assertEquals(finalStatus, Right(OrderStatus.Confirmed))
     }
   }
 }

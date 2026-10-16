@@ -35,6 +35,33 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
       .use(_.produceOne_(ProducerRecord(topic, key, json)).flatten.void)
   }
 
+  /** Sends a record with a literal `null` value — a plain `String` value
+    * serializer accepts `null` at the JVM level (confirmed: this is exactly
+    * how TD-2.1 found payment-service's identical crash risk, "a producer
+    * that sends no key/value" — not reachable via a normal JSON payload,
+    * only by bypassing the usual encode-a-case-class path). TD-2.2's own
+    * null-safety fix (`Option[String]` deserializer) is what should make a
+    * record like this an ignorable no-op instead of a fiber-killing crash.
+    */
+  private def produceNullValue(
+      config: KafkaConfig,
+      topic: String,
+      key: String
+  ): IO[Unit] = {
+    // A plain String serializer throws on `null` at serialize time (before
+    // the record ever reaches the broker) - Serializer.option is the
+    // producer-side counterpart to the consumer's Deserializer.option,
+    // letting `None` actually become a null-valued record on the wire.
+    val producerSettings =
+      ProducerSettings[IO, String, Option[String]](
+        Serializer[IO, String],
+        Serializer.option(Serializer[IO, String])
+      ).withBootstrapServers(config.bootstrapServers)
+    KafkaProducer
+      .resource(producerSettings)
+      .use(_.produceOne_(ProducerRecord(topic, key, None)).flatten.void)
+  }
+
   private def envelopeJson(
       eventType: String,
       correlationId: String,
@@ -473,6 +500,38 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
         assertEquals(result, Right(OrderStatus.Reserved))
         assert(noOutboxRow)
       }
+    }
+  }
+
+  test(
+    "a record with a null value doesn't crash the consumer, and a later valid event still updates order status (TD-2.2)"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      for {
+        store <- OrderStore.inMemory[IO]
+        (order, items) <- store.create("cust-123", oneItem)
+        event = StockReservedEvent(
+          items.head.id,
+          "sku-1",
+          2,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produceNullValue(config, StockEventConsumer.topic, "sku-1")
+        _ <- produce(
+          config,
+          StockEventConsumer.topic,
+          "sku-1",
+          envelopeJson("StockReserved", items.head.id, event.asJson)
+        )
+        finalStatus <- IO.race(
+          StockEventConsumer
+            .run[IO](config, store, NoOpLogger[IO])
+            .compile
+            .drain,
+          pollForStatus(store, order.id, OrderStatus.Reserved)
+        )
+      } yield assertEquals(finalStatus, Right(OrderStatus.Reserved))
     }
   }
 }
