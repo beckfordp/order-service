@@ -1,0 +1,25 @@
+Tasks: write failing per-consumer-isolation test (Red), wrap each consumer individually in StreamSupervisor then merge in Main.scala (Green) — TD-2.2/TD-2.4, ADR 0010.
+
+New KafkaConsumers.supervised[F] extracted out of Main.scala's inline val
+run, so the wiring pattern (supervise each stream *before* merging, not
+the merged stream as one unit) is directly testable rather than only
+exercised incidentally by running the whole service.
+
+Red-step detour worth recording: first test attempt used IO.race between
+the merged supervised stream and a single status poll, same pattern this
+repo's other consumer tests already use - but racing cancels the *whole*
+stream the instant the first of two conditions resolves. Since
+PaymentEventConsumer's event processes immediately while
+StockEventConsumer is still mid-backoff from its first (synthetic,
+injected via a failing-once OrderStore decorator) crash, the race killed
+the entire stream - including Stock's not-yet-finished retry - before it
+could succeed. Fixed by running the stream in .background.use (matching
+Main.scala's own real usage) and IO.both-ing the two polls concurrently
+instead of racing.
+
+Verified: new KafkaConsumersSuite test proves genuine isolation — Payment
+confirms immediately (not delayed behind Stock's ~1s backoff), Stock
+crashes once then succeeds on retry, purekafka.stream.restarts >= 1
+(asserted via purerest.metrics.Metrics.test's real in-memory otel4s
+testkit, not a mock). Full suite: 146 passed, 0 failed, scalafmtCheck
+clean.
