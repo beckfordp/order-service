@@ -1,0 +1,19 @@
+Tasks: write failing null-key/value tests (Red), switch both consumers to Option[String] deserializers (Green) — TD-2.2, ADR 0010.
+
+Mirrors payment-service's OrderReservedConsumer's existing TD-2.1 fix
+exactly: ConsumerSettings[F, Option[String], Option[String]] instead of
+plain String; a None value logs 'Received <topic> record with a null
+value - skipping' instead of crashing the fs2-kafka deserialization step.
+
+Red-step detour worth recording: the first test-helper attempt tried
+ProducerRecord(topic, key, null) on a plain String producer, which threw
+at *produce* time (String.getBytes on null) before the message ever
+reached the broker — not the bug under test. Fixed by giving the test's
+own producer a Serializer.option(Serializer[IO, String]) value
+serializer so a literal None actually becomes a null-valued record on
+the wire, reproducing the real consumer-side NullPointerException
+(GenericDeserializer.string on a null byte array) that TD-2.2 describes.
+
+Verified: full suite — 145 passed, 0 failed, scalafmtCheck clean. No
+regressions in TD-3.2's outbox-write behavior or any other existing
+test.
