@@ -1,0 +1,40 @@
+Tasks: write failing DLQ-routing test (Red), wrap both consumers' handleX branches in purekafka.consumer.DeadLetter (Green) — TD-2.4, ADR 0010.
+
+Each of StockEventConsumer.run/PaymentEventConsumer.run now takes a
+DeadLetter[F, String, String] parameter; the handleReserved/
+handleReservationFailed/handleSettled/handleFailed calls are wrapped in
+deadLetter.guard(topic, key, raw)(...) - a message that decodes fine but
+fails *processing* gets bounded-retried (maxRetries=3, 200ms) then
+routed to <topic>-dlq, instead of crashing the stream or being silently
+dropped. Decode failures themselves are unchanged (still logged/dropped,
+never retried) - out of this task's scope per spec.md.
+KafkaConsumers.supervised now constructs one DeadLetter.resource per
+topic (its own small producer each, self-contained per purekafka's own
+convention) and threads them through.
+
+Significant finding, not a bug - documented in both the test file and
+here: once DeadLetter wraps every processing branch, it absorbs
+essentially all application-level failures internally (retry-then-
+succeed, or retry-then-DLQ-and-swallow) *before* they ever reach
+StreamSupervisor. Confirmed empirically: re-running Phase 2's original
+isolation test (built on a failing-once OrderStore decorator) after this
+phase's changes landed now observes zero purekafka.stream.restarts,
+because DeadLetter's own bounded retry catches the one-time failure
+first. This is a strictly better real-world outcome (fewer unnecessary
+whole-stream restarts for failures DeadLetter can already handle at the
+message level) but it meant Phase 2's test needed rewriting: replaced
+with a synthetic-stream test proving the merge-isolation property
+directly (the same way purekafka's own StreamSupervisorSuite tests
+restart-with-backoff), independent of whether real business logic
+happens to have an exploitable crash path - which, thanks to this phase,
+it mostly no longer does. The old failOnceOn test helper was removed as
+dead code once superseded.
+
+New DLQ test proves the real path end-to-end: a permanently-failing
+store call on a real Testcontainers broker gets retried 3 times then
+routed to inventory-events-dlq (confirmed by directly consuming that
+topic and finding the poison message), while a second, healthy message
+on the same topic is still processed normally afterward (stream never
+got stuck or killed).
+
+Verified: full suite - 147 passed, 0 failed, scalafmtCheck clean.
