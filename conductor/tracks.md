@@ -15,6 +15,6 @@ priorities change. When ready to work on one, run `/conductor:newTrack <title>` 
 through the spec/plan questions and promote it into a real track above.
 
 - fix: reservation-failure response falls back to stale `pending` status if OrderStore.update races to None (US-4.2 review finding)
-- future: surface StockEventConsumer startup/fiber failure (e.g. Kafka unreachable) via /health/ready or a distinct error log, instead of the server silently running with no consumer (US-5.2 review finding)
+- TD-2.2 / TD-2.4 (ADR 0010): `StockEventConsumer` adopts `purekafka`'s stream supervision (restart-with-backoff on any stream error, not just a null key/value — same `ConsumerSettings[F, String, String]` crash risk TD-2.1 already fixed for payment-service) and dead-letter routing (a message that still fails after retries goes to `<topic>-dlq` instead of crashing or blocking the partition). Supersedes the older, narrower idea of just *surfacing* the failure via `/health/ready` — `purekafka` actually recovers from it instead. Requires `io.github.beckfordp:purekafka` published (`sbt publishLocal` in the sibling `purerest` checkout) before this can compile against it.
 
 ---
