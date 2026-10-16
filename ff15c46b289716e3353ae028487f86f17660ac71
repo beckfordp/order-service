@@ -1,0 +1,23 @@
+Phase 1 verification report (TD-2.2/TD-2.4, ADR 0010) - Dependency + null-safety.
+
+Reduced-prompting mode active: automated-test verification only, no
+interactive manual-verification walkthrough.
+
+Automated test command: sbt scalafmtCheck test
+Result: 145 passed, 0 failed, 0 errors.
+
+What this proves: io.github.beckfordp:purekafka resolves and compiles
+against order-service (from the local ivy2 cache, no network/token
+needed for this dependency specifically — real GitHub Packages pull
+still needed for purerestlib as before). Both StockEventConsumer and
+PaymentEventConsumer now use null-safe Option[String] deserializers,
+closing the TD-2.2 null-deserializer crash risk for both — not just the
+one consumer TD-2.2's own wording named. Proven against a real
+null-valued record reaching a real (Testcontainers) broker, not just
+asserted in isolation.
+
+Remaining for this track: Phase 2 (per-consumer StreamSupervisor,
+wrapped before merging in Main.scala) and Phase 3 (per-consumer
+DeadLetter routing). purekafka itself isn't actually wired in yet -
+only the dependency and the prerequisite null-safety fix that makes its
+later StreamSupervisor usage effective are done this phase.
