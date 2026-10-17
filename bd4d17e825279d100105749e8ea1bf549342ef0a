@@ -1,0 +1,6 @@
+Task: Mount purekafka.docs.Docs.routes in Main.scala (Green).
+
+Changes:
+- Main.scala: build asyncApiRoutes via purekafka.docs.Docs.routes[IO] with AsyncApiChannels.all, combined with the existing docsRoutes via HttpRoutes' SemigroupK <+> (cats.syntax.semigroupk._), before tracing/metrics/CORS middleware.
+
+Why: exposes order-service's Kafka event contracts at /docs/asyncapi.json, same server, alongside the existing OpenAPI /docs.
