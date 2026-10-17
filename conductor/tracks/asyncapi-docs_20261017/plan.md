@@ -5,12 +5,12 @@
 - [x] Task: Bump `io.github.beckfordp:purekafka` to the post-fix version; add tapir `Schema[A]` derivation for `StockReservedEvent`, `StockReservationFailedEvent`, `PaymentSettledEvent`, `PaymentFailedEvent` (Green) `a06b7a8` — committed Red+Green together; bumped to `0.1.0+71-2ff60583`, which includes purerest's `asyncapi-topic-merge_20261017` fix
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Dependency + schema derivation' (Protocol in workflow.md) `1003a17` — reduced-prompting mode: automated-test verification only (148 passed), no interactive walkthrough; see git note on `1003a17`
 
-## Phase 2 — Channel registration + raw-spec route
+## Phase 2 — Channel registration + raw-spec route [checkpoint: baea2ad]
 - [x] Task: Write failing test: a new `AsyncApiChannels` registry exposes all 4 channels with correct topic/eventType pairs (Red) `c2cd062`
 - [x] Task: Implement the registry (Green) `c2cd062` — committed Red+Green together
 - [x] Task: Write failing test: `GET /docs/asyncapi.json` returns 200 with a document containing all 4 event types across both topics (Red) `0db4e39` — deviation: already-Green, not Red; see git note on `0db4e39`
 - [x] Task: Mount `purekafka.docs.Docs.routes[F]` in `Main.scala`, merged with the existing OpenAPI routes (Green) `bd4d17e`
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Channel registration + raw-spec route' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Channel registration + raw-spec route' (Protocol in workflow.md) `baea2ad` — reduced-prompting mode: automated-test verification only (150 passed), no interactive walkthrough; see git note on `baea2ad`
 
 ## Phase 3 — Static HTML generation + serving
 - [ ] Task: Adapt `scripts/generate-kafka-asyncapi-docs.sh`/`verify-kafka-asyncapi-docs.sh` from purerest for order-service (own port/route, same version pins + patched-template workaround)
