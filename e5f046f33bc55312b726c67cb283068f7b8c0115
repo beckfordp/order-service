@@ -1,0 +1,7 @@
+Task: Adapt generate/verify AsyncAPI scripts for order-service.
+
+Changes:
+- scripts/generate-kafka-asyncapi-docs.sh: fetches order-service's own /docs/asyncapi.json (default http://localhost:8080), runs @asyncapi/cli@4.1.1 + patched html-template@1.0.0, same version pins/apiVersion-v3 patch as purerest's script, own target/ cache (separate repo/sandbox).
+- scripts/verify-kafka-asyncapi-docs.sh: brings up docker-compose (postgres+kafka+redis) + a real sbt run instance (mirrors scripts/verify-stock-event-consumer.sh's pattern), runs the generate script, then checks both the raw spec and served static HTML for all 4 registered event types across both topics.
+
+Why: order-service runs as a plain sbt-run JVM process (not a docker container with a bind mount, unlike kafka-harness), so the generated HTML can be served directly from the local target/asyncapi-docs path.
