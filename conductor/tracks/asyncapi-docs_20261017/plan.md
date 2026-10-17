@@ -19,5 +19,5 @@
 
 ## Phase 4 — Docs + full verification
 - [x] Task: Update order-service's README with a "View Kafka AsyncAPI docs" section `282ec48`
-- [ ] Task: Run full test suite + the adapted verify script end-to-end; confirm no regressions
+- [x] Task: Run full test suite + the adapted verify script end-to-end; confirm no regressions — 150 tests passing, `scalafmtCheck` clean, `./scripts/verify-kafka-asyncapi-docs.sh` passes end-to-end (all 4 event types in both raw spec and served HTML); no code changes, nothing to commit for this task
 - [ ] Task: Conductor - User Manual Verification 'Phase 4: Docs + full verification' (Protocol in workflow.md)
