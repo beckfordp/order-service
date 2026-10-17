@@ -1,8 +1,8 @@
 # Plan — Migrate order-service to purekafka AsyncAPI docs (ADR 0010)
 
 ## Phase 1 — Dependency + schema derivation
-- [ ] Task: Write failing test asserting `AsyncApiChannel[StockReservedEvent]`/etc. construct (needs an implicit tapir `Schema[A]` for each of the 4 event case classes) (Red)
-- [ ] Task: Bump `io.github.beckfordp:purekafka` to the post-fix version; add tapir `Schema[A]` derivation for `StockReservedEvent`, `StockReservationFailedEvent`, `PaymentSettledEvent`, `PaymentFailedEvent` (Green)
+- [x] Task: Write failing test asserting `AsyncApiChannel[StockReservedEvent]`/etc. construct (needs an implicit tapir `Schema[A]` for each of the 4 event case classes) (Red) `a06b7a8`
+- [x] Task: Bump `io.github.beckfordp:purekafka` to the post-fix version; add tapir `Schema[A]` derivation for `StockReservedEvent`, `StockReservationFailedEvent`, `PaymentSettledEvent`, `PaymentFailedEvent` (Green) `a06b7a8` — committed Red+Green together; bumped to `0.1.0+71-2ff60583`, which includes purerest's `asyncapi-topic-merge_20261017` fix
 - [ ] Task: Conductor - User Manual Verification 'Phase 1: Dependency + schema derivation' (Protocol in workflow.md)
 
 ## Phase 2 — Channel registration + raw-spec route
