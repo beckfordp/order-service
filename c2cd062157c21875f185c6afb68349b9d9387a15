@@ -1,0 +1,7 @@
+Task: AsyncApiChannels registry (Red+Green, committed together).
+
+Changes:
+- AsyncApiChannelsSuite.scala: added a test asserting AsyncApiChannels.all exposes all 4 (topic, eventType) pairs.
+- AsyncApiChannels.scala (new): registers the 4 event types across StockEventConsumer.topic/PaymentEventConsumer.topic via purekafka.docs.AsyncApiChannel. No producer-side registrations (none exist to register).
+
+Why: a single source of truth for order-service's Kafka AsyncAPI registrations, to be mounted via purekafka.docs.Docs.routes in the next task.
