@@ -14,7 +14,7 @@
 
 ## Phase 3 — Static HTML generation + serving
 - [x] Task: Adapt `scripts/generate-kafka-asyncapi-docs.sh`/`verify-kafka-asyncapi-docs.sh` from purerest for order-service (own port/route, same version pins + patched-template workaround) `e5f046f`
-- [ ] Task: Add a second `Main.scala` route (e.g. `/docs/asyncapi`) serving the generated static HTML, sibling to the raw-spec route
+- [x] Task: Add a second `Main.scala` route (e.g. `/docs/asyncapi`) serving the generated static HTML, sibling to the raw-spec route `b570e83`
 - [ ] Task: Conductor - User Manual Verification 'Phase 3: Static HTML generation + serving' (Protocol in workflow.md)
 
 ## Phase 4 — Docs + full verification
