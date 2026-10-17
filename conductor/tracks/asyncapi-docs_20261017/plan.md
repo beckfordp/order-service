@@ -12,10 +12,10 @@
 - [x] Task: Mount `purekafka.docs.Docs.routes[F]` in `Main.scala`, merged with the existing OpenAPI routes (Green) `bd4d17e`
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Channel registration + raw-spec route' (Protocol in workflow.md) `baea2ad` — reduced-prompting mode: automated-test verification only (150 passed), no interactive walkthrough; see git note on `baea2ad`
 
-## Phase 3 — Static HTML generation + serving
+## Phase 3 — Static HTML generation + serving [checkpoint: ca0203f]
 - [x] Task: Adapt `scripts/generate-kafka-asyncapi-docs.sh`/`verify-kafka-asyncapi-docs.sh` from purerest for order-service (own port/route, same version pins + patched-template workaround) `e5f046f`
 - [x] Task: Add a second `Main.scala` route (e.g. `/docs/asyncapi`) serving the generated static HTML, sibling to the raw-spec route `b570e83`
-- [ ] Task: Conductor - User Manual Verification 'Phase 3: Static HTML generation + serving' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 3: Static HTML generation + serving' (Protocol in workflow.md) `ca0203f` — reduced-prompting mode: end-to-end script verification only (`./scripts/verify-kafka-asyncapi-docs.sh`, all checks passed); found and fixed a route-ordering bug along the way (`cdcf77c`); see git note on `ca0203f`
 
 ## Phase 4 — Docs + full verification
 - [ ] Task: Update order-service's README with a "View Kafka AsyncAPI docs" section
