@@ -9,6 +9,7 @@ import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.implicits._
 import org.http4s.server.staticcontent.{FileService, fileService}
+import purekafka.docs.{Docs => AsyncApiDocs}
 import purerest.docs.Docs
 import purerest.logging.Logging
 import purerest.metrics.{Metrics, ServerMetrics}
@@ -93,12 +94,11 @@ object Main extends IOApp.Simple {
                                 HealthRoutes.readyServerEndpoint[IO](store)
                               )
                             )
-                            val asyncApiRoutes = purekafka.docs.Docs
-                              .routes[IO](
-                                "Order Service",
-                                "1.0",
-                                AsyncApiChannels.all
-                              )
+                            val asyncApiRoutes = AsyncApiDocs.routes[IO](
+                              "Order Service",
+                              "1.0",
+                              AsyncApiChannels.all
+                            )
                             // Serves scripts/generate-kafka-asyncapi-docs.sh's
                             // output as static HTML at /docs/asyncapi/* —
                             // sibling to asyncApiRoutes' raw-spec route, same
