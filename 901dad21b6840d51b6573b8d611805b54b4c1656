@@ -1,0 +1,8 @@
+Phase 4 verification report.
+
+Automated test command: sbt scalafmtCheck test
+Result: scalafmtCheck clean; 150 tests passing, 0 failed. (First attempt hung ~8min due to a stale Testcontainers Ryuk container from an earlier manual test session holding a lock; killed the hung JVM and removed the stale ryuk container, then the suite ran cleanly in 75s.)
+
+Additional end-to-end check: ./scripts/verify-kafka-asyncapi-docs.sh — all checks passed (all 4 event types present in both the raw spec and the served static HTML).
+
+Manual verification: skipped per reduced-prompting mode (.claude/prompt-off) — automated/end-to-end script verification only.
