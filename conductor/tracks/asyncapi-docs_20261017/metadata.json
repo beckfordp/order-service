@@ -1,0 +1,8 @@
+{
+  "track_id": "asyncapi-docs_20261017",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-10-17T17:18:05Z",
+  "updated_at": "2026-10-17T17:18:05Z",
+  "description": "Migrate order-service to purekafka's AsyncApiChannel/purekafka.docs registration API: register StockEventConsumer/PaymentEventConsumer's event types for AsyncAPI docs, served the same way tapir serves OpenAPI/Swagger at /docs (ADR 0010); depends on a prerequisite purerest track fixing AsyncApiDoc.generate's same-topic multi-message handling"
+}

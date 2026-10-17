@@ -6,6 +6,8 @@ This file tracks all major tracks for the project.
   *Link: [./tracks/outbox_20261012/](./tracks/outbox_20261012/)*
 - [x] **Track: order-service adopts purekafka (TD-2.2/TD-2.4, ADR 0010)**
   *Link: [./tracks/purekafka-adoption_20261016/](./tracks/purekafka-adoption_20261016/)*
+- [ ] **Track: Migrate order-service to purekafka AsyncAPI docs (ADR 0010)**
+  *Link: [./tracks/asyncapi-docs_20261017/](./tracks/asyncapi-docs_20261017/)*
 
 ---
 

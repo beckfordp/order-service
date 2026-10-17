@@ -1,0 +1,23 @@
+# Plan — Migrate order-service to purekafka AsyncAPI docs (ADR 0010)
+
+## Phase 1 — Dependency + schema derivation
+- [ ] Task: Write failing test asserting `AsyncApiChannel[StockReservedEvent]`/etc. construct (needs an implicit tapir `Schema[A]` for each of the 4 event case classes) (Red)
+- [ ] Task: Bump `io.github.beckfordp:purekafka` to the post-fix version; add tapir `Schema[A]` derivation for `StockReservedEvent`, `StockReservationFailedEvent`, `PaymentSettledEvent`, `PaymentFailedEvent` (Green)
+- [ ] Task: Conductor - User Manual Verification 'Phase 1: Dependency + schema derivation' (Protocol in workflow.md)
+
+## Phase 2 — Channel registration + raw-spec route
+- [ ] Task: Write failing test: a new `AsyncApiChannels` registry exposes all 4 channels with correct topic/eventType pairs (Red)
+- [ ] Task: Implement the registry (Green)
+- [ ] Task: Write failing test: `GET /docs/asyncapi.json` returns 200 with a document containing all 4 event types across both topics (Red)
+- [ ] Task: Mount `purekafka.docs.Docs.routes[F]` in `Main.scala`, merged with the existing OpenAPI routes (Green)
+- [ ] Task: Conductor - User Manual Verification 'Phase 2: Channel registration + raw-spec route' (Protocol in workflow.md)
+
+## Phase 3 — Static HTML generation + serving
+- [ ] Task: Adapt `scripts/generate-kafka-asyncapi-docs.sh`/`verify-kafka-asyncapi-docs.sh` from purerest for order-service (own port/route, same version pins + patched-template workaround)
+- [ ] Task: Add a second `Main.scala` route (e.g. `/docs/asyncapi`) serving the generated static HTML, sibling to the raw-spec route
+- [ ] Task: Conductor - User Manual Verification 'Phase 3: Static HTML generation + serving' (Protocol in workflow.md)
+
+## Phase 4 — Docs + full verification
+- [ ] Task: Update order-service's README with a "View Kafka AsyncAPI docs" section
+- [ ] Task: Run full test suite + the adapted verify script end-to-end; confirm no regressions
+- [ ] Task: Conductor - User Manual Verification 'Phase 4: Docs + full verification' (Protocol in workflow.md)
