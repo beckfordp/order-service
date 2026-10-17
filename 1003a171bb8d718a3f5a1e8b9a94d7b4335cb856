@@ -1,0 +1,6 @@
+Phase 1 verification report.
+
+Automated test command: sbt scalafmtCheck test
+Result: scalafmtCheck clean; 148 tests passing (147 + 1 new AsyncApiChannelsSuite test), 0 failed.
+
+Manual verification: skipped per reduced-prompting mode (.claude/prompt-off) — automated-test verification only, consistent with this project's prior tracks.
