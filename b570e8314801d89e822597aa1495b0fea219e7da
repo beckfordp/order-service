@@ -1,0 +1,6 @@
+Task: Serve generated static HTML at /docs/asyncapi (Green).
+
+Changes:
+- Main.scala: fileService[IO] route at pathPrefix /docs/asyncapi, systemPath configurable via ASYNCAPI_HTML_DIR (default target/asyncapi-docs, matching generate-kafka-asyncapi-docs.sh's own default OUTPUT_DIR), combined into the same route stack via <+>.
+
+Why: sibling to the raw-spec route, mirrors kafka-harness's own /docs/asyncapi static route but reads straight off the local filesystem (order-service runs as a plain sbt-run process, no docker bind mount needed).
