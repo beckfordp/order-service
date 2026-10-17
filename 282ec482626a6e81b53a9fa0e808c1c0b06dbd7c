@@ -1,0 +1,4 @@
+Task: README update.
+
+Changes:
+- README.md: added 'View Kafka AsyncAPI docs' section between the existing Swagger UI line and 'Development guidelines', mirroring purerest's README wording for its own AsyncAPI docs section.
