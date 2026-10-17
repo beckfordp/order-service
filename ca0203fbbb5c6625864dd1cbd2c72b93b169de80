@@ -1,0 +1,7 @@
+Phase 3 verification report.
+
+Automated verification: ./scripts/verify-kafka-asyncapi-docs.sh (end-to-end: docker-compose postgres+kafka+redis, real sbt run, generate-kafka-asyncapi-docs.sh, raw spec + served static HTML both checked for all 4 event types). All checks passed.
+
+Significant finding during this verification: a route-ordering bug (purerest.docs.Docs' Swagger UI wildcard /docs/{resource} route short-circuiting <+> before the AsyncAPI routes ever matched /docs/asyncapi.json) was found and fixed in commit cdcf77c, prior to this checkpoint. See that commit's own git note for the full root cause.
+
+Manual verification: skipped per reduced-prompting mode (.claude/prompt-off) — automated/end-to-end script verification only.
