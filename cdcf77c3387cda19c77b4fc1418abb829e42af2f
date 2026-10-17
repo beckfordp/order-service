@@ -1,0 +1,6 @@
+Fix: route-ordering bug found during Phase 3 end-to-end verification.
+
+Changes:
+- Main.scala: reordered the combined route stack from 'docsRoutes <+> asyncApiRoutes <+> staticAsyncApiRoutes' to 'asyncApiRoutes <+> staticAsyncApiRoutes <+> docsRoutes'.
+
+Why: purerest.docs.Docs.routes' bundled Swagger UI serves a wildcard /docs/{resource} static-asset route that returns its own real 404 response (not http4s's fallthrough None) for any unrecognized /docs/* path, including /docs/asyncapi.json. Mounted first (as in the original commit bd4d17e), it short-circuited <+> before asyncApiRoutes/staticAsyncApiRoutes ever got a chance. Found by actually curling the running service during ./scripts/verify-kafka-asyncapi-docs.sh -- not caught by OrderAsyncApiDocsSuite (tests purekafka.docs.Docs.routes standalone, not the combined Main.scala stack) or by sbt compile. Confirmed fixed: manually started the service and curl'd /docs/asyncapi.json (200, all 4 event types present) and /docs/docs.yaml + /docs (still 200/308 as before).
