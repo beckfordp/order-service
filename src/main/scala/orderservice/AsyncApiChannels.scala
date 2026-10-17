@@ -2,12 +2,12 @@ package orderservice
 
 import purekafka.docs.AsyncApiChannel
 
-/** Registers order-service's Kafka event contracts for AsyncAPI
-  * documentation (ADR 0010's AsyncAPI follow-up), mirroring the real
-  * multiplexed topics: `StockEventConsumer`/`PaymentEventConsumer` route
-  * two event types each through one topic via the envelope pattern. No
-  * producer-side registrations — Rework 4's outbox pattern already removed
-  * every direct-publish call site from order-service.
+/** Registers order-service's Kafka event contracts for AsyncAPI documentation
+  * (ADR 0010's AsyncAPI follow-up), mirroring the real multiplexed topics:
+  * `StockEventConsumer`/`PaymentEventConsumer` route two event types each
+  * through one topic via the envelope pattern. No producer-side registrations —
+  * Rework 4's outbox pattern already removed every direct-publish call site
+  * from order-service.
   */
 object AsyncApiChannels {
 
