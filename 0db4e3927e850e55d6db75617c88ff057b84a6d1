@@ -1,0 +1,3 @@
+Task: GET /docs/asyncapi.json test (Red planned, actually committed already-Green).
+
+Deviation: this test exercises purekafka.docs.Docs.routes(title, version, AsyncApiChannels.all) directly, same pattern OrderDocsSuite already uses for the OpenAPI route (built from a local endpoint list, not through Main.scala's full IOApp wiring). Since Docs.routes and AsyncApiChannels.all both already existed from the prior two tasks, this test passed immediately with no new code -- there was no Red phase to drive here. The genuinely new work (mounting this route inside Main.scala, merged with the existing OpenAPI routes) is the next task/commit.
