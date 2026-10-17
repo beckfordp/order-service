@@ -34,4 +34,21 @@ class AsyncApiChannelsSuite extends FunSuite {
     assertEquals(paymentSettled.topic, "payment-events")
     assertEquals(paymentFailed.topic, "payment-events")
   }
+
+  test(
+    "AsyncApiChannels.all registers all 4 event types with correct topic/eventType pairs"
+  ) {
+    val topicsAndEventTypes =
+      AsyncApiChannels.all.map(c => c.topic -> c.eventType).toSet
+
+    assertEquals(
+      topicsAndEventTypes,
+      Set(
+        "inventory-events" -> "StockReserved",
+        "inventory-events" -> "StockReservationFailed",
+        "payment-events" -> "PaymentSettled",
+        "payment-events" -> "PaymentFailed"
+      )
+    )
+  }
 }
