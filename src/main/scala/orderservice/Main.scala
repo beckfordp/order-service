@@ -8,6 +8,7 @@ import org.http4s.Uri
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.implicits._
+import org.http4s.server.staticcontent.{FileService, fileService}
 import purerest.docs.Docs
 import purerest.logging.Logging
 import purerest.metrics.{Metrics, ServerMetrics}
@@ -98,9 +99,27 @@ object Main extends IOApp.Simple {
                                 "1.0",
                                 AsyncApiChannels.all
                               )
+                            // Serves scripts/generate-kafka-asyncapi-docs.sh's
+                            // output as static HTML at /docs/asyncapi/* —
+                            // sibling to asyncApiRoutes' raw-spec route, same
+                            // split as Swagger's /docs vs /docs/docs.yaml.
+                            // order-service runs as a plain `sbt run` JVM
+                            // process (no docker bind mount, unlike
+                            // kafka-harness), so this reads straight from the
+                            // local filesystem.
+                            val staticAsyncApiDocsDir = sys.env.getOrElse(
+                              "ASYNCAPI_HTML_DIR",
+                              "target/asyncapi-docs"
+                            )
+                            val staticAsyncApiRoutes = fileService[IO](
+                              FileService.Config(
+                                systemPath = staticAsyncApiDocsDir,
+                                pathPrefix = "/docs/asyncapi"
+                              )
+                            )
                             val tracedRoutes =
                               ServerTracing.middleware(tracer)(
-                                docsRoutes <+> asyncApiRoutes
+                                docsRoutes <+> asyncApiRoutes <+> staticAsyncApiRoutes
                               )
                             val meteredRoutes =
                               ServerMetrics.middleware[IO](meter)(
