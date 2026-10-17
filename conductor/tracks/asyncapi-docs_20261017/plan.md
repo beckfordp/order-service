@@ -6,8 +6,8 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Dependency + schema derivation' (Protocol in workflow.md) `1003a17` — reduced-prompting mode: automated-test verification only (148 passed), no interactive walkthrough; see git note on `1003a17`
 
 ## Phase 2 — Channel registration + raw-spec route
-- [ ] Task: Write failing test: a new `AsyncApiChannels` registry exposes all 4 channels with correct topic/eventType pairs (Red)
-- [ ] Task: Implement the registry (Green)
+- [x] Task: Write failing test: a new `AsyncApiChannels` registry exposes all 4 channels with correct topic/eventType pairs (Red) `c2cd062`
+- [x] Task: Implement the registry (Green) `c2cd062` — committed Red+Green together
 - [ ] Task: Write failing test: `GET /docs/asyncapi.json` returns 200 with a document containing all 4 event types across both topics (Red)
 - [ ] Task: Mount `purekafka.docs.Docs.routes[F]` in `Main.scala`, merged with the existing OpenAPI routes (Green)
 - [ ] Task: Conductor - User Manual Verification 'Phase 2: Channel registration + raw-spec route' (Protocol in workflow.md)
