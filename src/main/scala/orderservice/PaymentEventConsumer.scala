@@ -10,6 +10,7 @@ import io.circe.parser.decode
 import io.circe.syntax._
 import org.typelevel.log4cats.StructuredLogger
 import purekafka.consumer.DeadLetter
+import sttp.tapir.Schema
 
 import java.time.Instant
 
@@ -28,6 +29,7 @@ final case class PaymentSettledEvent(
 
 object PaymentSettledEvent {
   implicit val codec: Codec[PaymentSettledEvent] = deriveCodec
+  implicit val schema: Schema[PaymentSettledEvent] = Schema.derived
 }
 
 final case class PaymentFailedEvent(
@@ -39,6 +41,7 @@ final case class PaymentFailedEvent(
 
 object PaymentFailedEvent {
   implicit val codec: Codec[PaymentFailedEvent] = deriveCodec
+  implicit val schema: Schema[PaymentFailedEvent] = Schema.derived
 }
 
 /** Consumes `PaymentSettled`/`PaymentFailed` envelopes on `payment-events`
