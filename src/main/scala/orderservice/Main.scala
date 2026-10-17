@@ -2,6 +2,7 @@ package orderservice
 
 import cats.effect.{IO, IOApp}
 import cats.effect.syntax.all._
+import cats.syntax.semigroupk._
 import com.comcast.ip4s._
 import org.http4s.Uri
 import org.http4s.ember.client.EmberClientBuilder
@@ -91,8 +92,16 @@ object Main extends IOApp.Simple {
                                 HealthRoutes.readyServerEndpoint[IO](store)
                               )
                             )
+                            val asyncApiRoutes = purekafka.docs.Docs
+                              .routes[IO](
+                                "Order Service",
+                                "1.0",
+                                AsyncApiChannels.all
+                              )
                             val tracedRoutes =
-                              ServerTracing.middleware(tracer)(docsRoutes)
+                              ServerTracing.middleware(tracer)(
+                                docsRoutes <+> asyncApiRoutes
+                              )
                             val meteredRoutes =
                               ServerMetrics.middleware[IO](meter)(
                                 tracedRoutes
