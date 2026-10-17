@@ -55,6 +55,27 @@ curl http://localhost:8080/health/ready
 Swagger UI (generated from the same tapir endpoint definitions as the real routes — see
 `purerest.docs.Docs`) is browsable at **http://localhost:8080/docs**.
 
+## View Kafka AsyncAPI docs
+
+This service's two Kafka consumers (`StockEventConsumer`, `PaymentEventConsumer`) register their
+event types — `StockReserved`/`StockReservationFailed` on `inventory-events`,
+`PaymentSettled`/`PaymentFailed` on `payment-events` — for
+[AsyncAPI](https://www.asyncapi.com/) documentation via `purekafka.docs` (see `AsyncApiChannels`),
+the same way tapir generates the OpenAPI docs above. No producer-side registrations — the outbox
+pattern means this service has no direct Kafka publish call sites.
+
+- **Raw spec** — http://localhost:8080/docs/asyncapi.json
+- **Rendered HTML** — generate it once (fetches the running spec and renders it via the
+  [AsyncAPI CLI](https://github.com/asyncapi/cli)), then view it at
+  http://localhost:8080/docs/asyncapi/index.html:
+  ```
+  ./scripts/generate-kafka-asyncapi-docs.sh
+  ```
+
+`./scripts/verify-kafka-asyncapi-docs.sh` runs this end-to-end (fresh stack, generate, then checks
+all 4 event types actually show up in both the raw spec and the served HTML) and tears the stack
+down afterward.
+
 ## Development guidelines
 
 Extending this service? See [`development-guidelines.md`](./development-guidelines.md) for the
