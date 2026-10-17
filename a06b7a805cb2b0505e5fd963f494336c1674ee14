@@ -1,0 +1,8 @@
+Task: Dependency bump + schema derivation (Red+Green, committed together).
+
+Changes:
+- build.sbt: bumped purekafkaVersion to 0.1.0+71-2ff60583 (includes the AsyncAPI module and the same-topic merge fix from purerest's asyncapi-topic-merge_20261017 track).
+- StockEventConsumer.scala/PaymentEventConsumer.scala: added implicit tapir Schema[A] derivation for StockReservedEvent, StockReservationFailedEvent, PaymentSettledEvent, PaymentFailedEvent, alongside their existing circe Codec.
+- AsyncApiChannelsSuite.scala (new): confirms AsyncApiChannel[A] constructs for all 4 event types against the real topics (StockEventConsumer.topic, PaymentEventConsumer.topic).
+
+Why: AsyncApiChannel[A] requires an implicit tapir Schema[A]; the event case classes only had circe Codecs until now. Needed as the foundation for registering these 4 event types for AsyncAPI docs (order-service's asyncapi-docs_20261017 track).
