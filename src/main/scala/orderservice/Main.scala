@@ -117,9 +117,18 @@ object Main extends IOApp.Simple {
                                 pathPrefix = "/docs/asyncapi"
                               )
                             )
+                            // asyncApiRoutes/staticAsyncApiRoutes must come
+                            // before docsRoutes: docsRoutes' Swagger UI
+                            // bundle serves a wildcard /docs/{resource}
+                            // route for its own static assets, which
+                            // returns its own real 404 (not a http4s
+                            // fallthrough `None`) for any /docs/* path it
+                            // doesn't recognize — including
+                            // /docs/asyncapi.json — short-circuiting `<+>`
+                            // before asyncApiRoutes ever sees the request.
                             val tracedRoutes =
                               ServerTracing.middleware(tracer)(
-                                docsRoutes <+> asyncApiRoutes <+> staticAsyncApiRoutes
+                                asyncApiRoutes <+> staticAsyncApiRoutes <+> docsRoutes
                               )
                             val meteredRoutes =
                               ServerMetrics.middleware[IO](meter)(
