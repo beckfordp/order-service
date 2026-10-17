@@ -18,6 +18,6 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 3: Static HTML generation + serving' (Protocol in workflow.md) `ca0203f` — reduced-prompting mode: end-to-end script verification only (`./scripts/verify-kafka-asyncapi-docs.sh`, all checks passed); found and fixed a route-ordering bug along the way (`cdcf77c`); see git note on `ca0203f`
 
 ## Phase 4 — Docs + full verification
-- [ ] Task: Update order-service's README with a "View Kafka AsyncAPI docs" section
+- [x] Task: Update order-service's README with a "View Kafka AsyncAPI docs" section `282ec48`
 - [ ] Task: Run full test suite + the adapted verify script end-to-end; confirm no regressions
 - [ ] Task: Conductor - User Manual Verification 'Phase 4: Docs + full verification' (Protocol in workflow.md)
