@@ -47,8 +47,14 @@ lazy val root = project
     // Drives the sbt-purekafka-docs plugin's asyncApiGenerateSpec/
     // asyncApiGenerate tasks, auto-chained after Compile/compile - see
     // AsyncApiChannels.scala (orderservice.AsyncApiChannels, an
-    // AsyncApiChannelsProvider).
+    // AsyncApiChannelsProvider). Title/version match Main.scala's own
+    // AsyncApiDocs.routes[IO]("Order Service", "1.0", ...) call for the
+    // live /docs/asyncapi.json route - otherwise the build-time generated
+    // docs default to name.value/version.value ("order-service"/"0.1.0")
+    // and silently disagree with what's actually served live.
     asyncApiChannelsClass := "orderservice.AsyncApiChannels",
+    asyncApiTitle := "Order Service",
+    asyncApiVersion := "1.0",
     // purerestlib resolved as an ordinary published artifact from GitHub
     // Packages, not a source/`.dependsOn` link back to the purerest repo —
     // the same real-external-consumer proof purerest's own smoke-test/
