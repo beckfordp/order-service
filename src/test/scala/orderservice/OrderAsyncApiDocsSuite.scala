@@ -14,7 +14,7 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
     "GET /docs/asyncapi.json serves a document containing all 4 registered event types"
   ) {
     val routes =
-      AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.all)
+      AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
     for {
       response <- routes.orNotFound.run(
         Request[IO](Method.GET, uri"/docs/asyncapi.json")
@@ -44,7 +44,7 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
     // wildcard route - not the specific business endpoints - is what caused
     // the original bug.
     val asyncApiRoutes =
-      AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.all)
+      AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
     val docsRoutes = Docs.routes[IO]("Order Service", "1.0", Nil)
     val combined = asyncApiRoutes <+> docsRoutes
 

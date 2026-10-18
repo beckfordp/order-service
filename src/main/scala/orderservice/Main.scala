@@ -97,7 +97,7 @@ object Main extends IOApp.Simple {
                             val asyncApiRoutes = AsyncApiDocs.routes[IO](
                               "Order Service",
                               "1.0",
-                              AsyncApiChannels.all
+                              AsyncApiChannels.channels
                             )
                             // Serves scripts/generate-kafka-asyncapi-docs.sh's
                             // output as static HTML at /docs/asyncapi/* —

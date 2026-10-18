@@ -1,7 +1,10 @@
 package orderservice
 
+import io.circe.parser.parse
 import munit.FunSuite
-import purekafka.docs.AsyncApiChannel
+import purekafka.docs.{AsyncApiChannel, AsyncApiDoc, AsyncApiSpecWriter}
+
+import java.nio.file.Files
 
 class AsyncApiChannelsSuite extends FunSuite {
 
@@ -36,10 +39,10 @@ class AsyncApiChannelsSuite extends FunSuite {
   }
 
   test(
-    "AsyncApiChannels.all registers all 4 event types with correct topic/eventType pairs"
+    "AsyncApiChannels.channels registers all 4 event types with correct topic/eventType pairs"
   ) {
     val topicsAndEventTypes =
-      AsyncApiChannels.all.map(c => c.topic -> c.eventType).toSet
+      AsyncApiChannels.channels.map(c => c.topic -> c.eventType).toSet
 
     assertEquals(
       topicsAndEventTypes,
@@ -50,5 +53,27 @@ class AsyncApiChannelsSuite extends FunSuite {
         "payment-events" -> "PaymentFailed"
       )
     )
+  }
+
+  test(
+    "orderservice.AsyncApiChannels is reflectively loadable by name, matching build.sbt's asyncApiChannelsClass setting - a regression guard for sbt-purekafka-docs' AsyncApiSpecWriter"
+  ) {
+    val outputPath = Files.createTempFile("order-service-asyncapi-test", ".json")
+    outputPath.toFile.deleteOnExit()
+
+    AsyncApiSpecWriter.main(
+      Array(
+        "orderservice.AsyncApiChannels",
+        "Order Service",
+        "1.0",
+        outputPath.toString
+      )
+    )
+
+    val written = parse(Files.readString(outputPath)).toOption.get
+    val expected =
+      AsyncApiDoc.generate("Order Service", "1.0", AsyncApiChannels.channels)
+
+    assertEquals(written, expected)
   }
 }

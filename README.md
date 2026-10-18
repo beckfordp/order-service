@@ -64,17 +64,22 @@ event types — `StockReserved`/`StockReservationFailed` on `inventory-events`,
 the same way tapir generates the OpenAPI docs above. No producer-side registrations — the outbox
 pattern means this service has no direct Kafka publish call sites.
 
-- **Raw spec** — http://localhost:8080/docs/asyncapi.json
-- **Rendered HTML** — generate it once (fetches the running spec and renders it via the
-  [AsyncAPI CLI](https://github.com/asyncapi/cli)), then view it at
-  http://localhost:8080/docs/asyncapi/index.html:
-  ```
-  ./scripts/generate-kafka-asyncapi-docs.sh
-  ```
+Generation is handled by the `sbt-purekafka-docs` plugin (`asyncApiChannelsClass` in `build.sbt`),
+auto-chained after `Compile / compile` — every `sbt compile`/`run`/`Docker/publishLocal` already
+regenerates both files locally, no running server or manual script needed. Run it directly with:
+```
+sbt asyncApiGenerate
+```
 
-`./scripts/verify-kafka-asyncapi-docs.sh` runs this end-to-end (fresh stack, generate, then checks
-all 4 event types actually show up in both the raw spec and the served HTML) and tears the stack
-down afterward.
+- **Raw spec** — generated at `target/asyncapi-docs-spec/asyncapi.json`; also served live at
+  http://localhost:8080/docs/asyncapi.json while the service is running.
+- **Rendered HTML** — generated at `target/asyncapi-docs/index.html`
+  (`open target/asyncapi-docs/index.html`); also served live at
+  http://localhost:8080/docs/asyncapi/index.html while the service is running.
+
+`./scripts/verify-kafka-asyncapi-docs.sh` runs this end-to-end — `sbt asyncApiGenerate`, checks all
+4 event types in the generated spec/HTML, then brings up a fresh stack and checks the live
+`/docs/asyncapi.json` route too — and tears the stack down afterward.
 
 ## Development guidelines
 
