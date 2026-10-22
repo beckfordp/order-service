@@ -1,0 +1,23 @@
+Task: Telemetry[F] module (Phase 1 of main-resource-composition_20261022)
+
+Summary: Added Telemetry[F] (tracer/meter/logger bundle) with two
+constructors: fromResources (testable composition logic, takes
+tracer/meter as Resources) and resource (production wrapper calling
+Tracing.console + Metrics.oteljava). Follows this codebase's own
+established convention - .console/.oteljava are only ever used from
+Main, never unit-tested directly; every existing test suite uses
+.test variants instead - by making the REAL composition logic
+(fromResources) independently testable against Tracing.test/Metrics.test.
+
+Files:
+- src/main/scala/orderservice/Telemetry.scala (new)
+- src/test/scala/orderservice/TelemetrySuite.scala (new, 2 tests)
+
+TDD: Red confirmed (compile failure: "Not found: Telemetry"), then
+Green after implementing. Full order-service test suite (157 tests)
+passes; scalafmtCheckAll/scalafmtSbtCheck clean.
+
+Verified: test log output shows real trace_id/span_id correlation
+working end-to-end through the composed logger (bonus confirmation,
+not separately asserted on per the test's own doc comment explaining
+why - that's purerest.logging.Logging's own testing responsibility).
