@@ -24,8 +24,8 @@ class PaymentEventConsumerSuite
   /** A `DeadLetter` whose `guard` never actually triggers in these tests -
     * every `handleSettled`/`handleFailed` call here succeeds on its first
     * attempt, so this is only ever a transparent pass-through.
-    * `KafkaConsumersSuite` is where DLQ routing itself (the failure path)
-    * is actually exercised.
+    * `KafkaConsumersSuite` is where DLQ routing itself (the failure path) is
+    * actually exercised.
     */
   private def noOpDeadLetter: IO[DeadLetter[IO, String, String]] = {
     import org.typelevel.otel4s.metrics.Meter.Implicits.noop
@@ -55,11 +55,11 @@ class PaymentEventConsumerSuite
   }
 
   /** Sends a record with a literal `null` value - a plain `String` value
-    * serializer throws on `null` at serialize time, so `Serializer.option`
-    * (the producer-side counterpart to the consumer's `Deserializer.option`)
-    * is needed to actually get a null-valued record onto the wire. TD-2.2's
-    * own null-safety fix (`Option[String]` deserializer) is what should make
-    * a record like this an ignorable no-op instead of a fiber-killing crash.
+    * serializer throws on `null` at serialize time, so `Serializer.option` (the
+    * producer-side counterpart to the consumer's `Deserializer.option`) is
+    * needed to actually get a null-valued record onto the wire. TD-2.2's own
+    * null-safety fix (`Option[String]` deserializer) is what should make a
+    * record like this an ignorable no-op instead of a fiber-killing crash.
     */
   private def produceNullValue(
       config: KafkaConfig,
@@ -113,8 +113,8 @@ class PaymentEventConsumerSuite
       )
     ).timeout(15.seconds)
 
-  /** Polls an `inMemoryWithOutbox` ref for an outbox row matching `orderId`
-    * and `eventType` - the outbox write (ADR 0008, TD-3.4) replaces the old
+  /** Polls an `inMemoryWithOutbox` ref for an outbox row matching `orderId` and
+    * `eventType` - the outbox write (ADR 0008, TD-3.4) replaces the old
     * real-Kafka-publish-and-reconsume round trip these tests used to need.
     */
   private def pollForOutboxEvent(

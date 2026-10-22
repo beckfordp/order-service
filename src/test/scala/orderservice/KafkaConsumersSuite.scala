@@ -19,8 +19,8 @@ import scala.jdk.CollectionConverters._
   * exists for (TD-2.2/TD-2.4, ADR 0010): wrapping each of
   * `StockEventConsumer`/`PaymentEventConsumer` in `StreamSupervisor`
   * *individually*, then merging, means a crash in one doesn't restart or
-  * otherwise affect the other's in-flight processing — unlike supervising
-  * the already-merged stream as one unit.
+  * otherwise affect the other's in-flight processing — unlike supervising the
+  * already-merged stream as one unit.
   */
 class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
 
@@ -64,7 +64,10 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
       case None    => IO.sleep(200.millis) *> pollUntil(check)
     }
 
-  private def statusOf(store: OrderStore[IO], orderId: String): IO[OrderStatus] =
+  private def statusOf(
+      store: OrderStore[IO],
+      orderId: String
+  ): IO[OrderStatus] =
     store.get(orderId).map(_.map(_._1.status).get)
 
   private def pollForStatus(
@@ -103,13 +106,15 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
       for {
         attempts <- Ref.of[IO, Int](0)
         healthyRuns <- Ref.of[IO, Int](0)
-        failingBuild: IO[fs2.Stream[IO, Unit]] = attempts.updateAndGet(_ + 1).map {
-          attempt =>
-            if (attempt < 3) fs2.Stream.raiseError[IO](
-              new RuntimeException(s"synthetic crash, attempt $attempt")
-            )
+        failingBuild: IO[fs2.Stream[IO, Unit]] = attempts
+          .updateAndGet(_ + 1)
+          .map { attempt =>
+            if (attempt < 3)
+              fs2.Stream.raiseError[IO](
+                new RuntimeException(s"synthetic crash, attempt $attempt")
+              )
             else fs2.Stream.sleep[IO](10.seconds) // never completes on its own
-        }
+          }
         healthyBuild: IO[fs2.Stream[IO, Unit]] = IO.pure(
           fs2.Stream.eval(healthyRuns.update(_ + 1)) >> fs2.Stream.sleep[IO](
             10.seconds
@@ -288,8 +293,8 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   /** Consumes whatever's on `topic` right now (from the beginning) within a
-    * short window, for asserting on DLQ contents directly - a plain,
-    * one-shot read, not a long-running consumer group.
+    * short window, for asserting on DLQ contents directly - a plain, one-shot
+    * read, not a long-running consumer group.
     */
   private def consumeOneFrom(
       config: KafkaConfig,

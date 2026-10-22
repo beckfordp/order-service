@@ -41,9 +41,9 @@ class OrderStorePostgresSuite extends CatsEffectSuite with TestContainerForAll {
     )
 
   /** Raw-JDBC read of outbox_events for a given aggregate_id - mirrors
-    * MigrationsSuite's own raw-JDBC pattern; this track's production code
-    * never reads this table back (only a future Debezium connector does),
-    * so there's no Skunk read path to reuse here.
+    * MigrationsSuite's own raw-JDBC pattern; this track's production code never
+    * reads this table back (only a future Debezium connector does), so there's
+    * no Skunk read path to reuse here.
     */
   private def outboxRowsFor(
       postgres: PostgreSQLContainer,

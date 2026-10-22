@@ -25,10 +25,10 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
     KafkaConfig(bootstrapServers = kafka.bootstrapServers)
 
   /** A `DeadLetter` whose `guard` never actually triggers in these tests -
-    * every `handleReserved`/`handleReservationFailed` call here succeeds on
-    * its first attempt, so this is only ever a transparent pass-through.
-    * `KafkaConsumersSuite` is where DLQ routing itself (the failure path)
-    * is actually exercised.
+    * every `handleReserved`/`handleReservationFailed` call here succeeds on its
+    * first attempt, so this is only ever a transparent pass-through.
+    * `KafkaConsumersSuite` is where DLQ routing itself (the failure path) is
+    * actually exercised.
     */
   private def noOpDeadLetter: IO[DeadLetter[IO, String, String]] = {
     import org.typelevel.otel4s.metrics.Meter.Implicits.noop
@@ -53,12 +53,12 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
   }
 
   /** Sends a record with a literal `null` value — a plain `String` value
-    * serializer accepts `null` at the JVM level (confirmed: this is exactly
-    * how TD-2.1 found payment-service's identical crash risk, "a producer
-    * that sends no key/value" — not reachable via a normal JSON payload,
-    * only by bypassing the usual encode-a-case-class path). TD-2.2's own
-    * null-safety fix (`Option[String]` deserializer) is what should make a
-    * record like this an ignorable no-op instead of a fiber-killing crash.
+    * serializer accepts `null` at the JVM level (confirmed: this is exactly how
+    * TD-2.1 found payment-service's identical crash risk, "a producer that
+    * sends no key/value" — not reachable via a normal JSON payload, only by
+    * bypassing the usual encode-a-case-class path). TD-2.2's own null-safety
+    * fix (`Option[String]` deserializer) is what should make a record like this
+    * an ignorable no-op instead of a fiber-killing crash.
     */
   private def produceNullValue(
       config: KafkaConfig,
@@ -116,12 +116,12 @@ class StockEventConsumerSuite extends CatsEffectSuite with TestContainerForAll {
       )
     ).timeout(15.seconds)
 
-  /** Polls an `inMemoryWithOutbox` ref for an outbox row matching `orderId`
-    * and `eventType` - the outbox write (ADR 0008, TD-3.2) replaces the old
-    * real-Kafka-publish-and-reconsume round trip these tests used to need;
-    * the write lands in-process, synchronously with the consumer's own
-    * store call, so polling in-memory state is both simpler and faster than
-    * a second Kafka consumer ever was.
+  /** Polls an `inMemoryWithOutbox` ref for an outbox row matching `orderId` and
+    * `eventType` - the outbox write (ADR 0008, TD-3.2) replaces the old
+    * real-Kafka-publish-and-reconsume round trip these tests used to need; the
+    * write lands in-process, synchronously with the consumer's own store call,
+    * so polling in-memory state is both simpler and faster than a second Kafka
+    * consumer ever was.
     */
   private def pollForOutboxEvent(
       outboxRef: cats.effect.Ref[IO, List[(String, EventEnvelope)]],
