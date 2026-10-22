@@ -145,15 +145,22 @@ sbt update
 
 ### Daily Development
 ```bash
-sbt compile        # compile
-sbt test           # run tests
-sbt scalafmt       # format code
+sbt compile         # compile
+sbt test            # run tests
+sbt scalafmtAll     # format code (Compile *and* Test scopes)
+sbt scalafmtSbt     # format build.sbt / project/*.sbt
 ```
 
 ### Before Committing
 ```bash
-sbt scalafmtCheck test
+sbt scalafmtCheckAll scalafmtSbtCheck test
 ```
+
+**Use the `*All`/`*Sbt` variants, not bare `scalafmt`/`scalafmtCheck`.** The bare
+tasks only cover **Compile**-scope sources — they silently skip every `src/test/`
+file and `build.sbt`. That gap let formatting drift accumulate unnoticed in five
+test files (same root cause found and fixed in `purerest`'s own `conductor/workflow.md`,
+2026-10-22); cleared in one pass and prevented from recurring by the commands above.
 
 ## Testing Requirements
 
