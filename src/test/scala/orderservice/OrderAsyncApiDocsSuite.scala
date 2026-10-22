@@ -3,6 +3,7 @@ package orderservice
 import cats.effect.IO
 import cats.syntax.semigroupk._
 import munit.CatsEffectSuite
+import org.http4s.circe._
 import org.http4s.implicits._
 import org.http4s.{Method, Request, Status}
 import purekafka.docs.{Docs => AsyncApiDocs}
@@ -11,7 +12,7 @@ import purerest.docs.Docs
 class OrderAsyncApiDocsSuite extends CatsEffectSuite {
 
   test(
-    "GET /docs/asyncapi.json serves a document containing all 4 registered event types"
+    "GET /docs/asyncapi.json serves a document containing all 6 registered event types"
   ) {
     val routes =
       AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
@@ -26,6 +27,39 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       assert(clue(body).contains("StockReservationFailed"))
       assert(clue(body).contains("PaymentSettled"))
       assert(clue(body).contains("PaymentFailed"))
+      assert(clue(body).contains("OrderReserved"))
+      assert(clue(body).contains("OrderStatusChanged"))
+      assert(
+        clue(body).contains("Debezium"),
+        "expected the CDC description note on order-events' publish-side messages"
+      )
+    }
+  }
+
+  test(
+    "GET /docs/asyncapi.json: inventory-events/payment-events have no publish operation, order-events has no subscribe operation"
+  ) {
+    val routes =
+      AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
+    for {
+      response <- routes.orNotFound.run(
+        Request[IO](Method.GET, uri"/docs/asyncapi.json")
+      )
+      json <- response.as[io.circe.Json]
+    } yield {
+      val channels = json.hcursor.downField("channels")
+      assert(
+        channels.downField("inventory-events").downField("publish").failed,
+        "order-service only consumes inventory-events - no publish operation expected"
+      )
+      assert(
+        channels.downField("payment-events").downField("publish").failed,
+        "order-service only consumes payment-events - no publish operation expected"
+      )
+      assert(
+        channels.downField("order-events").downField("subscribe").failed,
+        "order-service only publishes order-events (via CDC) - no subscribe operation expected"
+      )
     }
   }
 

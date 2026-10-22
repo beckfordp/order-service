@@ -2,6 +2,7 @@ package orderservice
 
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
+import sttp.tapir.Schema
 
 import java.time.Instant
 
@@ -20,6 +21,7 @@ final case class OrderReservedEvent(
 
 object OrderReservedEvent {
   implicit val codec: Codec[OrderReservedEvent] = deriveCodec
+  implicit val schema: Schema[OrderReservedEvent] = Schema.derived
 }
 
 /** Payload shape pinned in `gluon/docs/system-design.md`'s "Payload contracts"
@@ -38,4 +40,5 @@ final case class OrderStatusChangedEvent(
 
 object OrderStatusChangedEvent {
   implicit val codec: Codec[OrderStatusChangedEvent] = deriveCodec
+  implicit val schema: Schema[OrderStatusChangedEvent] = Schema.derived
 }
