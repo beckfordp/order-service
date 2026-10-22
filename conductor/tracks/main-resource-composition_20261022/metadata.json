@@ -1,0 +1,8 @@
+{
+  "track_id": "main-resource-composition_20261022",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-10-22T00:00:00Z",
+  "updated_at": "2026-10-22T00:00:00Z",
+  "description": "Refactor order-service's Main.scala to follow purerest's documented Resource-composition pattern (bundled modules + flat for-comprehension) instead of the current nested .use callback pyramid"
+}
