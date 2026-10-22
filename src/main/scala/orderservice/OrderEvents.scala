@@ -2,7 +2,7 @@ package orderservice
 
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
-import sttp.tapir.Schema
+import sttp.tapir.{Schema, Validator}
 
 import java.time.Instant
 
@@ -27,9 +27,10 @@ object OrderReservedEvent {
 /** Payload shape pinned in `gluon/docs/system-design.md`'s "Payload contracts"
   * section - that cross-repo doc, not this case class, is the source of truth
   * notification-service's consumer (US-7.1) should read. `status` is one of
-  * `reservation_failed` / `confirmed` / `payment_failed` - only
-  * `reservation_failed` is published yet (US-5.4); the other two are US-6.3's
-  * job, a separate track.
+  * `reservation_failed` (`StockEventConsumer`, US-5.4) / `confirmed` /
+  * `payment_failed` (`PaymentEventConsumer`, US-6.3) - never `pending` or
+  * `reserved`, `OrderStatus`'s other two values, which this event is never
+  * published for.
   */
 final case class OrderStatusChangedEvent(
     orderId: String,
@@ -40,5 +41,27 @@ final case class OrderStatusChangedEvent(
 
 object OrderStatusChangedEvent {
   implicit val codec: Codec[OrderStatusChangedEvent] = deriveCodec
-  implicit val schema: Schema[OrderStatusChangedEvent] = Schema.derived
+
+  // status is a plain String on the wire (matching OrderStatus.asString, the
+  // existing serialization - see StockEventConsumer/PaymentEventConsumer),
+  // but only 3 of OrderStatus's 5 values are ever actually published via
+  // this event (see this class's own doc comment) - Validator.enumeration
+  // documents that fixed set in the generated AsyncAPI JSON Schema
+  // ("enum": [...]) without changing the wire format. The `.encode(identity)`
+  // step is required: tapir-apispec-docs silently drops an enumeration
+  // validator with no encode function rather than rendering it.
+  private val statusValidator: Validator[String] = Validator
+    .enumeration(
+      List(
+        OrderStatus.ReservationFailed.asString,
+        OrderStatus.Confirmed.asString,
+        OrderStatus.PaymentFailed.asString
+      )
+    )
+    .encode(identity)
+
+  implicit val schema: Schema[OrderStatusChangedEvent] =
+    Schema
+      .derived[OrderStatusChangedEvent]
+      .modify(_.status)(_.validate(statusValidator))
 }

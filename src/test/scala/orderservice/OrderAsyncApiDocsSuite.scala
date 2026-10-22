@@ -64,6 +64,50 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
   }
 
   test(
+    "GET /docs/asyncapi.json: OrderStatusChanged's status field documents its fixed set of values as a JSON Schema enum"
+  ) {
+    val routes =
+      AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
+    for {
+      response <- routes.orNotFound.run(
+        Request[IO](Method.GET, uri"/docs/asyncapi.json")
+      )
+      json <- response.as[io.circe.Json]
+    } yield {
+      val orderStatusChangedPayload = json.hcursor
+        .downField("channels")
+        .downField("order-events")
+        .downField("publish")
+        .downField("message")
+        .downField("oneOf")
+        .values
+        .toList
+        .flatten
+        .find(
+          _.hcursor.downField("name").as[String].contains("OrderStatusChanged")
+        )
+        .get
+        .hcursor
+        .downField("payload")
+        .downField("properties")
+        .downField("status")
+
+      val enumValues = orderStatusChangedPayload
+        .downField("enum")
+        .values
+        .toList
+        .flatten
+        .flatMap(_.asString)
+
+      assertEquals(
+        enumValues.toSet,
+        Set("reservation_failed", "confirmed", "payment_failed"),
+        "expected only the 3 statuses this event actually publishes - never 'pending'/'reserved'"
+      )
+    }
+  }
+
+  test(
     "GET /docs/asyncapi.json still resolves when combined with purerest's OpenAPI/Swagger routes, in Main.scala's own order"
   ) {
     // Regression test for a route-ordering bug found during this track's
