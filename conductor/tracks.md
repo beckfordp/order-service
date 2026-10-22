@@ -6,7 +6,7 @@ This file tracks all major tracks for the project.
   *Link: [./tracks/outbox_20261012/](./tracks/outbox_20261012/)*
 - [x] **Track: order-service adopts purekafka (TD-2.2/TD-2.4, ADR 0010)**
   *Link: [./tracks/purekafka-adoption_20261016/](./tracks/purekafka-adoption_20261016/)*
-- [ ] **Track: Refactor order-service's Main.scala to follow purerest's documented Resource-composition pattern (bundled modules + flat for-comprehension) instead of the current nested .use callback pyramid**
+- [~] **Track: Refactor order-service's Main.scala to follow purerest's documented Resource-composition pattern (bundled modules + flat for-comprehension) instead of the current nested .use callback pyramid**
   *Link: [./tracks/main-resource-composition_20261022/](./tracks/main-resource-composition_20261022/)*
 
 ---
