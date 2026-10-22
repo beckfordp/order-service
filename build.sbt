@@ -22,7 +22,7 @@ val purerestlibVersion = "0.1.0"
 // checkout. Resolves from `~/.ivy2/local` (checked before the GitHub Packages
 // resolver below), so no network/token is needed for this one. Re-pin once a
 // real tag exists (TD-2.2/TD-2.4, ADR 0010).
-val purekafkaVersion = "0.1.0+124-e8da765d"
+val purekafkaVersion = "0.1.0+125-ce2cb7f2"
 
 // Skunk 1.0.0 depends on otel4s-core/-core-common/-core-metrics 0.16.0 (its own
 // optional tracing integration), which conflicts with purerestlib's otel4s 1.1.0
