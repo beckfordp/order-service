@@ -1,0 +1,5 @@
+Phase 1 Checkpoint: Telemetry[F] module
+
+Reduced-prompting mode: automated-test verification only, no interactive walkthrough.
+Verification: sbt test (157 tests, 0 failures), scalafmtCheckAll/scalafmtSbtCheck clean.
+Commits this phase: eb88ebc.
