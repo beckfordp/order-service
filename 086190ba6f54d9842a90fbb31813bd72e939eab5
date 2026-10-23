@@ -1,0 +1,5 @@
+Phase 3 Checkpoint: AppRoutes.all route-assembly extraction
+
+Reduced-prompting mode: automated-test verification only, no interactive walkthrough.
+Verification: sbt test (162 tests, 0 failures), scalafmtCheckAll/scalafmtSbtCheck clean.
+Commits this phase: 44ccdfe.
