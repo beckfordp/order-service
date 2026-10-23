@@ -6,6 +6,7 @@ import org.http4s.client.Client
 import org.http4s.{Method, Request, Response, Status, Uri}
 import org.typelevel.log4cats.noop.NoOpLogger
 import org.typelevel.otel4s.metrics.Meter
+import purerest.metrics.Metrics
 import purerest.resilience.{
   CircuitBreakerConfig,
   CircuitBreakerOpen,
@@ -13,6 +14,7 @@ import purerest.resilience.{
   ResilienceConfig,
   RetryConfig
 }
+import purerest.tracing.Tracing
 
 import scala.concurrent.duration._
 
@@ -155,6 +157,69 @@ class InventoryClientSuite extends CatsEffectSuite {
     } yield {
       assertEquals(openResult, Left(CircuitBreakerOpen))
       assertEquals(attempts, 2)
+    }
+  }
+
+  private def withTelemetry[A](f: Telemetry[IO] => IO[A]): IO[A] =
+    (for {
+      testTracer <- Tracing.test[IO]("inventory-client-resilient-suite")
+      testMeter <- Metrics.test[IO]("inventory-client-resilient-suite")
+    } yield Telemetry(testTracer.tracer, testMeter.meter, NoOpLogger[IO]))
+      .use(f)
+
+  test(
+    "resilient builds an InventoryClient pointed at config.baseUrl, same as manual apply(resilientClient, baseUri) wiring"
+  ) {
+    withTelemetry { telemetry =>
+      for {
+        capturedUri <- Ref.of[IO, Option[Uri]](None)
+        stub = Client[IO] { req =>
+          Resource.eval(
+            capturedUri.set(Some(req.uri)).as(Response[IO](Status.Ok))
+          )
+        }
+        config = InventoryClientConfig(
+          baseUrl = "http://inventory-service",
+          resilience = fastConfig
+        )
+        client = InventoryClient.resilient[IO](stub, config, telemetry)
+        _ <- client.reserve("sku-1", 2, "item-1")
+        uri <- capturedUri.get
+      } yield assertEquals(
+        uri.map(_.toString),
+        Some("http://inventory-service/inventorys/reservations")
+      )
+    }
+  }
+
+  test(
+    "resilient wraps the given client with Resilience.middleware(config.resilience) - a transient failure is retried, not surfaced on the first attempt"
+  ) {
+    withTelemetry { telemetry =>
+      for {
+        counter <- Ref.of[IO, Int](0)
+        stub = Client[IO] { _ =>
+          Resource.eval(
+            counter
+              .updateAndGet(_ + 1)
+              .map(n =>
+                Response[IO](
+                  if (n < 3) Status.InternalServerError else Status.Ok
+                )
+              )
+          )
+        }
+        config = InventoryClientConfig(
+          baseUrl = "http://inventory-service",
+          resilience = fastConfig
+        )
+        client = InventoryClient.resilient[IO](stub, config, telemetry)
+        result <- client.reserve("sku-1", 2, "item-1")
+        attempts <- counter.get
+      } yield {
+        assertEquals(result, ReservationResult.Reserved)
+        assertEquals(attempts, 3)
+      }
     }
   }
 }

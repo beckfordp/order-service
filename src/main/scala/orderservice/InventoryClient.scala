@@ -6,6 +6,7 @@ import io.circe.generic.semiauto.deriveCodec
 import org.http4s.circe.CirceEntityEncoder._
 import org.http4s.client.Client
 import org.http4s.{Method, Request, Status, Uri}
+import purerest.resilience.Resilience
 
 sealed trait ReservationResult
 
@@ -41,6 +42,29 @@ object InventoryClient {
   private object ReserveRequestBody {
     implicit val codec: Codec[ReserveRequestBody] = deriveCodec
   }
+
+  /** Wraps `httpClient` with `purerest.resilience.Resilience.middleware` (using
+    * `config.resilience` and `telemetry`'s logger/meter) and points it at
+    * `config.baseUrl`, in one call — a plain (non-`Resource`) function, not a
+    * `Resource[F, InventoryClient[F]]` constructor, since neither step acquires
+    * anything needing release: `httpClient` is built once, shared, and released
+    * by its own caller (see the `Resource`-built-module pattern in `purerest`'s
+    * own `docs/functional-design-patterns-scala-haskell-category-theory.md`,
+    * "Scaling tagless final without Cake" — one shared `Client[F]`, fanned out
+    * into typed clients via plain constructors). Directly unit-testable against
+    * a stub `Client[F]`, unlike building the real network client inline.
+    */
+  def resilient[F[_]: Async](
+      httpClient: Client[F],
+      config: InventoryClientConfig,
+      telemetry: Telemetry[F]
+  ): InventoryClient[F] =
+    apply(
+      Resilience.middleware[F](config.resilience)(telemetry.logger)(
+        telemetry.meter
+      )(httpClient),
+      Uri.unsafeFromString(config.baseUrl)
+    )
 
   def apply[F[_]: Async](client: Client[F], baseUri: Uri): InventoryClient[F] =
     new InventoryClient[F] {
