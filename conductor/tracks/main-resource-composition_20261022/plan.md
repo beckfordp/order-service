@@ -16,7 +16,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 3: AppRoutes.all extraction' (Protocol in workflow.md) `086190b` — reduced-prompting mode: automated-test verification only, no interactive walkthrough; see git note on `086190b`
 
 ## Phase 4 — Flatten `Main.run`
-- [ ] Task: Rewrite `Main.run` as a single flat `for`-comprehension over `Resource` (config → port → `Resource.eval(Migrations.run)` → `Telemetry.resource` → `OrderStore.postgres` → `KafkaConsumers.supervised(...).background` → shared `EmberClientBuilder` client → `InventoryClient.resilient` → `OrderHistoryCache.resource` → `routes = AppRoutes.all(...)` → `EmberServerBuilder...build`), terminated by `.useForever`, with no nested `Resource#use` calls remaining
-- [ ] Task: Run the full existing `order-service` test suite unchanged — confirm all pass, proving the refactor altered no behavior
-- [ ] Task: Manual smoke test — `sbt run`, confirm `/docs`, `/docs/asyncapi.json`, `POST /orders`, `GET /orders/{id}` all work exactly as before
+- [x] Task: Rewrite `Main.run` as a single flat `for`-comprehension over `Resource` (config → port → `Resource.eval(Migrations.run)` → `Telemetry.resource` → `OrderStore.postgres` → `KafkaConsumers.supervised(...).background` → shared `EmberClientBuilder` client → `InventoryClient.resilient` → `OrderHistoryCache.resource` → `routes = AppRoutes.all(...)` → `EmberServerBuilder...build`), terminated by `.useForever`, with no nested `Resource#use` calls remaining `0f33ff5`
+- [x] Task: Run the full existing `order-service` test suite unchanged — confirm all pass, proving the refactor altered no behavior `0f33ff5` — 162/162 passed, scalafmt clean
+- [x] Task: Manual smoke test — `sbt run`, confirm `/docs`, `/docs/asyncapi.json`, `POST /orders`, `GET /orders/{id}` all work exactly as before — real `docker compose up` (postgres/kafka/redis) + `sbt run`: `/docs` 200 (via its normal redirect), `/docs/asyncapi.json` 200, `POST /orders` 201, `GET /orders/{id}` 200
 - [ ] Task: Conductor - User Manual Verification 'Phase 4: Flatten Main.run' (Protocol in workflow.md)
