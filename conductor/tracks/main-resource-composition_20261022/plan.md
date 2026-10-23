@@ -1,9 +1,9 @@
 # Plan — Refactor Main.scala to a flat Resource composition
 
-## Phase 1 — `Telemetry[F]` module
+## Phase 1 — `Telemetry[F]` module [checkpoint: 4f0957c]
 - [x] Task: Write failing test(s) in a new `TelemetrySuite`: `Telemetry[F]` bundles `tracer`/`meter`/`logger`; `Telemetry.resource[F[_]: Async: LocalContextProvider](serviceName, metricsPort): Resource[F, Telemetry[F]]` has the documented signature (Red) `eb88ebc`
 - [x] Task: Implement `Telemetry.scala` (`Tracing.console` + `Metrics.oteljava` + `Resource.eval(Logging.create(tracer, serviceName))`) (Green) `eb88ebc` — deviation: split composition into a testable `fromResources(tracerResource, meterResource, serviceName)` plus a thin `resource(serviceName, metricsPort)` production wrapper, so the real wiring logic is unit-testable via `Tracing.test`/`Metrics.test` without binding a real Prometheus port (matches this codebase's own convention that `.console`/`.oteljava` are only ever exercised from `Main`); see git note on `eb88ebc`
-- [~] Task: Conductor - User Manual Verification 'Phase 1: Telemetry[F] module' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 1: Telemetry[F] module' (Protocol in workflow.md) `4f0957c` — reduced-prompting mode: automated-test verification only, no interactive walkthrough; see git note on `4f0957c`
 
 ## Phase 2 — `InventoryClient.resilient` constructor
 - [ ] Task: Write failing test(s): `InventoryClient.resilient[F[_]: Async](httpClient: Client[F], config: InventoryClientConfig, telemetry: Telemetry[F]): InventoryClient[F]` wraps the given client with `Resilience.middleware` before delegating to the existing `apply`, verified against a stub `Client[F]` (Red)
