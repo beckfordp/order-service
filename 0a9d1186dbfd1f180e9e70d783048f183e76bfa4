@@ -1,0 +1,10 @@
+Phase 4 Checkpoint: Flatten Main.run
+
+Reduced-prompting mode: automated-test verification only, no interactive walkthrough.
+Verification: sbt test (162 tests, 0 failures), scalafmtCheckAll/scalafmtSbtCheck clean.
+Manual smoke test: real docker compose up (postgres/kafka/redis) + sbt run -
+GET /docs 200 (via its normal redirect), GET /docs/asyncapi.json 200,
+POST /orders 201, GET /orders/{id} 200. Confirms the flattened Resource
+composition preserves identical runtime behavior to the original nested
+.use pyramid.
+Commits this phase: 0f33ff5.
