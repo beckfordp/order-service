@@ -1,0 +1,30 @@
+Task: AppRoutes.all route-assembly extraction (Phase 3 of main-resource-composition_20261022)
+
+Summary: Added AppRoutes.all(store, inventoryClient, historyCache,
+telemetry, channels): HttpRoutes[F], moving the existing docsRoutes/
+asyncApiRoutes/staticAsyncApiRoutes construction, combination (with its
+existing route-ordering comment explaining why asyncApi/static routes
+must come before docsRoutes), and CORS/tracing/metrics middleware
+application verbatim out of Main.
+
+Files:
+- src/main/scala/orderservice/AppRoutes.scala (new)
+- src/test/scala/orderservice/AppRoutesSuite.scala (new, 3 tests)
+
+TDD: Red confirmed (compile failure: "Not found: AppRoutes"), then
+Green after implementing. Full order-service test suite (162 tests)
+passes; scalafmtCheckAll/scalafmtSbtCheck clean.
+
+Real finding fixed along the way: generalizing the inline route-building
+code from concrete IO (Main.run's own context) to abstract F[_]: Async
+(AppRoutes.all's generic signature) surfaced a NEW deprecation warning
+on fileService[F] - fs2's Files[IO] resolves via a non-deprecated
+Files.forIO/forLiftIO path for concrete IO, but abstract F[_]: Async
+with no LiftIO evidence only resolves via the deprecated
+Files.implicitForAsync fallback. Fixed with an explicit
+`implicit val filesForF: Files[F] = Files.forAsync[F]` inside AppRoutes.all.
+
+New tests verify: GET /docs (Swagger) resolves, GET /docs/asyncapi.json
+resolves and contains the registered channel's eventType, and POST
+/orders resolves end-to-end against a real in-memory OrderStore + stub
+InventoryClient/OrderHistoryCache.
