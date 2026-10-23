@@ -1,0 +1,24 @@
+Task: InventoryClient.resilient constructor (Phase 2 of main-resource-composition_20261022)
+
+Summary: Added InventoryClient.resilient(httpClient, config, telemetry):
+InventoryClient[F] - a plain (non-Resource) function wrapping
+Resilience.middleware(config.resilience)(telemetry.logger)(telemetry.meter)
+around the given client, then delegating to the existing apply with
+Uri.unsafeFromString(config.baseUrl). Per the approved spec's refinement:
+the shared httpClient itself stays Main's own EmberClientBuilder Resource
+acquisition (not bundled inside this constructor), matching the design
+doc's own "one shared httpClient, fanned out" example.
+
+Files:
+- src/main/scala/orderservice/InventoryClient.scala (new resilient constructor)
+- src/test/scala/orderservice/InventoryClientSuite.scala (2 new tests)
+
+TDD: Red confirmed (compile failure: "value resilient is not a member of
+object InventoryClient"), then Green after implementing. Full order-service
+test suite (159 tests) passes; scalafmtCheckAll/scalafmtSbtCheck clean.
+
+New tests build Telemetry[IO] via Tracing.test/Metrics.test + NoOpLogger
+(a local withTelemetry helper), proving: (1) resilient correctly parses
+config.baseUrl into the request URI, (2) resilient actually wraps with
+Resilience.middleware (a transient failure is retried, not surfaced on
+first attempt) - not just a thin pass-through to apply.
