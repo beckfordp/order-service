@@ -5,10 +5,10 @@
 - [x] Task: Implement `Telemetry.scala` (`Tracing.console` + `Metrics.oteljava` + `Resource.eval(Logging.create(tracer, serviceName))`) (Green) `eb88ebc` — deviation: split composition into a testable `fromResources(tracerResource, meterResource, serviceName)` plus a thin `resource(serviceName, metricsPort)` production wrapper, so the real wiring logic is unit-testable via `Tracing.test`/`Metrics.test` without binding a real Prometheus port (matches this codebase's own convention that `.console`/`.oteljava` are only ever exercised from `Main`); see git note on `eb88ebc`
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Telemetry[F] module' (Protocol in workflow.md) `4f0957c` — reduced-prompting mode: automated-test verification only, no interactive walkthrough; see git note on `4f0957c`
 
-## Phase 2 — `InventoryClient.resilient` constructor
+## Phase 2 — `InventoryClient.resilient` constructor [checkpoint: 6667d73]
 - [x] Task: Write failing test(s): `InventoryClient.resilient[F[_]: Async](httpClient: Client[F], config: InventoryClientConfig, telemetry: Telemetry[F]): InventoryClient[F]` wraps the given client with `Resilience.middleware` before delegating to the existing `apply`, verified against a stub `Client[F]` (Red) `65e899e`
 - [x] Task: Implement `InventoryClient.resilient` (Green) `65e899e`
-- [~] Task: Conductor - User Manual Verification 'Phase 2: InventoryClient.resilient constructor' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: InventoryClient.resilient constructor' (Protocol in workflow.md) `6667d73` — reduced-prompting mode: automated-test verification only, no interactive walkthrough; see git note on `6667d73`
 
 ## Phase 3 — `AppRoutes.all` route-assembly extraction
 - [ ] Task: Write failing test(s) in a new `AppRoutesSuite`: `AppRoutes.all[F[_]: Async](store, inventoryClient, historyCache, telemetry, channels): HttpRoutes[F]` returns the fully-combined, fully-middleware-wrapped routes — `/docs` (Swagger) resolves, `/docs/asyncapi.json` resolves and contains the registered channel names, a business route (e.g. `POST /orders`) resolves against stub store/inventoryClient (Red)
