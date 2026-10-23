@@ -1,0 +1,5 @@
+Phase 2 Checkpoint: InventoryClient.resilient constructor
+
+Reduced-prompting mode: automated-test verification only, no interactive walkthrough.
+Verification: sbt test (159 tests, 0 failures), scalafmtCheckAll/scalafmtSbtCheck clean.
+Commits this phase: 65e899e.
