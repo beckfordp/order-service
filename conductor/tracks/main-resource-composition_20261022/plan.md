@@ -6,9 +6,9 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Telemetry[F] module' (Protocol in workflow.md) `4f0957c` — reduced-prompting mode: automated-test verification only, no interactive walkthrough; see git note on `4f0957c`
 
 ## Phase 2 — `InventoryClient.resilient` constructor
-- [ ] Task: Write failing test(s): `InventoryClient.resilient[F[_]: Async](httpClient: Client[F], config: InventoryClientConfig, telemetry: Telemetry[F]): InventoryClient[F]` wraps the given client with `Resilience.middleware` before delegating to the existing `apply`, verified against a stub `Client[F]` (Red)
-- [ ] Task: Implement `InventoryClient.resilient` (Green)
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: InventoryClient.resilient constructor' (Protocol in workflow.md)
+- [x] Task: Write failing test(s): `InventoryClient.resilient[F[_]: Async](httpClient: Client[F], config: InventoryClientConfig, telemetry: Telemetry[F]): InventoryClient[F]` wraps the given client with `Resilience.middleware` before delegating to the existing `apply`, verified against a stub `Client[F]` (Red) `65e899e`
+- [x] Task: Implement `InventoryClient.resilient` (Green) `65e899e`
+- [~] Task: Conductor - User Manual Verification 'Phase 2: InventoryClient.resilient constructor' (Protocol in workflow.md)
 
 ## Phase 3 — `AppRoutes.all` route-assembly extraction
 - [ ] Task: Write failing test(s) in a new `AppRoutesSuite`: `AppRoutes.all[F[_]: Async](store, inventoryClient, historyCache, telemetry, channels): HttpRoutes[F]` returns the fully-combined, fully-middleware-wrapped routes — `/docs` (Swagger) resolves, `/docs/asyncapi.json` resolves and contains the registered channel names, a business route (e.g. `POST /orders`) resolves against stub store/inventoryClient (Red)
