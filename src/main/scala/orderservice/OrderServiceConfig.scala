@@ -1,6 +1,8 @@
 package orderservice
 
 import cats.effect.Sync
+import cats.syntax.all._
+import com.comcast.ip4s.Port
 import pureconfig.{ConfigReader, ConfigSource}
 import purerest.resilience.{CircuitBreakerConfig, ResilienceConfig, RetryConfig}
 
@@ -46,4 +48,18 @@ final case class OrderServiceConfig(
 object OrderServiceConfig {
   def load[F[_]: Sync]: F[OrderServiceConfig] =
     Sync[F].delay(ConfigSource.default.loadOrThrow[OrderServiceConfig])
+
+  /** `load`, plus parsing/validating `port` as an `ip4s.Port` - so `Main`
+    * doesn't have to do that validation itself.
+    */
+  def loadValidated[F[_]: Sync]: F[(OrderServiceConfig, Port)] =
+    for {
+      config <- load[F]
+      port <- Sync[F].fromOption(
+        Port.fromInt(config.port),
+        new IllegalArgumentException(
+          s"Invalid order-service port: ${config.port}"
+        )
+      )
+    } yield (config, port)
 }

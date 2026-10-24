@@ -1,6 +1,8 @@
 package orderservice
 
-import cats.effect.Async
+import cats.effect.{Async, Resource}
+import cats.effect.syntax.all._
+import cats.syntax.all._
 import fs2.Stream
 import fs2.kafka.ProducerSettings
 import org.typelevel.log4cats.StructuredLogger
@@ -78,4 +80,16 @@ object KafkaConsumers {
       }
     } yield result
   }
+
+  /** `supervised`, backgrounded as a fire-and-forget fiber - so `Main` wires
+    * this in as one `Resource[F, Unit]` line, the same shape as every other
+    * dependency, with no fs2 streaming mechanics visible there.
+    */
+  def resource[F[_]: Async](
+      config: KafkaConfig,
+      store: OrderStore[F],
+      logger: StructuredLogger[F],
+      meter: Meter[F]
+  ): Resource[F, Unit] =
+    supervised[F](config, store, logger, meter).compile.drain.background.void
 }

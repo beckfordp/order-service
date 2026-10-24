@@ -1,7 +1,6 @@
 package orderservice
 
 import cats.effect.{IO, IOApp, Resource}
-import cats.effect.syntax.all._
 import com.comcast.ip4s._
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
@@ -11,23 +10,20 @@ import org.http4s.ember.server.EmberServerBuilder
   * per the composition pattern documented in `purerest`'s
   * `docs/functional-design-patterns-scala-haskell-category-theory.md` ("Scaling
   * tagless final without Cake: bundling dependencies into `Resource`-built
-  * modules"). Dependencies that don't themselves need releasing (config, the
-  * port, running migrations) are still acquired via `Resource.eval`, so the
-  * whole chain stays one comprehension — no nested `Resource#use` callbacks
-  * anywhere in this file.
+  * modules"). Every dependency that isn't already a `Resource` is acquired via
+  * a `.resource`/`.loadValidated` method on its own owning type
+  * (`OrderServiceConfig`, `Migrations`, `KafkaConsumers`, `Telemetry`,
+  * `OrderHistoryCache`), so none of their internals (PureConfig, Flyway, fs2
+  * streaming) leak into this file. The two exceptions: `EmberClientBuilder`/
+  * `EmberServerBuilder` are already `Resource`-returning (http4s' own types, no
+  * wrapper needed), and the startup log line stays an explicit `Resource.eval`
+  * here since logging isn't itself a dependency.
   */
 object Main extends IOApp.Simple {
 
   val run: IO[Unit] = (for {
-    config <- Resource.eval(OrderServiceConfig.load[IO])
-    port <- Resource.eval(
-      IO.fromOption(Port.fromInt(config.port))(
-        new IllegalArgumentException(
-          s"Invalid order-service port: ${config.port}"
-        )
-      )
-    )
-    _ <- Resource.eval(Migrations.run[IO](config.postgres))
+    (config, port) <- Resource.eval(OrderServiceConfig.loadValidated[IO])
+    _ <- Migrations.resource[IO](config.postgres)
     telemetry <- Telemetry.resource[IO](config.serviceName, config.metricsPort)
     _ <- Resource.eval(
       telemetry.logger.info(
@@ -38,11 +34,12 @@ object Main extends IOApp.Simple {
       )("order-service starting")
     )
     store <- OrderStore.postgres[IO](config.postgres, telemetry.meter)
-    _ <- KafkaConsumers
-      .supervised[IO](config.kafka, store, telemetry.logger, telemetry.meter)
-      .compile
-      .drain
-      .background
+    _ <- KafkaConsumers.resource[IO](
+      config.kafka,
+      store,
+      telemetry.logger,
+      telemetry.meter
+    )
     httpClient <- EmberClientBuilder.default[IO].build
     inventoryClient = InventoryClient.resilient[IO](
       httpClient,
