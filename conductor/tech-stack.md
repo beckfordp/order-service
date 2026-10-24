@@ -15,10 +15,14 @@
   credentials disallowed. Ported from `pure-service-generator`'s
   `cors_20261010` track (TD-1.2).
 - fs2-kafka 3.6.0 — consumer side (US-5.2), subscribes to
-  `inventory.stock-reserved`/`inventory.stock-reservation-failed`; producer
-  side added for US-5.3 (`OrderEventPublisher`, publishes `order.reserved`);
-  a second consumer added for US-6.3 (`PaymentEventConsumer`, subscribes to
-  `payment.settled`/`payment.failed`)
+  `inventory.stock-reserved`/`inventory.stock-reservation-failed`; a second
+  consumer added for US-6.3 (`PaymentEventConsumer`, subscribes to
+  `payment.settled`/`payment.failed`). Producer side (`OrderEventPublisher`,
+  added for US-5.3) was deleted in TD-3.2/ADR 0008: publishing an
+  `order.reserved`/`order.status-changed` event is now a write to the
+  `outbox_events` table inside the same Postgres transaction as the state
+  change it announces (see `OrderStore.PendingOutboxEvent`), not a direct
+  Kafka produce call
 - purekafka (`io.github.beckfordp`) — `consumer.StreamSupervisor` wraps each
   of `StockEventConsumer`/`PaymentEventConsumer`'s stream individually
   (restart-with-backoff in isolation, not the merged stream as one unit) and
