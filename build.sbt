@@ -17,12 +17,9 @@ val redis4catsVersion = "2.0.6"
 // Pinned to match the purerestlib version this service is built against — see
 // README's "Consuming purerest as a dependency" section.
 val purerestlibVersion = "0.1.0"
-// purekafka has no release tag yet — this is sbt-dynver's untagged-history
-// format, exactly as `sbt publishLocal` printed it in the sibling `purerest`
-// checkout. Resolves from `~/.ivy2/local` (checked before the GitHub Packages
-// resolver below), so no network/token is needed for this one. Re-pin once a
-// real tag exists (TD-2.2/TD-2.4, ADR 0010).
-val purekafkaVersion = "0.1.0+126-d6834d01"
+// Real GitHub Packages release (v0.2.1) — resolved via the same resolver/
+// credentials as purerestlib below.
+val purekafkaVersion = "0.2.1"
 
 // Skunk 1.0.0 depends on otel4s-core/-core-common/-core-metrics 0.16.0 (its own
 // optional tracing integration), which conflicts with purerestlib's otel4s 1.1.0
