@@ -7,10 +7,7 @@ import fs2.Stream
 import fs2.kafka.ProducerSettings
 import org.typelevel.log4cats.StructuredLogger
 import org.typelevel.otel4s.metrics.Meter
-import purekafka.consumer.{DeadLetter, StreamSupervisor, StreamSupervisorConfig}
-import purekafka.resilience.RetryConfig
-
-import scala.concurrent.duration._
+import purekafka.consumer.{DeadLetter, StreamSupervisor}
 
 /** Wires `StockEventConsumer` and `PaymentEventConsumer` together, each
   * individually wrapped in `purekafka`'s `StreamSupervisor` *before* merging —
@@ -19,23 +16,11 @@ import scala.concurrent.duration._
   * separately means a crash in one doesn't touch the other's in-flight
   * processing. Extracted out of `Main.scala`'s own `val run` so this wiring is
   * directly testable, not just exercised incidentally by running the whole
-  * service.
+  * service. `config.streamSupervisor`/`config.dlqRetry`/
+  * `config.dlqPublishResilience` are all `application.conf`-driven (see
+  * `OrderServiceConfig.KafkaConfig`) rather than hardcoded here.
   */
 object KafkaConsumers {
-
-  // baseDelay/maxDelay match the cap purekafka's own StreamSupervisor track
-  // decided (ADR 0010, Phase 2) — 30s is the ceiling exponential backoff
-  // grows to, not something this service needed to re-decide.
-  private val supervisorConfig = StreamSupervisorConfig(
-    baseDelay = 1.second,
-    maxDelay = 30.seconds
-  )
-
-  // Per-message retry before a message is dead-lettered — deliberately much
-  // shorter/bounded than supervisorConfig above: this is "retry processing
-  // this one message a few times," not "back off a whole crashed stream."
-  private val dlqRetryConfig =
-    RetryConfig(maxRetries = 3, baseDelay = 200.millis)
 
   def supervised[F[_]: Async](
       config: KafkaConfig,
@@ -50,32 +35,36 @@ object KafkaConsumers {
     for {
       stockDeadLetter <- Stream.resource(
         DeadLetter.resource[F, String, String](
-          dlqRetryConfig,
+          config.dlqRetry,
+          config.dlqPublishResilience,
           dlqProducerSettings
         )(logger)(meter)
       )
       paymentDeadLetter <- Stream.resource(
         DeadLetter.resource[F, String, String](
-          dlqRetryConfig,
+          config.dlqRetry,
+          config.dlqPublishResilience,
           dlqProducerSettings
         )(logger)(meter)
       )
       result <- {
-        val stock = StreamSupervisor.supervise[F, Unit](supervisorConfig)(
-          logger
-        )(meter)(
-          Async[F].pure(
-            StockEventConsumer.run[F](config, store, logger, stockDeadLetter)
+        val stock =
+          StreamSupervisor.supervise[F, Unit](config.streamSupervisor)(
+            logger
+          )(meter)(
+            Async[F].pure(
+              StockEventConsumer.run[F](config, store, logger, stockDeadLetter)
+            )
           )
-        )
-        val payment = StreamSupervisor.supervise[F, Unit](supervisorConfig)(
-          logger
-        )(meter)(
-          Async[F].pure(
-            PaymentEventConsumer
-              .run[F](config, store, logger, paymentDeadLetter)
+        val payment =
+          StreamSupervisor.supervise[F, Unit](config.streamSupervisor)(
+            logger
+          )(meter)(
+            Async[F].pure(
+              PaymentEventConsumer
+                .run[F](config, store, logger, paymentDeadLetter)
+            )
           )
-        )
         stock.merge(payment)
       }
     } yield result

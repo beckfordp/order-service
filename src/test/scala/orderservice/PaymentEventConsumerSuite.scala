@@ -11,7 +11,11 @@ import munit.CatsEffectSuite
 import org.typelevel.log4cats.noop.NoOpLogger
 import org.typelevel.otel4s.metrics.Meter
 import purekafka.consumer.DeadLetter
-import purekafka.resilience.RetryConfig
+import purekafka.resilience.{
+  CircuitBreakerConfig,
+  ResilienceConfig,
+  RetryConfig
+}
 
 import java.time.Instant
 import java.util.UUID
@@ -31,6 +35,11 @@ class PaymentEventConsumerSuite
     import org.typelevel.otel4s.metrics.Meter.Implicits.noop
     DeadLetter.fromPublish[IO, String, String](
       RetryConfig(maxRetries = 0, baseDelay = 1.milli),
+      ResilienceConfig(
+        retry = RetryConfig(maxRetries = 0, baseDelay = 1.milli),
+        circuitBreaker =
+          CircuitBreakerConfig(failureThreshold = 100, resetTimeout = 1.second)
+      ),
       (_, _, _) => IO.unit
     )(NoOpLogger[IO])(summon[Meter[IO]])
   }
