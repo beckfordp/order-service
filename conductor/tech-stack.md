@@ -19,6 +19,13 @@
   side added for US-5.3 (`OrderEventPublisher`, publishes `order.reserved`);
   a second consumer added for US-6.3 (`PaymentEventConsumer`, subscribes to
   `payment.settled`/`payment.failed`)
+- purekafka (`io.github.beckfordp`) — `consumer.StreamSupervisor` wraps each
+  of `StockEventConsumer`/`PaymentEventConsumer`'s stream individually
+  (restart-with-backoff in isolation, not the merged stream as one unit) and
+  `consumer.DeadLetter` wraps each consumer's per-message processing
+  (bounded retry, then routes to `inventory-events-dlq`/`payment-events-dlq`
+  on exhaustion) — TD-2.2/TD-2.4, ADR 0010. Wired together in
+  `KafkaConsumers.supervised`
 - cats-retry (`com.github.cb372`) — not an explicit `build.sbt` dependency;
   comes transitively via `purerestlib`, which uses it internally for
   `purerest.resilience`'s own `Client[F]` retry middleware. Used directly
