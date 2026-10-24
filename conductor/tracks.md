@@ -2,10 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: order-service adopts purekafka (TD-2.2/TD-2.4, ADR 0010)**
-  *Link: [./tracks/purekafka-adoption_20261016/](./tracks/purekafka-adoption_20261016/)*
----
-
 ## Backlog
 
 Title-only placeholders for future tracks — not yet detailed (no spec/plan, no linked
