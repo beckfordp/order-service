@@ -49,6 +49,13 @@
   `/docs/asyncapi.json` (raw spec) and `/docs/asyncapi` (rendered static HTML,
   via `scripts/generate-kafka-asyncapi-docs.sh`) — same tapir-OpenAPI pattern,
   for the Kafka side
+- `schemaRegistryCheck` (sbt-purekafka-docs, Rework 5 step 3/ADR 0003) —
+  reuses the same `AsyncApiChannels` registrations to check/register each
+  event's JSON Schema against Apicurio Registry, run explicitly (not
+  chained after `compile`): locally against the shared OrbStack instance
+  (`schemaRegistryUrl`'s default), in CI against a throwaway
+  `docker run` Apicurio container (`SCHEMA_REGISTRY_URL` env override —
+  see `ci.yml`). Build/CI-time only, zero runtime presence.
 
 ## Persistence
 - skunk 1.0.0 — pure-FP, non-blocking Postgres access (runtime queries)
