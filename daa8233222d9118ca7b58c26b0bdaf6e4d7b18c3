@@ -1,0 +1,11 @@
+Phase 1: Local sbt wiring + verification against the real OrbStack Apicurio instance — reduced-prompting mode (prompt-off): automated-test + verify-script verification only, no interactive walkthrough.
+
+- scalafmtCheck; Test/scalafmtCheck; test: clean, exit 0, no regressions.
+- scripts/verify-schema-registry-check.sh: all checks passed against the
+  real local Apicurio instance — all 6 real channels registered under the
+  real 'order-service' group; second identical run a no-op.
+- Found along the way: purekafkaVersion was still pinned to 0.2.1 (predates
+  SchemaRegistryWriter), bumped to 0.3.0 alongside the sbt-purekafka-docs
+  0.2.0-dev bump; both required pushing a real purerest v0.3.0 release
+  (GitHub Packages) since order-service's own CI needs a real published
+  artifact, not just a local publishLocal.
