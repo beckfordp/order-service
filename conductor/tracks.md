@@ -2,11 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: Adopt build-time schema registry check (Rework 5 step 3, ADR 0003)**
-  *Link: [./tracks/schema-registry_20261025/](./tracks/schema-registry_20261025/)*
-
----
-
 ## Backlog
 
 Title-only placeholders for future tracks — not yet detailed (no spec/plan, no linked
