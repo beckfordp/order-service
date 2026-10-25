@@ -58,12 +58,25 @@ lazy val root = project
     // hardcoded default) because local dev and CI point at two different,
     // unrelated Apicurio instances: locally, the shared OrbStack cluster
     // (default here); in CI, a throwaway `docker run` container with no
-    // OrbStack/cluster-DNS access (see ci.yml). schemaRegistryGroupId is
-    // left at the plugin's own default (name.value = "order-service").
+    // OrbStack/cluster-DNS access (see ci.yml).
     schemaRegistryUrl := sys.env.getOrElse(
       "SCHEMA_REGISTRY_URL",
       "http://apicurio-registry.gluon-local.svc.cluster.local:8080"
     ),
+    // One shared group across every service (not the plugin's own
+    // per-service default, name.value) - confirmed live 2026-10-25 that
+    // "one group per service" meant a producer's and a consumer's
+    // registration of the *same* real topic/eventType contract (e.g.
+    // inventory-service producing inventory-events-StockReserved,
+    // order-service consuming it) landed in two totally independent
+    // groups/version-lineages, so the BACKWARD compatibility check never
+    // actually compared them against each other - exactly the
+    // producer/consumer mismatch ADR 0003 exists to catch. A shared
+    // group means artifactId (<topic>-<eventType>, already globally
+    // unique) is the only key that matters, so whichever side registers
+    // second is checked against whichever registered first, regardless
+    // of which service that is.
+    schemaRegistryGroupId := "gluon",
     // Bakes asyncApiGenerate's output into the Docker image itself -
     // previously only ever worked via a bare `sbt run`; neither
     // docker-compose nor the k8s deployment ever packaged these files in
