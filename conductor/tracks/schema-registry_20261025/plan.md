@@ -1,6 +1,6 @@
 # Plan — Adopt build-time schema registry check (Rework 5 step 3, ADR 0003)
 
-## Phase 1: Local sbt wiring + verification against the real OrbStack Apicurio instance [checkpoint: TBD]
+## Phase 1: Local sbt wiring + verification against the real OrbStack Apicurio instance [checkpoint: daa8233]
 - [x] Task: Bump `project/plugins.sbt`'s `sbt-purekafka-docs` `0.1.0-dev`
       -> `0.2.0-dev` (now really published to GitHub Packages — pushed
       purerest `v0.3.0`, confirmed `sbt-purekafka-docs 0.2.0-dev` +
@@ -25,8 +25,11 @@
 - [x] Task: Run full test suite + the verify script end-to-end; confirm
       no regressions `3bf09da` — `scalafmtCheck; Test/scalafmtCheck;
       test`: clean, exit 0; verify script: all checks passed
-- [ ] Task: Conductor - User Manual Verification 'Phase 1: Local sbt
-      wiring + verification' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 1: Local sbt
+      wiring + verification' (Protocol in workflow.md) `daa8233` —
+      reduced-prompting mode: automated-test + verify-script
+      verification only, no interactive walkthrough; see git note on
+      `daa8233`
 
 ## Phase 2: Real CI wiring
 - [ ] Task: Add a new step to `.github/workflows/ci.yml`: `docker run` a
