@@ -31,12 +31,20 @@
       verification only, no interactive walkthrough; see git note on
       `daa8233`
 
-## Phase 2: Real CI wiring
-- [ ] Task: Add a new step to `.github/workflows/ci.yml`: `docker run` a
+## Phase 2: Real CI wiring [checkpoint: TBD]
+- [x] Task: Add a new step to `.github/workflows/ci.yml`: `docker run` a
       plain `apicurio/apicurio-registry:3.3.2` container, wait for
       `/health/ready` on port 9000, run `sbt schemaRegistryCheck` against
       it (CI-only `schemaRegistryUrl` override), tear the container down
-- [ ] Task: Push this branch and confirm the new CI step passes on a
-      real GitHub Actions run
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Real CI
-      wiring' (Protocol in workflow.md)
+      `b401d03` — local `docker run` dry-run first, confirmed the health
+      probe + REST API work before pushing
+- [x] Task: Push this branch and confirm the new CI step passes on a
+      real GitHub Actions run — found along the way: CI had been failing
+      on *every* push for weeks, unrelated to this track (the
+      `GH_PACKAGES_TOKEN` repo secret didn't exist at all — confirmed
+      every sibling service has the same gap). User added the secret;
+      re-ran CI run `40182731761`: all steps green, including
+      `schemaRegistryCheck` against the throwaway Apicurio container
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Real CI
+      wiring' (Protocol in workflow.md) — reduced-prompting mode: the
+      real CI run itself is the verification; no interactive walkthrough
