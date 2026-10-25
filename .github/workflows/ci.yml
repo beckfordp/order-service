@@ -29,3 +29,27 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: sbt scalafmtCheck Test/scalafmtCheck test
+
+      # Build-time schema-compatibility check (Rework 5 step 3, ADR 0003) -
+      # this runner has no route to the shared local OrbStack Apicurio
+      # instance build.sbt defaults to, so a throwaway Apicurio container is
+      # started here instead; SCHEMA_REGISTRY_URL overrides that default
+      # (see build.sbt's schemaRegistryUrl setting).
+      - name: Start a throwaway Apicurio Registry
+        run: |
+          docker run -d --name apicurio -p 8080:8080 apicurio/apicurio-registry:3.3.2
+          for _ in $(seq 1 60); do
+            docker exec apicurio curl --fail --silent http://localhost:9000/health/ready && break
+            sleep 2
+          done
+
+      - name: schemaRegistryCheck
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+          SCHEMA_REGISTRY_URL: http://localhost:8080
+        run: sbt schemaRegistryCheck
+
+      - name: Stop the throwaway Apicurio Registry
+        if: always()
+        run: docker rm -f apicurio
