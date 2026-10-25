@@ -31,7 +31,7 @@
       verification only, no interactive walkthrough; see git note on
       `daa8233`
 
-## Phase 2: Real CI wiring [checkpoint: TBD]
+## Phase 2: Real CI wiring [checkpoint: bff438e]
 - [x] Task: Add a new step to `.github/workflows/ci.yml`: `docker run` a
       plain `apicurio/apicurio-registry:3.3.2` container, wait for
       `/health/ready` on port 9000, run `sbt schemaRegistryCheck` against
