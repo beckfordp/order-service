@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: Adopt build-time schema registry check (Rework 5 step 3, ADR 0003)**
+- [~] **Track: Adopt build-time schema registry check (Rework 5 step 3, ADR 0003)**
   *Link: [./tracks/schema-registry_20261025/](./tracks/schema-registry_20261025/)*
 
 ---
