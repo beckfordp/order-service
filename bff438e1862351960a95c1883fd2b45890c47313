@@ -1,0 +1,14 @@
+Phase 2: Real CI wiring — verification is the real GitHub Actions run itself, no interactive walkthrough (reduced-prompting mode).
+
+- Added a docker-run-based throwaway Apicurio Registry step to ci.yml,
+  dry-run tested locally first.
+- Found along the way: CI had been failing on every push for weeks
+  (unrelated to this track) — the GH_PACKAGES_TOKEN repo secret didn't
+  exist. Confirmed the same gap on every sibling service
+  (inventory-service, payment-service, notification-service,
+  catalog-service, cart-service) — flagged to the user as a separate,
+  pre-existing issue, not fixed here beyond order-service's own secret
+  (added by the user, with their own PAT/gh auth token).
+- Re-ran CI (run 40182731761) after the secret was added: all steps
+  green, including the new schemaRegistryCheck step against the
+  throwaway container.
