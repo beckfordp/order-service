@@ -17,4 +17,6 @@ credentials += Credentials(
   sys.env.getOrElse("GITHUB_TOKEN", "")
 )
 
-addSbtPlugin("io.github.beckfordp" % "sbt-purekafka-docs" % "0.1.0-dev")
+// 0.2.0-dev adds schemaRegistryCheck (Rework 5 step 3, ADR 0003) - a real
+// GitHub Packages release, same as 0.1.0-dev above.
+addSbtPlugin("io.github.beckfordp" % "sbt-purekafka-docs" % "0.2.0-dev")
