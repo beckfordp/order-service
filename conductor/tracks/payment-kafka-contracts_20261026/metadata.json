@@ -1,0 +1,8 @@
+{
+  "track_id": "payment-kafka-contracts_20261026",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-26T18:21:11Z",
+  "updated_at": "2026-10-26T18:21:11Z",
+  "description": "Rework 7 order-service — sync-payment-auth Kafka contracts"
+}

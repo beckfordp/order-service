@@ -2,6 +2,9 @@
 
 This file tracks all major tracks for the project.
 
+- [ ] **Track: Rework 7 order-service — sync-payment-auth Kafka contracts**
+  *Link: [./tracks/payment-kafka-contracts_20261026/](./tracks/payment-kafka-contracts_20261026/)*
+
 ## Backlog
 
 Title-only placeholders for future tracks — not yet detailed (no spec/plan, no linked
