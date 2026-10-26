@@ -77,29 +77,6 @@ lazy val root = project
     // second is checked against whichever registered first, regardless
     // of which service that is.
     schemaRegistryGroupId := "gluon",
-    // Bakes asyncApiGenerate's output into the Docker image itself -
-    // previously only ever worked via a bare `sbt run`; neither
-    // docker-compose nor the k8s deployment ever packaged these files in
-    // (confirmed live: 404 in both). Mapped under the exact same relative
-    // path (`target/asyncapi-docs`) AppRoutes.scala's
-    // staticAsyncApiDocsDir already looks for, so no code change needed
-    // there - the image's working directory (/opt/docker, confirmed via
-    // `kubectl exec ... pwd`) just needs that directory to actually
-    // exist. `asyncApiGenerate.value` (not just the output-dir setting)
-    // forces generation to have happened before mapping; sbt caches the
-    // task's result within one command invocation, so this doesn't
-    // re-run the Node-based generator a second time - Compile/compile's
-    // own existing taskDyn chain already triggered it moments earlier in
-    // the same build.
-    Universal / mappings ++= {
-      val base = asyncApiGenerate.value
-      Path
-        .allSubpaths(base)
-        .map { case (file, relPath) =>
-          file -> s"target/asyncapi-docs/$relPath"
-        }
-        .toSeq
-    },
     // purerestlib resolved as an ordinary published artifact from GitHub
     // Packages, not a source/`.dependsOn` link back to the purerest repo —
     // the same real-external-consumer proof purerest's own smoke-test/

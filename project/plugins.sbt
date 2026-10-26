@@ -17,6 +17,7 @@ credentials += Credentials(
   sys.env.getOrElse("GITHUB_TOKEN", "")
 )
 
-// 0.2.0-dev adds schemaRegistryCheck (Rework 5 step 3, ADR 0003) - a real
-// GitHub Packages release, same as 0.1.0-dev above.
-addSbtPlugin("io.github.beckfordp" % "sbt-purekafka-docs" % "0.2.0-dev")
+// 0.3.0-dev auto-wires asyncApiGenerate's HTML into Universal/mappings for
+// native-packager images (TD-6); 0.2.0-dev added schemaRegistryCheck
+// (Rework 5 step 3, ADR 0003). Real GitHub Packages release.
+addSbtPlugin("io.github.beckfordp" % "sbt-purekafka-docs" % "0.3.0-dev")
