@@ -48,9 +48,14 @@ object AsyncApiChannels extends AsyncApiChannelsProvider {
       eventType = "StockReservationFailed",
       direction = ChannelDirection.Subscribe
     ),
-    AsyncApiChannel[PaymentSettledEvent](
+    AsyncApiChannel[PaymentCapturedEvent](
       topic = PaymentEventConsumer.topic,
-      eventType = "PaymentSettled",
+      eventType = "PaymentCaptured",
+      direction = ChannelDirection.Subscribe
+    ),
+    AsyncApiChannel[PaymentAuthorizationExpiredEvent](
+      topic = PaymentEventConsumer.topic,
+      eventType = "PaymentAuthorizationExpired",
       direction = ChannelDirection.Subscribe
     ),
     AsyncApiChannel[PaymentFailedEvent](

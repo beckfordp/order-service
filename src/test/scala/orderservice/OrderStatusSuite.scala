@@ -36,6 +36,13 @@ class OrderStatusSuite extends CatsEffectSuite {
     )
   }
 
+  test("fromString parses \"cancelled\" as Cancelled") {
+    assertEquals(
+      OrderStatus.fromString("cancelled"),
+      Right(OrderStatus.Cancelled)
+    )
+  }
+
   test("fromString rejects an unrecognized value") {
     assert(OrderStatus.fromString("bogus").isLeft)
   }
@@ -46,7 +53,8 @@ class OrderStatusSuite extends CatsEffectSuite {
       OrderStatus.Reserved,
       OrderStatus.ReservationFailed,
       OrderStatus.Confirmed,
-      OrderStatus.PaymentFailed
+      OrderStatus.PaymentFailed,
+      OrderStatus.Cancelled
     ).foreach { status =>
       assertEquals(OrderStatus.fromString(status.asString), Right(status))
     }

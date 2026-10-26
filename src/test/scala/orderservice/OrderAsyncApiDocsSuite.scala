@@ -12,7 +12,7 @@ import purerest.docs.Docs
 class OrderAsyncApiDocsSuite extends CatsEffectSuite {
 
   test(
-    "GET /docs/asyncapi.json serves a document containing all 6 registered event types"
+    "GET /docs/asyncapi.json serves a document containing all 7 registered event types"
   ) {
     val routes =
       AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
@@ -25,7 +25,8 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       assertEquals(response.status, Status.Ok)
       assert(clue(body).contains("StockReserved"))
       assert(clue(body).contains("StockReservationFailed"))
-      assert(clue(body).contains("PaymentSettled"))
+      assert(clue(body).contains("PaymentCaptured"))
+      assert(clue(body).contains("PaymentAuthorizationExpired"))
       assert(clue(body).contains("PaymentFailed"))
       assert(clue(body).contains("OrderReserved"))
       assert(clue(body).contains("OrderStatusChanged"))
@@ -101,8 +102,8 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
 
       assertEquals(
         enumValues.toSet,
-        Set("reservation_failed", "confirmed", "payment_failed"),
-        "expected only the 3 statuses this event actually publishes - never 'pending'/'reserved'"
+        Set("reservation_failed", "confirmed", "payment_failed", "cancelled"),
+        "expected only the 4 statuses this event actually publishes - never 'pending'/'reserved'"
       )
     }
   }

@@ -21,7 +21,8 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 - **Order** — `customerId` (create-only), `totalCents` (computed server-side
   from its items' `quantity × unitPriceCents`, summed — not client-supplied),
   `status` (server-defaulted `"pending"`; hardened to a closed `OrderStatus`
-  ADT — `Pending`/`Reserved`/`ReservationFailed`/`Confirmed`/`PaymentFailed`
+  ADT — `Pending`/`Reserved`/`ReservationFailed`/`Confirmed`/`PaymentFailed`/
+  `Cancelled`
   — at both the Scala and DB level: a `text.eimap`-based Skunk codec plus a
   Postgres `CHECK` constraint. PATCH/PUT reject any other value with `400`)
 - **OrderItem** (hand-added — not codegen'd) — `id`, `orderId`, `sku`,
@@ -61,14 +62,18 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   since the synchronous call already verified every item's outcome before
   leaving the order `pending`. Event types this consumer doesn't recognize
   are silently skipped, not logged as malformed
-- **Payment settlement** — a background Kafka consumer
+- **Payment outcomes** — a background Kafka consumer
   (`PaymentEventConsumer`) subscribes to the `payment-events` domain topic
-  and listens for payment-service's `PaymentSettled`/`PaymentFailed`
-  envelopes, flipping a `Reserved` order to `confirmed`/`payment_failed` by
-  exact `orderId` match (unlike the stock-reservation consumer, which
+  and listens for payment-service's `PaymentCaptured`,
+  `PaymentAuthorizationExpired`, and `PaymentFailed` envelopes: capture flips
+  a `Reserved` order to `confirmed`, an expired authorization flips it to the
+  new `cancelled` status, and a capture failure flips it to `payment_failed`,
+  all by exact `orderId` match (unlike the stock-reservation consumer, which
   matches by `orderItemId`). Publishes `OrderStatusChanged` on a successful
   transition. A redelivered/out-of-order event for an order that's no longer
-  `Reserved` (or an unknown `orderId`) is an idempotent no-op
+  `Reserved` (or an unknown `orderId`) is an idempotent no-op.
+  `PaymentAuthorized` is deliberately not consumed — authorization is the
+  synchronous REST call now (Rework 7).
 - **Order history** — `GET /orders?customerId=<id>` (required query param,
   no auth) returns that customer's orders newest-first as
   `List[OrderResponse]` (same shape as `GET /orders/{id}`). Cache-aside via
@@ -109,8 +114,9 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   wrapped in the shared envelope — one topic per domain, ADR 0009, migrated
   2026-10-11, kafka-envelope_20261011; previously two per-event-type topics)
 - Consumes: `inventory-events` (eventType `StockReserved` /
-  `StockReservationFailed`), `payment-events` (eventType `PaymentSettled` /
-  `PaymentFailed`) — same migration
+  `StockReservationFailed`), `payment-events` (eventType `PaymentCaptured` /
+  `PaymentAuthorizationExpired` / `PaymentFailed`; `PaymentAuthorized` is
+  learned synchronously) — same migration
 
 ## Out of scope for this service
 - Auth/identity (bare `customerId` for now — no user-service yet)

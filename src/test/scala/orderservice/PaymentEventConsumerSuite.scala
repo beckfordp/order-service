@@ -26,7 +26,7 @@ class PaymentEventConsumerSuite
     with TestContainerForAll {
 
   /** A `DeadLetter` whose `guard` never actually triggers in these tests -
-    * every `handleSettled`/`handleFailed` call here succeeds on its first
+    * every `handleCaptured`/`handleExpired`/`handleFailed` call here succeeds on its first
     * attempt, so this is only ever a transparent pass-through.
     * `KafkaConsumersSuite` is where DLQ routing itself (the failure path) is
     * actually exercised.
@@ -145,7 +145,7 @@ class PaymentEventConsumerSuite
     List(NewOrderItem("sku-1", "Widget", 999, 2))
 
   test(
-    "a synthetic PaymentSettled envelope flips a Reserved order's status to Confirmed"
+    "a synthetic PaymentCaptured envelope flips a Reserved order's status to Confirmed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -154,17 +154,17 @@ class PaymentEventConsumerSuite
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
-        event = PaymentSettledEvent(
+        event = PaymentCapturedEvent(
           order.id,
-          "payment-1",
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
           order.id,
-          envelopeJson("PaymentSettled", order.id, event.asJson)
+          envelopeJson("PaymentCaptured", order.id, event.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -174,6 +174,37 @@ class PaymentEventConsumerSuite
           pollForStatus(store, order.id, OrderStatus.Confirmed)
         )
       } yield assertEquals(finalStatus, Right(OrderStatus.Confirmed))
+    }
+  }
+
+  test(
+    "a synthetic PaymentAuthorizationExpired envelope flips a Reserved order's status to Cancelled"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      for {
+        deadLetter <- noOpDeadLetter
+        store <- OrderStore.inMemory[IO]
+        (order, _) <- store.create("cust-123", oneItem)
+        _ <- store.update(order.id, OrderStatus.Reserved)
+        event = PaymentAuthorizationExpiredEvent(
+          order.id,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          order.id,
+          envelopeJson("PaymentAuthorizationExpired", order.id, event.asJson)
+        )
+        finalStatus <- IO.race(
+          PaymentEventConsumer
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .compile
+            .drain,
+          pollForStatus(store, order.id, OrderStatus.Cancelled)
+        )
+      } yield assertEquals(finalStatus, Right(OrderStatus.Cancelled))
     }
   }
 
@@ -191,7 +222,9 @@ class PaymentEventConsumerSuite
           order.id,
           "payment-1",
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          "capture_failed",
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produce(
           config,
@@ -220,11 +253,11 @@ class PaymentEventConsumerSuite
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
-        realEvent = PaymentSettledEvent(
+        realEvent = PaymentCapturedEvent(
           order.id,
-          "payment-1",
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         otherPayload = Json.obj(
           "paymentId" -> Json.fromString("payment-irrelevant"),
@@ -240,7 +273,7 @@ class PaymentEventConsumerSuite
           config,
           PaymentEventConsumer.topic,
           order.id,
-          envelopeJson("PaymentSettled", order.id, realEvent.asJson)
+          envelopeJson("PaymentCaptured", order.id, realEvent.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -264,24 +297,24 @@ class PaymentEventConsumerSuite
         (stalePendingOrder, _) <- store.create("cust-123", oneItem)
         (liveOrder, _) <- store.create("cust-456", oneItem)
         _ <- store.update(liveOrder.id, OrderStatus.Reserved)
-        staleEvent = PaymentSettledEvent(
+        staleEvent = PaymentCapturedEvent(
           stalePendingOrder.id,
-          "payment-stale",
           stalePendingOrder.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
         )
-        liveEvent = PaymentSettledEvent(
+        )
+        liveEvent = PaymentCapturedEvent(
           liveOrder.id,
-          "payment-live",
           liveOrder.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
           stalePendingOrder.id,
           envelopeJson(
-            "PaymentSettled",
+            "PaymentCaptured",
             stalePendingOrder.id,
             staleEvent.asJson
           )
@@ -290,7 +323,7 @@ class PaymentEventConsumerSuite
           config,
           PaymentEventConsumer.topic,
           liveOrder.id,
-          envelopeJson("PaymentSettled", liveOrder.id, liveEvent.asJson)
+          envelopeJson("PaymentCaptured", liveOrder.id, liveEvent.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -317,24 +350,24 @@ class PaymentEventConsumerSuite
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
-        unknownEvent = PaymentSettledEvent(
+        unknownEvent = PaymentCapturedEvent(
           "unknown-order-id",
-          "payment-unknown",
           999,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
         )
-        realEvent = PaymentSettledEvent(
+        )
+        realEvent = PaymentCapturedEvent(
           order.id,
-          "payment-1",
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
           "unknown-order-id",
           envelopeJson(
-            "PaymentSettled",
+            "PaymentCaptured",
             "unknown-order-id",
             unknownEvent.asJson
           )
@@ -343,7 +376,7 @@ class PaymentEventConsumerSuite
           config,
           PaymentEventConsumer.topic,
           order.id,
-          envelopeJson("PaymentSettled", order.id, realEvent.asJson)
+          envelopeJson("PaymentCaptured", order.id, realEvent.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -366,11 +399,11 @@ class PaymentEventConsumerSuite
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
-        realEvent = PaymentSettledEvent(
+        realEvent = PaymentCapturedEvent(
           order.id,
-          "payment-1",
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produce(
           config,
@@ -382,7 +415,7 @@ class PaymentEventConsumerSuite
           config,
           PaymentEventConsumer.topic,
           order.id,
-          envelopeJson("PaymentSettled", order.id, realEvent.asJson)
+          envelopeJson("PaymentCaptured", order.id, realEvent.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -396,7 +429,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "PaymentSettled and PaymentFailed route to their own distinct target statuses, not the other's"
+    "PaymentCaptured and PaymentFailed route to their own distinct target statuses, not the other's"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -407,23 +440,25 @@ class PaymentEventConsumerSuite
         _ <- store.update(settledOrder.id, OrderStatus.Reserved)
         (failedOrder, _) <- store.create("cust-456", oneItem)
         _ <- store.update(failedOrder.id, OrderStatus.Reserved)
-        settledEvent = PaymentSettledEvent(
+        settledEvent = PaymentCapturedEvent(
           settledOrder.id,
-          "payment-settled",
           settledOrder.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         failedEvent = PaymentFailedEvent(
           failedOrder.id,
           "payment-failed",
           failedOrder.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          "capture_failed",
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
           settledOrder.id,
-          envelopeJson("PaymentSettled", settledOrder.id, settledEvent.asJson)
+          envelopeJson("PaymentCaptured", settledOrder.id, settledEvent.asJson)
         )
         _ <- produce(
           config,
@@ -449,7 +484,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a synthetic PaymentSettled envelope also writes an OrderStatusChanged outbox row with status=confirmed"
+    "a synthetic PaymentCaptured envelope also writes an OrderStatusChanged outbox row with status=confirmed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -459,17 +494,17 @@ class PaymentEventConsumerSuite
         (store, outboxRef) = storeAndOutbox
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
-        event = PaymentSettledEvent(
+        event = PaymentCapturedEvent(
           order.id,
-          "payment-1",
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
           order.id,
-          envelopeJson("PaymentSettled", order.id, event.asJson)
+          envelopeJson("PaymentCaptured", order.id, event.asJson)
         )
         outboxed <- IO.race(
           PaymentEventConsumer
@@ -496,6 +531,55 @@ class PaymentEventConsumerSuite
   }
 
   test(
+    "a synthetic PaymentAuthorizationExpired envelope also writes an OrderStatusChanged outbox row with status=cancelled"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      for {
+        deadLetter <- noOpDeadLetter
+        storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+        (store, outboxRef) = storeAndOutbox
+        (order, _) <- store.create("cust-123", oneItem)
+        _ <- store.update(order.id, OrderStatus.Reserved)
+        event = PaymentAuthorizationExpiredEvent(
+          order.id,
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          order.id,
+          envelopeJson(
+            "PaymentAuthorizationExpired",
+            order.id,
+            event.asJson
+          )
+        )
+        outboxed <- IO.race(
+          PaymentEventConsumer
+            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .compile
+            .drain,
+          pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
+        )
+      } yield outboxed match {
+        case Left(()) =>
+          fail(
+            "consumer finished before the OrderStatusChanged outbox row appeared"
+          )
+        case Right(envelope) =>
+          envelope.payload.as[OrderStatusChangedEvent] match {
+            case Left(error)  => fail(s"failed to decode: $error")
+            case Right(event) =>
+              assertEquals(event.orderId, order.id)
+              assertEquals(event.customerId, "cust-123")
+              assertEquals(event.status, "cancelled")
+          }
+      }
+    }
+  }
+
+  test(
     "a synthetic PaymentFailed envelope also writes an OrderStatusChanged outbox row with status=payment_failed"
   ) {
     withContainers { kafka =>
@@ -510,7 +594,9 @@ class PaymentEventConsumerSuite
           order.id,
           "payment-1",
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          "capture_failed",
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produce(
           config,
@@ -552,18 +638,18 @@ class PaymentEventConsumerSuite
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Reserved)
-        event = PaymentSettledEvent(
+        event = PaymentCapturedEvent(
           order.id,
-          "payment-1",
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z")
+          Instant.parse("2026-01-01T00:00:00Z"
+        )
         )
         _ <- produceNullValue(config, PaymentEventConsumer.topic, order.id)
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
           order.id,
-          envelopeJson("PaymentSettled", order.id, event.asJson)
+          envelopeJson("PaymentCaptured", order.id, event.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer

@@ -15,7 +15,7 @@ import java.nio.file.Files
 class AsyncApiChannelsSuite extends FunSuite {
 
   test(
-    "AsyncApiChannel constructs for each of order-service's 6 registered event types"
+    "AsyncApiChannel constructs for each of order-service's 7 registered event types"
   ) {
     val stockReserved =
       AsyncApiChannel[StockReservedEvent](
@@ -29,10 +29,16 @@ class AsyncApiChannelsSuite extends FunSuite {
         eventType = "StockReservationFailed",
         direction = ChannelDirection.Subscribe
       )
-    val paymentSettled =
-      AsyncApiChannel[PaymentSettledEvent](
+    val paymentCaptured =
+      AsyncApiChannel[PaymentCapturedEvent](
         topic = PaymentEventConsumer.topic,
-        eventType = "PaymentSettled",
+        eventType = "PaymentCaptured",
+        direction = ChannelDirection.Subscribe
+      )
+    val paymentAuthorizationExpired =
+      AsyncApiChannel[PaymentAuthorizationExpiredEvent](
+        topic = PaymentEventConsumer.topic,
+        eventType = "PaymentAuthorizationExpired",
         direction = ChannelDirection.Subscribe
       )
     val paymentFailed =
@@ -56,14 +62,15 @@ class AsyncApiChannelsSuite extends FunSuite {
 
     assertEquals(stockReserved.topic, "inventory-events")
     assertEquals(stockReservationFailed.topic, "inventory-events")
-    assertEquals(paymentSettled.topic, "payment-events")
+    assertEquals(paymentCaptured.topic, "payment-events")
+    assertEquals(paymentAuthorizationExpired.topic, "payment-events")
     assertEquals(paymentFailed.topic, "payment-events")
     assertEquals(orderReserved.topic, "order-events")
     assertEquals(orderStatusChanged.topic, "order-events")
   }
 
   test(
-    "AsyncApiChannels.channels registers all 6 event types with correct topic/eventType pairs"
+    "AsyncApiChannels.channels registers all 7 event types with correct topic/eventType pairs"
   ) {
     val topicsAndEventTypes =
       AsyncApiChannels.channels.map(c => c.topic -> c.eventType).toSet
@@ -73,7 +80,8 @@ class AsyncApiChannelsSuite extends FunSuite {
       Set(
         "inventory-events" -> "StockReserved",
         "inventory-events" -> "StockReservationFailed",
-        "payment-events" -> "PaymentSettled",
+        "payment-events" -> "PaymentCaptured",
+        "payment-events" -> "PaymentAuthorizationExpired",
         "payment-events" -> "PaymentFailed",
         "order-events" -> "OrderReserved",
         "order-events" -> "OrderStatusChanged"
@@ -82,7 +90,7 @@ class AsyncApiChannelsSuite extends FunSuite {
   }
 
   test(
-    "the 4 consumed event types are Subscribe-only; the 2 CDC-published event types are Publish(Cdc)"
+    "the 5 consumed event types are Subscribe-only; the 2 CDC-published event types are Publish(Cdc)"
   ) {
     val directionsByEventType =
       AsyncApiChannels.channels.map(c => c.eventType -> c.direction).toMap
@@ -91,7 +99,8 @@ class AsyncApiChannelsSuite extends FunSuite {
       consumed <- List(
         "StockReserved",
         "StockReservationFailed",
-        "PaymentSettled",
+        "PaymentCaptured",
+        "PaymentAuthorizationExpired",
         "PaymentFailed"
       )
     )

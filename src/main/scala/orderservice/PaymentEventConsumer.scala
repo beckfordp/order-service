@@ -20,22 +20,33 @@ import java.time.Instant
   * truth. No shared library between the two services; each side keeps its own
   * copy.
   */
-final case class PaymentSettledEvent(
+final case class PaymentCapturedEvent(
     orderId: String,
-    paymentId: String,
     amountCents: Int,
     timestamp: Instant
 )
 
-object PaymentSettledEvent {
-  implicit val codec: Codec[PaymentSettledEvent] = deriveCodec
-  implicit val schema: Schema[PaymentSettledEvent] = Schema.derived
+object PaymentCapturedEvent {
+  implicit val codec: Codec[PaymentCapturedEvent] = deriveCodec
+  implicit val schema: Schema[PaymentCapturedEvent] = Schema.derived
+}
+
+final case class PaymentAuthorizationExpiredEvent(
+    orderId: String,
+    timestamp: Instant
+)
+
+object PaymentAuthorizationExpiredEvent {
+  implicit val codec: Codec[PaymentAuthorizationExpiredEvent] = deriveCodec
+  implicit val schema: Schema[PaymentAuthorizationExpiredEvent] =
+    Schema.derived
 }
 
 final case class PaymentFailedEvent(
     orderId: String,
     paymentId: String,
     amountCents: Int,
+    reason: String,
     timestamp: Instant
 )
 
@@ -44,14 +55,17 @@ object PaymentFailedEvent {
   implicit val schema: Schema[PaymentFailedEvent] = Schema.derived
 }
 
-/** Consumes `PaymentSettled`/`PaymentFailed` envelopes on `payment-events`
-  * (payment-service, US-6.1; migrated to the domain topic + envelope shape per
-  * ADR 0009) and transitions the matching order from `Reserved` to
-  * `Confirmed`/`PaymentFailed` via `OrderStore.updateStatusIfCurrent`, keyed by
-  * the event's `orderId` directly. A redelivered/out-of-order event for an
-  * order that's no longer `Reserved` (or an unknown `orderId`) is an idempotent
-  * no-op, logged at info - never an error, per spec.md's "Out of Scope".
-  * Publishes `OrderStatusChanged` on a successful transition, mirroring
+/** Consumes `PaymentCaptured`/`PaymentAuthorizationExpired`/`PaymentFailed`
+  * envelopes on `payment-events` (payment-service; authorization is now the
+  * synchronous `POST /payments/authorize` call, so this consumer never sees
+  * `PaymentAuthorized` - order-service already has that outcome) and
+  * transitions the matching order via `OrderStore.updateStatusIfCurrent`, keyed
+  * by the event's `orderId` directly: `Reserved -> Confirmed` on capture,
+  * `Reserved -> Cancelled` on authorization expiry, `Reserved -> PaymentFailed`
+  * on capture failure. A redelivered/out-of-order event for an order that's no
+  * longer `Reserved` (or an unknown `orderId`) is an idempotent no-op, logged
+  * at info - never an error, per spec.md's "Out of Scope". Publishes
+  * `OrderStatusChanged` on a successful transition, mirroring
   * `StockEventConsumer`'s precedent exactly. `payment-events` may carry other
   * event types this consumer doesn't care about - those are silently skipped by
   * `eventType`, not logged as malformed.
@@ -63,9 +77,7 @@ object PaymentEventConsumer {
   // Key/value typed as Option[String] (via fs2-kafka's null-safe
   // Deserializer.option) rather than plain String: a plain String
   // deserializer throws on a null key or value, which kills this whole
-  // background consumer stream silently - see TD-2.2, ADR 0010. Mirrors
-  // payment-service's OrderReservedConsumer, which fixed the identical
-  // crash risk first (TD-2.1).
+  // background consumer stream silently - see TD-2.2, ADR 0010.
   private def consumerSettings[F[_]: Async](
       config: KafkaConfig
   ): ConsumerSettings[F, Option[String], Option[String]] =
@@ -87,7 +99,7 @@ object PaymentEventConsumer {
             "order_id" -> orderId,
             "new_status" -> newStatus.asString
           )
-        )("Order status updated from payment-settlement event")
+        )("Order status updated from payment event")
       case None =>
         logger.info(
           Map(
@@ -99,16 +111,16 @@ object PaymentEventConsumer {
         )
     }
 
-  private def handleSettled[F[_]: Async](
+  private def handleCaptured[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       raw: String,
       payload: io.circe.Json
   ): F[Unit] =
-    payload.as[PaymentSettledEvent] match {
+    payload.as[PaymentCapturedEvent] match {
       case Left(error) =>
         logger.error(Map("raw" -> raw), error)(
-          "Failed to decode PaymentSettled payload"
+          "Failed to decode PaymentCaptured payload"
         )
       case Right(event) =>
         Async[F].realTimeInstant.flatMap { now =>
@@ -132,6 +144,43 @@ object PaymentEventConsumer {
             )
             .flatMap(
               logOutcome(logger, event.orderId, OrderStatus.Confirmed, _)
+            )
+        }
+    }
+
+  private def handleExpired[F[_]: Async](
+      store: OrderStore[F],
+      logger: StructuredLogger[F],
+      raw: String,
+      payload: io.circe.Json
+  ): F[Unit] =
+    payload.as[PaymentAuthorizationExpiredEvent] match {
+      case Left(error) =>
+        logger.error(Map("raw" -> raw), error)(
+          "Failed to decode PaymentAuthorizationExpired payload"
+        )
+      case Right(event) =>
+        Async[F].realTimeInstant.flatMap { now =>
+          store
+            .updateStatusIfCurrent(
+              event.orderId,
+              OrderStatus.Reserved,
+              OrderStatus.Cancelled,
+              Some(
+                PendingOutboxEvent(
+                  "OrderStatusChanged",
+                  ref =>
+                    OrderStatusChangedEvent(
+                      ref.orderId,
+                      ref.customerId,
+                      OrderStatus.Cancelled.asString,
+                      now
+                    ).asJson
+                )
+              )
+            )
+            .flatMap(
+              logOutcome(logger, event.orderId, OrderStatus.Cancelled, _)
             )
         }
     }
@@ -204,9 +253,13 @@ object PaymentEventConsumer {
                 // ADR 0010).
                 val key = committable.record.key.getOrElse("")
                 envelope.eventType match {
-                  case "PaymentSettled" =>
+                  case "PaymentCaptured" =>
                     deadLetter.guard(topic, key, raw)(
-                      handleSettled(store, logger, raw, envelope.payload)
+                      handleCaptured(store, logger, raw, envelope.payload)
+                    )
+                  case "PaymentAuthorizationExpired" =>
+                    deadLetter.guard(topic, key, raw)(
+                      handleExpired(store, logger, raw, envelope.payload)
                     )
                   case "PaymentFailed" =>
                     deadLetter.guard(topic, key, raw)(

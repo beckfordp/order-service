@@ -59,10 +59,11 @@ Swagger UI (generated from the same tapir endpoint definitions as the real route
 
 This service's two Kafka consumers (`StockEventConsumer`, `PaymentEventConsumer`) register their
 event types — `StockReserved`/`StockReservationFailed` on `inventory-events`,
-`PaymentSettled`/`PaymentFailed` on `payment-events` — for
+`PaymentCaptured`/`PaymentAuthorizationExpired`/`PaymentFailed` on `payment-events` — for
 [AsyncAPI](https://www.asyncapi.com/) documentation via `purekafka.docs` (see `AsyncApiChannels`),
 the same way tapir generates the OpenAPI docs above. No producer-side registrations — the outbox
-pattern means this service has no direct Kafka publish call sites.
+pattern means this service has no direct Kafka publish call sites. (`PaymentAuthorized` is
+deliberately not consumed: authorization is synchronous, learned from the REST response.)
 
 Generation is handled by the `sbt-purekafka-docs` plugin (`asyncApiChannelsClass` in `build.sbt`),
 auto-chained after `Compile / compile` — every `sbt compile`/`run`/`Docker/publishLocal` already
