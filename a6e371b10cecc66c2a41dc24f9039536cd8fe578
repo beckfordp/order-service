@@ -1,0 +1,1 @@
+Review: payment-client retries disabled (authorize not idempotent per orderId in payment-service; retry could double-hold). TD to add in gluon. 170 tests.
