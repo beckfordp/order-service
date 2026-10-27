@@ -7,7 +7,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md) — prompt-off: 179 tests pass, coverage 91.79% stmt / 91.47% branch; store-only phase, end-to-end script in Phase 4
 
 ## Phase 2: Outbound clients
-- [~] Task: `InventoryClient.reserveOrder` / `release` (stub Client[F] tests: 201/409/other; 204/other); per-item `reserve` dropped with the handler switch in Phase 3
+- [x] Task: `InventoryClient.reserveOrder` / `release` (stub Client[F] tests: 201/409/other; 204/other); per-item `reserve` dropped with the handler switch in Phase 3 `ff6f005`
 - [ ] Task: `PaymentClient[F]` + `payment-client` config/`PAYMENT_SERVICE_URL` (stub tests: 200/402/404/other; config suite)
 - [ ] Task: Wire PaymentClient in Main/AppRoutes
 - [ ] Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md)
