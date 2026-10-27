@@ -1,0 +1,1 @@
+Phase 3 verification (prompt-off): 188 tests pass, coverage 91.74% stmt / 91.04% branch (OrderRoutes 98.1%, PaymentClient 97.5%, InventoryClient/Address 100%); live end-to-end in Phase 4 script
