@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: Checkout Journey 1 — no order row until authorized (US-11.1, US-14.2, TD-7.3, ADR 0018)**
+- [~] **Track: Checkout Journey 1 — no order row until authorized (US-11.1, US-14.2, TD-7.3, ADR 0018)**
   *Link: [./tracks/checkout-journey1_20261027/](./tracks/checkout-journey1_20261027/)*
 
 ## Backlog

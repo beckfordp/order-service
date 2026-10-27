@@ -1,7 +1,7 @@
 # Plan: checkout-journey1_20261027
 
 ## Phase 1: Domain + persistence
-- [ ] Task: `Address` type + validation (US-11.1)
+- [x] Task: `Address` type + validation (US-11.1) `0c1586c`
 - [ ] Task: V9 migration (`shipping_address` jsonb, `authorized` in CHECK) + `OrderStatus.Authorized`
 - [ ] Task: `OrderStore.createAuthorized` (in-memory + postgres; pre-minted ids, address, one tx) + `shippingAddress` read back by get/list
 - [ ] Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)
