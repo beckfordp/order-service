@@ -9,3 +9,19 @@ final case class InvalidStatus(raw: String) extends OrderError
 case object EmptyOrderItems extends OrderError
 
 final case class InvalidOrderItem(reason: String) extends OrderError
+
+/** A checkout request the client must fix (ADR 0018 `400`): bad shipping
+  * address, malformed `paymentMethodId`, or an unknown payment method.
+  */
+final case class InvalidCheckout(message: String) extends OrderError
+
+final case class PaymentDeclined(reason: String) extends OrderError
+
+final case class InsufficientStock(failures: List[StockFailure])
+    extends OrderError
+
+case object PaymentServiceUnavailable extends OrderError
+
+case object InventoryServiceUnavailable extends OrderError
+
+case object OrderPersistFailed extends OrderError

@@ -37,27 +37,14 @@ object OrderReservationResult {
       extends OrderReservationResult
 }
 
-sealed trait ReservationResult
-
-object ReservationResult {
-  case object Reserved extends ReservationResult
-  case object InsufficientStock extends ReservationResult
-  case object UnknownSku extends ReservationResult
-}
-
-/** The synchronous, resilience-wrapped call to inventory-service's
-  * `POST /inventorys/reservations` (US-4.1's contract, pinned in
+/** The synchronous, resilience-wrapped calls to inventory-service's bulk
+  * reservation endpoints (TD-7, ADR 0018; contracts pinned in
   * `gluon/docs/system-design.md`). `client` is expected to already be wrapped
   * with `purerest.resilience.Resilience.middleware` by the caller - this type
   * only knows how to talk to the one endpoint, not how to be resilient (see
   * README's "Calling other services with resilience").
   */
 trait InventoryClient[F[_]] {
-  def reserve(
-      sku: String,
-      quantity: Int,
-      orderItemId: String
-  ): F[ReservationResult]
 
   /** All-or-nothing bulk reserve (`POST /inventorys/order-reservations`,
     * TD-7.1). A `409` naming no failed lines (an already-released order — never
@@ -74,16 +61,6 @@ trait InventoryClient[F[_]] {
 }
 
 object InventoryClient {
-
-  private final case class ReserveRequestBody(
-      sku: String,
-      quantity: Int,
-      orderItemId: String
-  )
-
-  private object ReserveRequestBody {
-    implicit val codec: Codec[ReserveRequestBody] = deriveCodec
-  }
 
   private final case class ReserveOrderBody(
       orderId: String,
@@ -135,27 +112,6 @@ object InventoryClient {
 
   def apply[F[_]: Async](client: Client[F], baseUri: Uri): InventoryClient[F] =
     new InventoryClient[F] {
-      def reserve(
-          sku: String,
-          quantity: Int,
-          orderItemId: String
-      ): F[ReservationResult] = {
-        val request = Request[F](
-          Method.POST,
-          baseUri / "inventorys" / "reservations"
-        ).withEntity(ReserveRequestBody(sku, quantity, orderItemId))
-        client.run(request).use { response =>
-          response.status match {
-            case Status.Ok       => Async[F].pure(ReservationResult.Reserved)
-            case Status.NotFound => Async[F].pure(ReservationResult.UnknownSku)
-            case Status.Conflict =>
-              Async[F].pure(ReservationResult.InsufficientStock)
-            case other =>
-              unexpected[F, ReservationResult](other)
-          }
-        }
-      }
-
       def reserveOrder(
           orderId: String,
           items: List[OrderReservationLine]

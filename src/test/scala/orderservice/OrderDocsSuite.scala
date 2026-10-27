@@ -15,32 +15,17 @@ class OrderDocsSuite extends CatsEffectSuite {
   ) {
     for {
       store <- OrderStore.inMemory[IO]
-      inventoryClient = new InventoryClient[IO] {
-        def reserveOrder(
-            orderId: String,
-            items: List[OrderReservationLine]
-        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
-        def release(orderId: String): IO[Unit] =
-          IO.raiseError(new NotImplementedError())
-        def reserve(
-            sku: String,
-            quantity: Int,
-            orderItemId: String
-        ): IO[ReservationResult] =
-          IO.pure(ReservationResult.Reserved)
-      }
+      inventoryClient = CheckoutFixtures.alwaysReserves
       endpoint = OrderRoutes.serverEndpoint[IO](
         store,
         NoOpLogger[IO],
-        inventoryClient
+        inventoryClient,
+        CheckoutFixtures.alwaysAuthorizes
       )
       routes = Docs.routes[IO]("Order Service", "1.0", List(endpoint))
       request = Request[IO](Method.POST, uri"/orders")
         .withEntity(
-          CreateOrderRequest(
-            "cust-123",
-            List(CreateOrderItemRequest("sku-1", "Widget", 999, 5))
-          )
+          CheckoutFixtures.createRequest()
         )
       response <- routes.orNotFound.run(request)
       entity <- response.as[OrderResponse]

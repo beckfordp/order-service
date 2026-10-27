@@ -38,197 +38,6 @@ class InventoryClientSuite extends CatsEffectSuite {
   ): Client[IO] =
     Resilience.middleware[IO](config)(NoOpLogger[IO])(Meter.noop[IO])(stub)
 
-  test("reserve returns Reserved for a 200 response") {
-    val client =
-      InventoryClient[IO](
-        resilientClient(stubClient(_ => Response[IO](Status.Ok))),
-        baseUri
-      )
-    client
-      .reserve("sku-1", 2, "item-1")
-      .map(assertEquals(_, ReservationResult.Reserved))
-  }
-
-  test("reserve returns InsufficientStock for a 409 response") {
-    val client = InventoryClient[IO](
-      resilientClient(stubClient(_ => Response[IO](Status.Conflict))),
-      baseUri
-    )
-    client
-      .reserve("sku-1", 2, "item-1")
-      .map(assertEquals(_, ReservationResult.InsufficientStock))
-  }
-
-  test("reserve returns UnknownSku for a 404 response") {
-    val client = InventoryClient[IO](
-      resilientClient(stubClient(_ => Response[IO](Status.NotFound))),
-      baseUri
-    )
-    client
-      .reserve("sku-1", 2, "item-1")
-      .map(assertEquals(_, ReservationResult.UnknownSku))
-  }
-
-  test("reserve raises for an unexpected status (e.g. a non-retriable 400)") {
-    val client = InventoryClient[IO](
-      resilientClient(stubClient(_ => Response[IO](Status.BadRequest))),
-      baseUri
-    )
-    client
-      .reserve("sku-1", 2, "item-1")
-      .attempt
-      .map(result => assert(result.isLeft, s"expected a failure, got: $result"))
-  }
-
-  test(
-    "sends the sku, quantity and orderItemId as the JSON request body to POST /inventorys/reservations"
-  ) {
-    for {
-      capturedRequest <- Ref.of[IO, Option[Request[IO]]](None)
-      capturedBody <- Ref.of[IO, String]("")
-      stub = Client[IO] { req =>
-        Resource.eval(
-          req.bodyText.compile.string.flatMap { body =>
-            capturedRequest.set(Some(req)) *> capturedBody.set(body)
-          } *> IO(Response[IO](Status.Ok))
-        )
-      }
-      client = InventoryClient[IO](resilientClient(stub), baseUri)
-      _ <- client.reserve("sku-1", 3, "item-1")
-      req <- capturedRequest.get
-      body <- capturedBody.get
-    } yield {
-      assertEquals(req.map(_.method), Some(Method.POST))
-      assertEquals(
-        req.map(_.uri.path.toString),
-        Some("/inventorys/reservations")
-      )
-      assert(body.contains("sku-1"), s"expected sku in body, got: $body")
-      assert(body.contains("3"), s"expected quantity in body, got: $body")
-      assert(
-        body.contains("item-1"),
-        s"expected orderItemId in body, got: $body"
-      )
-    }
-  }
-
-  test("a transient downstream failure is retried until it succeeds") {
-    for {
-      counter <- Ref.of[IO, Int](0)
-      stub = Client[IO] { _ =>
-        Resource.eval(
-          counter
-            .updateAndGet(_ + 1)
-            .map(n =>
-              Response[IO](if (n < 3) Status.InternalServerError else Status.Ok)
-            )
-        )
-      }
-      client = InventoryClient[IO](resilientClient(stub), baseUri)
-      result <- client.reserve("sku-1", 2, "item-1")
-      attempts <- counter.get
-    } yield {
-      assertEquals(result, ReservationResult.Reserved)
-      assertEquals(attempts, 3)
-    }
-  }
-
-  test("the circuit breaker opens after repeated failures and fails fast") {
-    for {
-      counter <- Ref.of[IO, Int](0)
-      failingStub = Client[IO] { _ =>
-        Resource.eval(
-          counter
-            .updateAndGet(_ + 1)
-            .as(Response[IO](Status.InternalServerError))
-        )
-      }
-      config = fastConfig.copy(
-        retry = fastConfig.retry.copy(maxRetries = 0),
-        circuitBreaker = fastConfig.circuitBreaker.copy(failureThreshold = 2)
-      )
-      client = InventoryClient[IO](
-        resilientClient(failingStub, config),
-        baseUri
-      )
-      _ <- client.reserve("sku-1", 2, "item-1").attempt
-      _ <- client.reserve("sku-1", 2, "item-1").attempt
-      openResult <- client.reserve("sku-1", 2, "item-1").attempt
-      attempts <- counter.get
-    } yield {
-      assertEquals(openResult, Left(CircuitBreakerOpen))
-      assertEquals(attempts, 2)
-    }
-  }
-
-  private def withTelemetry[A](f: Telemetry[IO] => IO[A]): IO[A] =
-    (for {
-      testTracer <- Tracing.test[IO]("inventory-client-resilient-suite")
-      testMeter <- Metrics.test[IO]("inventory-client-resilient-suite")
-    } yield Telemetry(testTracer.tracer, testMeter.meter, NoOpLogger[IO]))
-      .use(f)
-
-  test(
-    "resilient builds an InventoryClient pointed at config.baseUrl, same as manual apply(resilientClient, baseUri) wiring"
-  ) {
-    withTelemetry { telemetry =>
-      for {
-        capturedUri <- Ref.of[IO, Option[Uri]](None)
-        stub = Client[IO] { req =>
-          Resource.eval(
-            capturedUri.set(Some(req.uri)).as(Response[IO](Status.Ok))
-          )
-        }
-        config = InventoryClientConfig(
-          baseUrl = "http://inventory-service",
-          resilience = fastConfig
-        )
-        client = InventoryClient.resilient[IO](stub, config, telemetry)
-        _ <- client.reserve("sku-1", 2, "item-1")
-        uri <- capturedUri.get
-      } yield assertEquals(
-        uri.map(_.toString),
-        Some("http://inventory-service/inventorys/reservations")
-      )
-    }
-  }
-
-  test(
-    "resilient wraps the given client with Resilience.middleware(config.resilience) - a transient failure is retried, not surfaced on the first attempt"
-  ) {
-    withTelemetry { telemetry =>
-      for {
-        counter <- Ref.of[IO, Int](0)
-        stub = Client[IO] { _ =>
-          Resource.eval(
-            counter
-              .updateAndGet(_ + 1)
-              .map(n =>
-                Response[IO](
-                  if (n < 3) Status.InternalServerError else Status.Ok
-                )
-              )
-          )
-        }
-        config = InventoryClientConfig(
-          baseUrl = "http://inventory-service",
-          resilience = fastConfig
-        )
-        client = InventoryClient.resilient[IO](stub, config, telemetry)
-        result <- client.reserve("sku-1", 2, "item-1")
-        attempts <- counter.get
-      } yield {
-        assertEquals(result, ReservationResult.Reserved)
-        assertEquals(attempts, 3)
-      }
-    }
-  }
-
-  private val lines = List(
-    OrderReservationLine("item-1", "sku-1", 2),
-    OrderReservationLine("item-2", "sku-2", 1)
-  )
-
   test("reserveOrder posts every line once and returns Reserved for a 201") {
     for {
       seen <- Ref.of[IO, List[(String, io.circe.Json)]](Nil)
@@ -343,4 +152,123 @@ class InventoryClientSuite extends CatsEffectSuite {
     )
     client.release("order-1").attempt.map(r => assert(r.isLeft, r))
   }
+
+  test("a transient downstream failure is retried until it succeeds") {
+    for {
+      counter <- Ref.of[IO, Int](0)
+      stub = Client[IO] { _ =>
+        Resource.eval(
+          counter
+            .updateAndGet(_ + 1)
+            .map(n =>
+              Response[IO](
+                if (n < 3) Status.InternalServerError else Status.Created
+              )
+            )
+        )
+      }
+      client = InventoryClient[IO](resilientClient(stub), baseUri)
+      result <- client.reserveOrder("order-1", lines)
+      attempts <- counter.get
+    } yield {
+      assertEquals(result, OrderReservationResult.Reserved)
+      assertEquals(attempts, 3)
+    }
+  }
+
+  test("the circuit breaker opens after repeated failures and fails fast") {
+    for {
+      counter <- Ref.of[IO, Int](0)
+      failingStub = Client[IO] { _ =>
+        Resource.eval(
+          counter
+            .updateAndGet(_ + 1)
+            .as(Response[IO](Status.InternalServerError))
+        )
+      }
+      config = fastConfig.copy(
+        retry = fastConfig.retry.copy(maxRetries = 0),
+        circuitBreaker = fastConfig.circuitBreaker.copy(failureThreshold = 2)
+      )
+      client = InventoryClient[IO](
+        resilientClient(failingStub, config),
+        baseUri
+      )
+      _ <- client.reserveOrder("order-1", lines).attempt
+      _ <- client.reserveOrder("order-1", lines).attempt
+      openResult <- client.reserveOrder("order-1", lines).attempt
+      attempts <- counter.get
+    } yield {
+      assertEquals(openResult, Left(CircuitBreakerOpen))
+      assertEquals(attempts, 2)
+    }
+  }
+
+  private def withTelemetry[A](f: Telemetry[IO] => IO[A]): IO[A] =
+    (for {
+      testTracer <- Tracing.test[IO]("inventory-client-resilient-suite")
+      testMeter <- Metrics.test[IO]("inventory-client-resilient-suite")
+    } yield Telemetry(testTracer.tracer, testMeter.meter, NoOpLogger[IO]))
+      .use(f)
+
+  test(
+    "resilient builds an InventoryClient pointed at config.baseUrl, same as manual apply(resilientClient, baseUri) wiring"
+  ) {
+    withTelemetry { telemetry =>
+      for {
+        capturedUri <- Ref.of[IO, Option[Uri]](None)
+        stub = Client[IO] { req =>
+          Resource.eval(
+            capturedUri.set(Some(req.uri)).as(Response[IO](Status.Created))
+          )
+        }
+        config = InventoryClientConfig(
+          baseUrl = "http://inventory-service",
+          resilience = fastConfig
+        )
+        client = InventoryClient.resilient[IO](stub, config, telemetry)
+        _ <- client.reserveOrder("order-1", lines)
+        uri <- capturedUri.get
+      } yield assertEquals(
+        uri.map(_.toString),
+        Some("http://inventory-service/inventorys/order-reservations")
+      )
+    }
+  }
+
+  test(
+    "resilient wraps the given client with Resilience.middleware(config.resilience) - a transient failure is retried, not surfaced on the first attempt"
+  ) {
+    withTelemetry { telemetry =>
+      for {
+        counter <- Ref.of[IO, Int](0)
+        stub = Client[IO] { _ =>
+          Resource.eval(
+            counter
+              .updateAndGet(_ + 1)
+              .map(n =>
+                Response[IO](
+                  if (n < 3) Status.InternalServerError else Status.Created
+                )
+              )
+          )
+        }
+        config = InventoryClientConfig(
+          baseUrl = "http://inventory-service",
+          resilience = fastConfig
+        )
+        client = InventoryClient.resilient[IO](stub, config, telemetry)
+        result <- client.reserveOrder("order-1", lines)
+        attempts <- counter.get
+      } yield {
+        assertEquals(result, OrderReservationResult.Reserved)
+        assertEquals(attempts, 3)
+      }
+    }
+  }
+
+  private val lines = List(
+    OrderReservationLine("item-1", "sku-1", 2),
+    OrderReservationLine("item-2", "sku-2", 1)
+  )
 }

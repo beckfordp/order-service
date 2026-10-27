@@ -19,30 +19,17 @@ import scala.concurrent.duration._
 
 class OrderRoutesSuite extends CatsEffectSuite {
 
-  private val createRequest = CreateOrderRequest(
-    "cust-123",
-    List(CreateOrderItemRequest("sku-1", "Widget", 999, 5))
-  )
+  private val createRequest = CheckoutFixtures.createRequest()
 
   /** Used by every test that isn't specifically exercising reservation outcomes -
     * always reserves successfully so those tests' assertions (about logging,
     * not-found handling, etc.) aren't coupled to US-4.2.
     */
   private val alwaysSucceedsInventoryClient: InventoryClient[IO] =
-    new InventoryClient[IO] {
-      def reserveOrder(
-          orderId: String,
-          items: List[OrderReservationLine]
-      ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
-      def release(orderId: String): IO[Unit] =
-        IO.raiseError(new NotImplementedError())
-      def reserve(
-          sku: String,
-          quantity: Int,
-          orderItemId: String
-      ): IO[ReservationResult] =
-        IO.pure(ReservationResult.Reserved)
-    }
+    CheckoutFixtures.alwaysReserves
+
+  private val alwaysAuthorizesPaymentClient: PaymentClient[IO] =
+    CheckoutFixtures.alwaysAuthorizes
 
   /** Used by every test that isn't specifically exercising history/caching
     * behavior - always a miss, never actually caches anything.
@@ -100,6 +87,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders").withEntity(
@@ -112,359 +100,10 @@ class OrderRoutesSuite extends CatsEffectSuite {
       assert(entity.id.nonEmpty)
       assertEquals(entity.totalCents, 999 * 5)
       assertEquals(entity.items.map(_.sku), List("sku-1"))
-      assertEquals(entity.status, "pending")
-      assertEquals(entity.reservationFailure, None)
-    }
-  }
-
-  test(
-    "POST /orders returns 201 with status reservation_failed when an item can't be reserved, and persists all items anyway"
-  ) {
-    val failsSecondItem: InventoryClient[IO] =
-      new InventoryClient[IO] {
-        def reserveOrder(
-            orderId: String,
-            items: List[OrderReservationLine]
-        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
-        def release(orderId: String): IO[Unit] =
-          IO.raiseError(new NotImplementedError())
-        def reserve(
-            sku: String,
-            quantity: Int,
-            orderItemId: String
-        ): IO[ReservationResult] =
-          if (sku == "sku-1") IO.pure(ReservationResult.Reserved)
-          else IO.pure(ReservationResult.InsufficientStock)
-      }
-    val twoItemRequest = CreateOrderRequest(
-      "cust-123",
-      List(
-        CreateOrderItemRequest("sku-1", "Widget", 999, 2),
-        CreateOrderItemRequest("sku-2", "Gadget", 500, 1)
-      )
-    )
-    for {
-      store <- OrderStore.inMemory[IO]
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        failsSecondItem,
-        noOpHistoryCache
-      )
-      response <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
-      )
-      entity <- response.as[OrderResponse]
-      getResponse <- routes.orNotFound.run(
-        Request[IO](Method.GET, uri"/orders" / entity.id)
-      )
-      fetched <- getResponse.as[OrderResponse]
-    } yield {
-      assertEquals(response.status, Status.Created)
-      assertEquals(entity.status, "reservation_failed")
-      assertEquals(entity.items.map(_.sku), List("sku-1", "sku-2"))
+      assertEquals(entity.status, "authorized")
       assertEquals(
-        entity.reservationFailure,
-        Some(ReservationFailure("sku-2", "insufficient stock for sku 'sku-2'"))
-      )
-      // Ephemeral by design (see spec's "Out of Scope") - not persisted, so a later
-      // GET of the same reservation_failed order can't recover the failure detail.
-      assertEquals(fetched.reservationFailure, None)
-    }
-  }
-
-  test(
-    "POST /orders returns 201 with status reservation_failed and the structured failure when an item's sku is unknown"
-  ) {
-    val unknownSecondItem: InventoryClient[IO] =
-      new InventoryClient[IO] {
-        def reserveOrder(
-            orderId: String,
-            items: List[OrderReservationLine]
-        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
-        def release(orderId: String): IO[Unit] =
-          IO.raiseError(new NotImplementedError())
-        def reserve(
-            sku: String,
-            quantity: Int,
-            orderItemId: String
-        ): IO[ReservationResult] =
-          if (sku == "sku-1") IO.pure(ReservationResult.Reserved)
-          else IO.pure(ReservationResult.UnknownSku)
-      }
-    val twoItemRequest = CreateOrderRequest(
-      "cust-123",
-      List(
-        CreateOrderItemRequest("sku-1", "Widget", 999, 2),
-        CreateOrderItemRequest("sku-2", "Gadget", 500, 1)
-      )
-    )
-    for {
-      store <- OrderStore.inMemory[IO]
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        unknownSecondItem,
-        noOpHistoryCache
-      )
-      response <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
-      )
-      entity <- response.as[OrderResponse]
-    } yield {
-      assertEquals(response.status, Status.Created)
-      assertEquals(entity.status, "reservation_failed")
-      assertEquals(
-        entity.reservationFailure,
-        Some(ReservationFailure("sku-2", "unknown sku 'sku-2'"))
-      )
-    }
-  }
-
-  test(
-    "POST /orders writes an outbox row (OrderStatusChanged, reservation_failed) when an item can't be reserved"
-  ) {
-    val failsSecondItem: InventoryClient[IO] =
-      new InventoryClient[IO] {
-        def reserveOrder(
-            orderId: String,
-            items: List[OrderReservationLine]
-        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
-        def release(orderId: String): IO[Unit] =
-          IO.raiseError(new NotImplementedError())
-        def reserve(
-            sku: String,
-            quantity: Int,
-            orderItemId: String
-        ): IO[ReservationResult] =
-          if (sku == "sku-1") IO.pure(ReservationResult.Reserved)
-          else IO.pure(ReservationResult.InsufficientStock)
-      }
-    val twoItemRequest = CreateOrderRequest(
-      "cust-123",
-      List(
-        CreateOrderItemRequest("sku-1", "Widget", 999, 2),
-        CreateOrderItemRequest("sku-2", "Gadget", 500, 1)
-      )
-    )
-    for {
-      storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
-      (store, outboxRef) = storeAndOutbox
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        failsSecondItem,
-        noOpHistoryCache
-      )
-      response <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
-      )
-      entity <- response.as[OrderResponse]
-      outboxed <- outboxRef.get
-    } yield {
-      assertEquals(entity.status, "reservation_failed")
-      assertEquals(outboxed.map(_._1), List(entity.id))
-      assertEquals(outboxed.map(_._2.eventType), List("OrderStatusChanged"))
-      val events = outboxed.map(_._2.payload.as[OrderStatusChangedEvent])
-      assertEquals(events.flatMap(_.toOption.map(_.orderId)), List(entity.id))
-      assertEquals(
-        events.flatMap(_.toOption.map(_.customerId)),
-        List("cust-123")
-      )
-      assertEquals(
-        events.flatMap(_.toOption.map(_.status)),
-        List("reservation_failed")
-      )
-    }
-  }
-
-  test(
-    "POST /orders writes no outbox row when reservation succeeds"
-  ) {
-    for {
-      storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
-      (store, outboxRef) = storeAndOutbox
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        alwaysSucceedsInventoryClient,
-        noOpHistoryCache
-      )
-      response <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
-      )
-      entity <- response.as[OrderResponse]
-      outboxed <- outboxRef.get
-    } yield {
-      assertEquals(entity.status, "pending")
-      assertEquals(outboxed, Nil)
-    }
-  }
-
-  test(
-    "POST /orders returns 201 with status reservation_failed when the inventory client raises (e.g. circuit open)"
-  ) {
-    val raisingClient: InventoryClient[IO] =
-      new InventoryClient[IO] {
-        def reserveOrder(
-            orderId: String,
-            items: List[OrderReservationLine]
-        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
-        def release(orderId: String): IO[Unit] =
-          IO.raiseError(new NotImplementedError())
-        def reserve(
-            sku: String,
-            quantity: Int,
-            orderItemId: String
-        ): IO[ReservationResult] =
-          IO.raiseError(new RuntimeException("circuit open"))
-      }
-    for {
-      store <- OrderStore.inMemory[IO]
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        raisingClient,
-        noOpHistoryCache
-      )
-      response <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
-      )
-      entity <- response.as[OrderResponse]
-    } yield {
-      assertEquals(response.status, Status.Created)
-      assertEquals(entity.status, "reservation_failed")
-      assertEquals(entity.items.map(_.sku), List("sku-1"))
-      assertEquals(
-        entity.reservationFailure,
-        Some(
-          ReservationFailure(
-            "sku-1",
-            "reservation call failed for sku 'sku-1': circuit open"
-          )
-        )
-      )
-    }
-  }
-
-  test(
-    "POST /orders does not call the inventory client a second time once an earlier item fails (short-circuit)"
-  ) {
-    for {
-      callCount <- IO.ref(0)
-      client = new InventoryClient[IO] {
-        def reserveOrder(
-            orderId: String,
-            items: List[OrderReservationLine]
-        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
-        def release(orderId: String): IO[Unit] =
-          IO.raiseError(new NotImplementedError())
-        def reserve(
-            sku: String,
-            quantity: Int,
-            orderItemId: String
-        ): IO[ReservationResult] =
-          callCount.update(_ + 1).as(ReservationResult.InsufficientStock)
-      }
-      twoItemRequest = CreateOrderRequest(
-        "cust-123",
-        List(
-          CreateOrderItemRequest("sku-1", "Widget", 999, 2),
-          CreateOrderItemRequest("sku-2", "Gadget", 500, 1)
-        )
-      )
-      store <- OrderStore.inMemory[IO]
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        client,
-        noOpHistoryCache
-      )
-      _ <- routes.orNotFound.run(
-        Request[IO](Method.POST, uri"/orders").withEntity(twoItemRequest)
-      )
-      calls <- callCount.get
-    } yield assertEquals(calls, 1)
-  }
-
-  test(
-    "POST /orders returns 400 with a JSON error body for an empty items list, and persists nothing"
-  ) {
-    for {
-      store <- OrderStore.inMemory[IO]
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        alwaysSucceedsInventoryClient,
-        noOpHistoryCache
-      )
-      request = Request[IO](Method.POST, uri"/orders")
-        .withEntity(CreateOrderRequest("cust-123", Nil))
-      response <- routes.orNotFound.run(request)
-      body <- response.as[io.circe.Json]
-    } yield {
-      assertEquals(response.status, Status.BadRequest)
-      assert(
-        body.asObject.exists(_.contains("error")),
-        s"expected a JSON error body, got: $body"
-      )
-    }
-  }
-
-  test(
-    "POST /orders returns 400 with a JSON error body for an item with non-positive quantity"
-  ) {
-    for {
-      store <- OrderStore.inMemory[IO]
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        alwaysSucceedsInventoryClient,
-        noOpHistoryCache
-      )
-      request = Request[IO](Method.POST, uri"/orders")
-        .withEntity(
-          CreateOrderRequest(
-            "cust-123",
-            List(CreateOrderItemRequest("sku-1", "Widget", 999, 0))
-          )
-        )
-      response <- routes.orNotFound.run(request)
-      body <- response.as[io.circe.Json]
-    } yield {
-      assertEquals(response.status, Status.BadRequest)
-      assert(
-        body.asObject.exists(_.contains("error")),
-        s"expected a JSON error body, got: $body"
-      )
-    }
-  }
-
-  test(
-    "POST /orders returns 400 with a JSON error body for an item with a negative unitPriceCents"
-  ) {
-    for {
-      store <- OrderStore.inMemory[IO]
-      routes = OrderRoutes.routes[IO](
-        store,
-        NoOpLogger[IO],
-        alwaysSucceedsInventoryClient,
-        noOpHistoryCache
-      )
-      request = Request[IO](Method.POST, uri"/orders")
-        .withEntity(
-          CreateOrderRequest(
-            "cust-123",
-            List(CreateOrderItemRequest("sku-1", "Widget", -1, 1))
-          )
-        )
-      response <- routes.orNotFound.run(request)
-      body <- response.as[io.circe.Json]
-    } yield {
-      assertEquals(response.status, Status.BadRequest)
-      assert(
-        body.asObject.exists(_.contains("error")),
-        s"expected a JSON error body, got: $body"
+        entity.shippingAddress,
+        Some(CheckoutFixtures.shippingAddress)
       )
     }
   }
@@ -476,6 +115,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -502,6 +142,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
@@ -527,6 +168,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders").withEntity(
@@ -564,6 +206,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         failingStore(boom),
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       request = Request[IO](Method.POST, uri"/orders").withEntity(
@@ -591,6 +234,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -633,6 +277,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
@@ -659,6 +304,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -686,6 +332,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
@@ -711,6 +358,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -732,7 +380,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         body.asObject.exists(_.contains("error")),
         s"expected a JSON error body, got: $body"
       )
-      assertEquals(unchanged.status, "pending")
+      assertEquals(unchanged.status, "authorized")
     }
   }
 
@@ -746,6 +394,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -777,6 +426,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -798,7 +448,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         body.asObject.exists(_.contains("error")),
         s"expected a JSON error body, got: $body"
       )
-      assertEquals(unchanged.status, "pending")
+      assertEquals(unchanged.status, "authorized")
     }
   }
 
@@ -812,6 +462,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -853,6 +504,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
@@ -882,6 +534,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -909,6 +562,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
@@ -934,6 +588,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -974,6 +629,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         testLogger,
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
@@ -1000,6 +656,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       postResponse <- routes.orNotFound.run(
@@ -1027,6 +684,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
@@ -1054,6 +712,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
             store,
             NoOpLogger[IO],
             alwaysSucceedsInventoryClient,
+            alwaysAuthorizesPaymentClient,
             noOpHistoryCache
           )
         )
@@ -1076,6 +735,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
@@ -1098,6 +758,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         noOpHistoryCache
       )
       firstPost <- routes.orNotFound.run(
@@ -1171,6 +832,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         countingStore,
         NoOpLogger[IO],
         alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
         cache
       )
       _ <- routes.orNotFound.run(

@@ -4,7 +4,6 @@ import cats.effect.Async
 import cats.syntax.all._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
-import io.circe.syntax._
 import org.http4s.HttpRoutes
 import org.typelevel.log4cats.StructuredLogger
 import sttp.model.StatusCode
@@ -27,7 +26,9 @@ object CreateOrderItemRequest {
 
 final case class CreateOrderRequest(
     customerId: String,
-    items: List[CreateOrderItemRequest]
+    items: List[CreateOrderItemRequest],
+    shippingAddress: Address,
+    paymentMethodId: String
 )
 
 object CreateOrderRequest {
@@ -61,12 +62,6 @@ object OrderItemResponse {
     )
 }
 
-final case class ReservationFailure(sku: String, reason: String)
-
-object ReservationFailure {
-  implicit val codec: Codec[ReservationFailure] = deriveCodec
-}
-
 final case class OrderResponse(
     id: String,
     customerId: String,
@@ -75,17 +70,13 @@ final case class OrderResponse(
     items: List[OrderItemResponse],
     createdAt: java.time.Instant,
     updatedAt: java.time.Instant,
-    reservationFailure: Option[ReservationFailure]
+    shippingAddress: Option[Address]
 )
 
 object OrderResponse {
   implicit val codec: Codec[OrderResponse] = deriveCodec
 
-  def apply(
-      entity: Order,
-      items: List[OrderItem],
-      reservationFailure: Option[ReservationFailure] = None
-  ): OrderResponse =
+  def apply(entity: Order, items: List[OrderItem]): OrderResponse =
     OrderResponse(
       entity.id,
       entity.customerId,
@@ -94,7 +85,7 @@ object OrderResponse {
       items.map(OrderItemResponse(_)),
       entity.createdAt,
       entity.updatedAt,
-      reservationFailure
+      entity.shippingAddress
     )
 }
 
@@ -102,6 +93,36 @@ final case class ErrorResponse(error: String)
 
 object ErrorResponse {
   implicit val codec: Codec[ErrorResponse] = deriveCodec
+}
+
+final case class PaymentFailure(reason: String)
+
+object PaymentFailure {
+  implicit val codec: Codec[PaymentFailure] = deriveCodec
+}
+
+final case class PaymentDeclinedResponse(
+    error: String,
+    paymentFailure: PaymentFailure
+)
+
+object PaymentDeclinedResponse {
+  implicit val codec: Codec[PaymentDeclinedResponse] = deriveCodec
+}
+
+final case class ReservationFailureResponse(sku: String, reason: String)
+
+object ReservationFailureResponse {
+  implicit val codec: Codec[ReservationFailureResponse] = deriveCodec
+}
+
+final case class InsufficientStockResponse(
+    error: String,
+    reservationFailures: List[ReservationFailureResponse]
+)
+
+object InsufficientStockResponse {
+  implicit val codec: Codec[InsufficientStockResponse] = deriveCodec
 }
 
 object OrderRoutes {
@@ -144,15 +165,82 @@ object OrderRoutes {
         )
     )
 
-  // Shared by all five error-returning endpoints below - most only ever
-  // produce a subset of these variants, but reusing one mapping keeps there
-  // from being multiple places to update if a shape ever changes.
+  private val invalidCheckoutVariant
+      : EndpointOutput.OneOfVariant[InvalidCheckout] =
+    oneOfVariant(
+      statusCode(StatusCode.BadRequest)
+        .and(jsonBody[ErrorResponse])
+        .map(e => InvalidCheckout(e.error))(e => ErrorResponse(e.message))
+    )
+
+  private val paymentDeclinedVariant
+      : EndpointOutput.OneOfVariant[PaymentDeclined] =
+    oneOfVariant(
+      statusCode(StatusCode.PaymentRequired)
+        .and(jsonBody[PaymentDeclinedResponse])
+        .map(r => PaymentDeclined(r.paymentFailure.reason))(d =>
+          PaymentDeclinedResponse("Payment declined", PaymentFailure(d.reason))
+        )
+    )
+
+  // `orderItemId` isn't part of the 409 body (gshop matches lines by sku),
+  // so decoding - only ever done by tapir clients - can't restore it.
+  private val insufficientStockVariant
+      : EndpointOutput.OneOfVariant[InsufficientStock] =
+    oneOfVariant(
+      statusCode(StatusCode.Conflict)
+        .and(jsonBody[InsufficientStockResponse])
+        .map(r =>
+          InsufficientStock(
+            r.reservationFailures.map(f => StockFailure("", f.sku, f.reason))
+          )
+        )(e =>
+          InsufficientStockResponse(
+            "Insufficient stock",
+            e.failures.map(f => ReservationFailureResponse(f.sku, f.reason))
+          )
+        )
+    )
+
+  private def fixedVariant[E <: OrderError: scala.reflect.ClassTag](
+      status: StatusCode,
+      value: E,
+      message: String
+  ): EndpointOutput.OneOfVariant[E] =
+    oneOfVariant(
+      statusCode(status)
+        .and(jsonBody[ErrorResponse])
+        .map(_ => value)(_ => ErrorResponse(message))
+    )
+
+  // Shared by all error-returning endpoints below - most only ever produce a
+  // subset of these variants, but reusing one mapping keeps there from being
+  // multiple places to update if a shape ever changes. The two 503s share a
+  // status, so they're told apart on encode by type and on decode by order.
   private val orderErrorOutput: EndpointOutput[OrderError] =
     oneOf[OrderError](
       notFoundVariant,
       invalidStatusVariant,
       emptyOrderItemsVariant,
-      invalidOrderItemVariant
+      invalidOrderItemVariant,
+      invalidCheckoutVariant,
+      paymentDeclinedVariant,
+      insufficientStockVariant,
+      fixedVariant(
+        StatusCode.ServiceUnavailable,
+        PaymentServiceUnavailable,
+        "Payment service unavailable"
+      ),
+      fixedVariant(
+        StatusCode.ServiceUnavailable,
+        InventoryServiceUnavailable,
+        "Inventory service unavailable"
+      ),
+      fixedVariant(
+        StatusCode.InternalServerError,
+        OrderPersistFailed,
+        "Order could not be saved"
+      )
     )
 
   private val createOrderEndpoint: PublicEndpoint[
@@ -255,54 +343,137 @@ object OrderRoutes {
           )
       }
 
-  /** Attempts to reserve every item in order, sequentially, short-circuiting at
-    * the first item that can't be reserved (all-or-nothing - see US-4.2's spec,
-    * "Out of Scope" re: partial fulfillment). Returns `Left(failure)` for the
-    * first failure - a non-`Reserved` result or the client itself raising (e.g.
-    * the circuit breaker open, retries exhausted) - never calling `reserve` for
-    * any item after that point.
+  /** Everything `POST /orders` needs before calling anything downstream: valid
+    * items, shipping address and payment method id.
     */
-  private def reserveAll[F[_]: Async](
-      inventoryClient: InventoryClient[F],
-      items: List[OrderItem]
-  ): F[Either[ReservationFailure, Unit]] =
-    items.foldLeft(
-      Async[F].pure(Right(()): Either[ReservationFailure, Unit])
-    ) { (acc, item) =>
-      acc.flatMap {
-        case failed @ Left(_) => Async[F].pure(failed)
-        case Right(())        =>
-          inventoryClient
-            .reserve(item.sku, item.quantity, item.id)
-            .attempt
-            .map {
-              case Right(ReservationResult.Reserved)          => Right(())
-              case Right(ReservationResult.InsufficientStock) =>
-                Left(
-                  ReservationFailure(
-                    item.sku,
-                    s"insufficient stock for sku '${item.sku}'"
-                  )
-                )
-              case Right(ReservationResult.UnknownSku) =>
-                Left(ReservationFailure(item.sku, s"unknown sku '${item.sku}'"))
-              case Left(error) =>
-                Left(
-                  ReservationFailure(
-                    item.sku,
-                    s"reservation call failed for sku '${item.sku}': ${error.getMessage}"
-                  )
-                )
-            }
-      }
-    }
+  private def validateCheckout(
+      req: CreateOrderRequest
+  ): Either[OrderError, List[NewOrderItem]] =
+    for {
+      items <- validateItems(req.items)
+      _ <- Address.validate(req.shippingAddress).leftMap(InvalidCheckout(_))
+      _ <- scala.util
+        .Try(java.util.UUID.fromString(req.paymentMethodId))
+        .toEither
+        .leftMap(_ => InvalidCheckout("paymentMethodId must be a UUID"))
+    } yield items
 
+  /** ADR 0018 checkout: validate → mint ids → bulk reserve → authorize →
+    * persist as `authorized`. Nothing is written unless every step succeeds;
+    * every failure after the reserve call releases whatever it holds (also when
+    * the reserve call itself raised, since it may have landed). A failed
+    * release is logged and otherwise ignored — it's idempotent, and a missed
+    * one is TD-8's orphaned reservation.
+    */
   def serverEndpoint[F[_]: Async](
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      inventoryClient: InventoryClient[F]
+      inventoryClient: InventoryClient[F],
+      paymentClient: PaymentClient[F]
   ): ServerEndpoint[Any, F] =
     createOrderEndpoint.serverLogic[F] { req =>
+      def release(orderId: String): F[Unit] =
+        inventoryClient.release(orderId).handleErrorWith { error =>
+          logger.warn(Map("order_id" -> orderId), error)(
+            "Releasing the reservation failed"
+          )
+        }
+
+      def fail(orderId: String, error: OrderError, releaseFirst: Boolean)(
+          log: F[Unit]
+      ): F[Either[OrderError, OrderResponse]] =
+        log *> release(orderId).whenA(releaseFirst).as(Left(error))
+
+      def place(
+          items: List[NewOrderItem]
+      ): F[Either[OrderError, OrderResponse]] =
+        for {
+          orderId <- Async[F].delay(java.util.UUID.randomUUID().toString)
+          now <- Async[F].realTimeInstant
+          orderItems <- items.traverse { item =>
+            Async[F].delay(java.util.UUID.randomUUID().toString).map { id =>
+              OrderItem(
+                id,
+                orderId,
+                item.sku,
+                item.productName,
+                item.unitPriceCents,
+                item.quantity
+              )
+            }
+          }
+          order = Order(
+            orderId,
+            req.customerId,
+            orderItems.map(i => i.unitPriceCents * i.quantity).sum,
+            OrderStatus.Authorized,
+            now,
+            now,
+            Some(req.shippingAddress)
+          )
+          context = Map("order_id" -> orderId, "customer_id" -> req.customerId)
+          reserved <- inventoryClient
+            .reserveOrder(
+              orderId,
+              orderItems.map(i => OrderReservationLine(i.id, i.sku, i.quantity))
+            )
+            .attempt
+          result <- reserved match {
+            case Left(error) =>
+              fail(orderId, InventoryServiceUnavailable, releaseFirst = true)(
+                logger.warn(context, error)("Reservation call failed")
+              )
+            case Right(OrderReservationResult.Rejected(failures)) =>
+              fail(orderId, InsufficientStock(failures), releaseFirst = false)(
+                logger.warn(
+                  context + ("failed_lines" -> failures.size.toString)
+                )(
+                  "Reservation rejected"
+                )
+              )
+            case Right(OrderReservationResult.Reserved) =>
+              authorizeAndPersist(order, orderItems, context)
+          }
+        } yield result
+
+      def authorizeAndPersist(
+          order: Order,
+          items: List[OrderItem],
+          context: Map[String, String]
+      ): F[Either[OrderError, OrderResponse]] =
+        paymentClient
+          .authorize(order.id, order.totalCents, req.paymentMethodId)
+          .attempt
+          .flatMap {
+            case Left(error) =>
+              fail(order.id, PaymentServiceUnavailable, releaseFirst = true)(
+                logger.warn(context, error)("Authorize call failed")
+              )
+            case Right(AuthorizationResult.Declined(reason)) =>
+              fail(order.id, PaymentDeclined(reason), releaseFirst = true)(
+                logger.warn(context + ("reason" -> reason))("Payment declined")
+              )
+            case Right(AuthorizationResult.UnknownPaymentMethod) =>
+              fail(
+                order.id,
+                InvalidCheckout("Payment method not found"),
+                releaseFirst = true
+              )(logger.warn(context)("Unknown payment method"))
+            case Right(AuthorizationResult.Authorized(_, _)) =>
+              store.createAuthorized(order, items).attempt.flatMap {
+                case Left(error) =>
+                  // The authorization is left to lapse via Journey 5's expiry
+                  // sweep: payment-service has no void endpoint yet.
+                  fail(order.id, OrderPersistFailed, releaseFirst = true)(
+                    logger.error(context, error)("Persisting the order failed")
+                  )
+                case Right((persisted, persistedItems)) =>
+                  logger
+                    .info(context)("Request completed")
+                    .as(Right(OrderResponse(persisted, persistedItems)))
+              }
+          }
+
       for {
         _ <- logger.info(
           Map(
@@ -310,7 +481,7 @@ object OrderRoutes {
             "path" -> "/orders"
           )
         )("Received request")
-        result <- validateItems(req.items) match {
+        result <- validateCheckout(req) match {
           case Left(error) =>
             logger
               .warn(
@@ -318,59 +489,9 @@ object OrderRoutes {
                   "customer_id" -> req.customerId,
                   "reason" -> error.toString
                 )
-              )("Invalid order items")
+              )("Invalid checkout request")
               .as(Left(error): Either[OrderError, OrderResponse])
-          case Right(items) =>
-            for {
-              created <- store.create(req.customerId, items).onError {
-                case error =>
-                  logger.error(Map.empty, error)("Persisting the order failed")
-              }
-              (order, orderItems) = created
-              reservation <- reserveAll(inventoryClient, orderItems)
-              failureOpt = reservation match {
-                case Left(failure) => Some(failure)
-                case Right(())     => None
-              }
-              finalOrder <- reservation match {
-                case Right(()) =>
-                  logger
-                    .info(Map("order_id" -> order.id))("Request completed")
-                    .as((order, orderItems))
-                case Left(failure) =>
-                  for {
-                    _ <- logger.warn(
-                      Map("order_id" -> order.id, "reason" -> failure.reason)
-                    )("Reservation failed")
-                    // Known edge case (review finding, US-4.2): if `update` returns
-                    // None - e.g. the order row vanishes between creation and this
-                    // call - the response falls back to the stale `order` object,
-                    // which still reports `pending` instead of `reservation_failed`.
-                    // Accepted risk: requires the just-created order to disappear
-                    // within the same request. Not fixed; tracked in the backlog.
-                    updated <- Async[F].realTimeInstant.flatMap { now =>
-                      store.update(
-                        order.id,
-                        OrderStatus.ReservationFailed,
-                        Some(
-                          PendingOutboxEvent(
-                            "OrderStatusChanged",
-                            ref =>
-                              OrderStatusChangedEvent(
-                                ref.orderId,
-                                ref.customerId,
-                                OrderStatus.ReservationFailed.asString,
-                                now
-                              ).asJson
-                          )
-                        )
-                      )
-                    }
-                  } yield updated.getOrElse((order, orderItems))
-              }
-            } yield Right(
-              OrderResponse(finalOrder._1, finalOrder._2, failureOpt)
-            ): Either[OrderError, OrderResponse]
+          case Right(items) => place(items)
         }
       } yield result
     }
@@ -523,11 +644,12 @@ object OrderRoutes {
       store: OrderStore[F],
       logger: StructuredLogger[F],
       inventoryClient: InventoryClient[F],
+      paymentClient: PaymentClient[F],
       historyCache: OrderHistoryCache[F]
   ): HttpRoutes[F] =
     Http4sServerInterpreter[F]().toRoutes(
       List(
-        serverEndpoint(store, logger, inventoryClient),
+        serverEndpoint(store, logger, inventoryClient, paymentClient),
         listOrdersServerEndpoint(store, logger, historyCache),
         getOrderServerEndpoint(store, logger),
         updateOrderServerEndpoint(store, logger),

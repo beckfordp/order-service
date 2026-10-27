@@ -24,6 +24,7 @@ object AppRoutes {
   def all[F[_]: Async](
       store: OrderStore[F],
       inventoryClient: InventoryClient[F],
+      paymentClient: PaymentClient[F],
       historyCache: OrderHistoryCache[F],
       telemetry: Telemetry[F],
       channels: List[AsyncApiChannel[?]]
@@ -38,7 +39,12 @@ object AppRoutes {
       "Order Service",
       "1.0",
       List(
-        OrderRoutes.serverEndpoint[F](store, telemetry.logger, inventoryClient),
+        OrderRoutes.serverEndpoint[F](
+          store,
+          telemetry.logger,
+          inventoryClient,
+          paymentClient
+        ),
         OrderRoutes.listOrdersServerEndpoint[F](
           store,
           telemetry.logger,

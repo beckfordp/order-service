@@ -12,6 +12,5 @@ folder), so `/conductor:implement` cannot pick these up by accident. Reorder fre
 priorities change. When ready to work on one, run `/conductor:newTrack <title>` to go
 through the spec/plan questions and promote it into a real track above.
 
-- fix: reservation-failure response falls back to stale `pending` status if OrderStore.update races to None (US-4.2 review finding)
 
 ---

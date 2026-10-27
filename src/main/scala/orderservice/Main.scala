@@ -46,6 +46,11 @@ object Main extends IOApp.Simple {
       config.inventoryClient,
       telemetry
     )
+    paymentClient = PaymentClient.resilient[IO](
+      httpClient,
+      config.paymentClient,
+      telemetry
+    )
     historyCache <- OrderHistoryCache.resource[IO](
       config.redis,
       telemetry.logger
@@ -53,6 +58,7 @@ object Main extends IOApp.Simple {
     routes = AppRoutes.all[IO](
       store,
       inventoryClient,
+      paymentClient,
       historyCache,
       telemetry,
       AsyncApiChannels.channels

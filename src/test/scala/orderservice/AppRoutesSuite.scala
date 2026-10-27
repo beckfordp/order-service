@@ -20,19 +20,7 @@ class AppRoutesSuite extends CatsEffectSuite {
   }
 
   private val alwaysSucceedsInventoryClient: InventoryClient[IO] =
-    new InventoryClient[IO] {
-      def reserveOrder(
-          orderId: String,
-          items: List[OrderReservationLine]
-      ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
-      def release(orderId: String): IO[Unit] =
-        IO.raiseError(new NotImplementedError())
-      def reserve(
-          sku: String,
-          quantity: Int,
-          orderItemId: String
-      ): IO[ReservationResult] = IO.pure(ReservationResult.Reserved)
-    }
+    CheckoutFixtures.alwaysReserves
 
   private val noOpHistoryCache: OrderHistoryCache[IO] =
     new OrderHistoryCache[IO] {
@@ -57,6 +45,7 @@ class AppRoutesSuite extends CatsEffectSuite {
     } yield AppRoutes.all[IO](
       store,
       alwaysSucceedsInventoryClient,
+      CheckoutFixtures.alwaysAuthorizes,
       noOpHistoryCache,
       Telemetry(testTracer.tracer, testMeter.meter, NoOpLogger[IO]),
       demoChannels
@@ -90,10 +79,7 @@ class AppRoutesSuite extends CatsEffectSuite {
   }
 
   test("POST /orders resolves and creates an order end-to-end") {
-    val createRequest = CreateOrderRequest(
-      "cust-123",
-      List(CreateOrderItemRequest("sku-1", "Widget", 999, 5))
-    )
+    val createRequest = CheckoutFixtures.createRequest()
     withRoutes { routes =>
       routes.orNotFound
         .run(
