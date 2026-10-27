@@ -4,7 +4,7 @@
 - [x] Task: `Address` type + validation (US-11.1) `0c1586c`
 - [x] Task: V9 migration (`shipping_address` jsonb, `authorized` in CHECK) + `OrderStatus.Authorized` `bcf27dd`
 - [x] Task: `OrderStore.createAuthorized` (in-memory + postgres; pre-minted ids, address, one tx) + `shippingAddress` read back by get/list `111d368`
-- [ ] Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md) — prompt-off: 179 tests pass, coverage 91.79% stmt / 91.47% branch; store-only phase, end-to-end script in Phase 4
 
 ## Phase 2: Outbound clients
 - [ ] Task: `InventoryClient.reserveOrder` / `release` (stub Client[F] tests: 201/409/other; 204/other); per-item `reserve` dropped with the handler switch in Phase 3
