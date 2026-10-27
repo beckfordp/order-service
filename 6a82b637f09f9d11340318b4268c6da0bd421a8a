@@ -1,0 +1,1 @@
+verify-checkout-journey1.sh: 25/25 live against real service + Postgres, scripts/lib/checkout-stubs.py standing in for inventory/payment (authorized, declined, unknown method, out of stock, invalid; release calls + no-row asserted). verify-order-status/verify-order-history-cache retrofitted to the new POST /orders body + stand-in; both pass.
