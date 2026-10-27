@@ -3,7 +3,7 @@
 ## Phase 1: Domain + persistence
 - [x] Task: `Address` type + validation (US-11.1) `0c1586c`
 - [x] Task: V9 migration (`shipping_address` jsonb, `authorized` in CHECK) + `OrderStatus.Authorized` `bcf27dd`
-- [ ] Task: `OrderStore.createAuthorized` (in-memory + postgres; pre-minted ids, address, one tx) + `shippingAddress` read back by get/list
+- [x] Task: `OrderStore.createAuthorized` (in-memory + postgres; pre-minted ids, address, one tx) + `shippingAddress` read back by get/list `111d368`
 - [ ] Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)
 
 ## Phase 2: Outbound clients
