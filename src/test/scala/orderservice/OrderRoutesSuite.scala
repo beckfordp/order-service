@@ -30,6 +30,12 @@ class OrderRoutesSuite extends CatsEffectSuite {
     */
   private val alwaysSucceedsInventoryClient: InventoryClient[IO] =
     new InventoryClient[IO] {
+      def reserveOrder(
+          orderId: String,
+          items: List[OrderReservationLine]
+      ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
+      def release(orderId: String): IO[Unit] =
+        IO.raiseError(new NotImplementedError())
       def reserve(
           sku: String,
           quantity: Int,
@@ -116,6 +122,12 @@ class OrderRoutesSuite extends CatsEffectSuite {
   ) {
     val failsSecondItem: InventoryClient[IO] =
       new InventoryClient[IO] {
+        def reserveOrder(
+            orderId: String,
+            items: List[OrderReservationLine]
+        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
+        def release(orderId: String): IO[Unit] =
+          IO.raiseError(new NotImplementedError())
         def reserve(
             sku: String,
             quantity: Int,
@@ -166,6 +178,12 @@ class OrderRoutesSuite extends CatsEffectSuite {
   ) {
     val unknownSecondItem: InventoryClient[IO] =
       new InventoryClient[IO] {
+        def reserveOrder(
+            orderId: String,
+            items: List[OrderReservationLine]
+        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
+        def release(orderId: String): IO[Unit] =
+          IO.raiseError(new NotImplementedError())
         def reserve(
             sku: String,
             quantity: Int,
@@ -208,6 +226,12 @@ class OrderRoutesSuite extends CatsEffectSuite {
   ) {
     val failsSecondItem: InventoryClient[IO] =
       new InventoryClient[IO] {
+        def reserveOrder(
+            orderId: String,
+            items: List[OrderReservationLine]
+        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
+        def release(orderId: String): IO[Unit] =
+          IO.raiseError(new NotImplementedError())
         def reserve(
             sku: String,
             quantity: Int,
@@ -282,6 +306,12 @@ class OrderRoutesSuite extends CatsEffectSuite {
   ) {
     val raisingClient: InventoryClient[IO] =
       new InventoryClient[IO] {
+        def reserveOrder(
+            orderId: String,
+            items: List[OrderReservationLine]
+        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
+        def release(orderId: String): IO[Unit] =
+          IO.raiseError(new NotImplementedError())
         def reserve(
             sku: String,
             quantity: Int,
@@ -323,6 +353,12 @@ class OrderRoutesSuite extends CatsEffectSuite {
     for {
       callCount <- IO.ref(0)
       client = new InventoryClient[IO] {
+        def reserveOrder(
+            orderId: String,
+            items: List[OrderReservationLine]
+        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
+        def release(orderId: String): IO[Unit] =
+          IO.raiseError(new NotImplementedError())
         def reserve(
             sku: String,
             quantity: Int,

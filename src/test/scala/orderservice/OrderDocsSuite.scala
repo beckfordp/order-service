@@ -16,6 +16,12 @@ class OrderDocsSuite extends CatsEffectSuite {
     for {
       store <- OrderStore.inMemory[IO]
       inventoryClient = new InventoryClient[IO] {
+        def reserveOrder(
+            orderId: String,
+            items: List[OrderReservationLine]
+        ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
+        def release(orderId: String): IO[Unit] =
+          IO.raiseError(new NotImplementedError())
         def reserve(
             sku: String,
             quantity: Int,

@@ -21,6 +21,12 @@ class AppRoutesSuite extends CatsEffectSuite {
 
   private val alwaysSucceedsInventoryClient: InventoryClient[IO] =
     new InventoryClient[IO] {
+      def reserveOrder(
+          orderId: String,
+          items: List[OrderReservationLine]
+      ): IO[OrderReservationResult] = IO.raiseError(new NotImplementedError())
+      def release(orderId: String): IO[Unit] =
+        IO.raiseError(new NotImplementedError())
       def reserve(
           sku: String,
           quantity: Int,
