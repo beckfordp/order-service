@@ -14,23 +14,21 @@
   limited to this service's five CRUD routes, `Content-Type` header allowed,
   credentials disallowed. Ported from `pure-service-generator`'s
   `cors_20261010` track (TD-1.2).
-- fs2-kafka 3.6.0 — consumer side (US-5.2), subscribes to
-  `inventory-events` (`StockReserved`/`StockReservationFailed`); a second
-  consumer (`PaymentEventConsumer`) subscribes to `payment-events`
-  (`PaymentCaptured`/`PaymentAuthorizationExpired`/`PaymentFailed`; Rework 7).
+- fs2-kafka 3.6.0 — consumer side: `PaymentEventConsumer` subscribes to
+  `payment-events` (`PaymentCaptured`/`PaymentAuthorizationExpired`/
+  `PaymentFailed`; Rework 7). The earlier `StockEventConsumer`
+  (`inventory-events`) was retired under ADR 0018 (TD-7.3).
   Producer side (`OrderEventPublisher`,
   added for US-5.3) was deleted in TD-3.2/ADR 0008: publishing an
   `order-events` event is now a write to the
   `outbox_events` table inside the same Postgres transaction as the state
   change it announces (see `OrderStore.PendingOutboxEvent`), not a direct
   Kafka produce call
-- purekafka (`io.github.beckfordp`) — `consumer.StreamSupervisor` wraps each
-  of `StockEventConsumer`/`PaymentEventConsumer`'s stream individually
-  (restart-with-backoff in isolation, not the merged stream as one unit) and
-  `consumer.DeadLetter` wraps each consumer's per-message processing
-  (bounded retry, then routes to `inventory-events-dlq`/`payment-events-dlq`
-  on exhaustion) — TD-2.2/TD-2.4, ADR 0010. Wired together in
-  `KafkaConsumers.supervised`
+- purekafka (`io.github.beckfordp`) — `consumer.StreamSupervisor` wraps
+  `PaymentEventConsumer`'s stream (restart-with-backoff) and
+  `consumer.DeadLetter` wraps its per-message processing (bounded retry, then
+  routes to `payment-events-dlq` on exhaustion) — TD-2.2/TD-2.4, ADR 0010.
+  Wired together in `KafkaConsumers.supervised`
 - cats-retry (`com.github.cb372`) — not an explicit `build.sbt` dependency;
   comes transitively via `purerestlib`, which uses it internally for
   `purerest.resilience`'s own `Client[F]` retry middleware. Used directly
