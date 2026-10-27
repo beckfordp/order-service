@@ -19,7 +19,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md) — prompt-off: 188 tests pass, coverage 91.74% stmt / 91.04% branch (OrderRoutes 98.1%, PaymentClient 97.5%, InventoryClient/Address 100%); live end-to-end in Phase 4 script
 
 ## Phase 4: Retire legacy + verify
-- [x] Task: Remove `StockEventConsumer` (+ KafkaConsumers wiring, Subscribe channels, tests), `OrderReservedEvent` channel, now-unused store methods; `OrderStatusChanged` enum drops `reservation_failed`; `schemaRegistryCheck`; delete `order-events-OrderReserved` artifact `b852989`
-- [ ] Task: Delete/replace verify scripts for removed behaviour (stock consumer, order-reserved e2e, orderitemid wiring, reserve resilience, checkout-creates-order)
+- [x] Task: Remove `StockEventConsumer` (+ KafkaConsumers wiring, Subscribe channels, tests), `OrderReservedEvent` channel, now-unused store methods; `OrderStatusChanged` enum drops `reservation_failed` (kept: dropping fails BACKWARD); `schemaRegistryCheck`; delete `order-events-OrderReserved` artifact `b852989`
+- [x] Task: Delete/replace verify scripts for removed behaviour (stock consumer, order-reserved e2e, orderitemid wiring, reserve resilience, checkout-creates-order) `bb66cc5`
 - [ ] Task: `scripts/verify-checkout-journey1.sh` (real service + Postgres, Python stand-ins for inventory/payment): authorized, declined, out-of-stock, unknown method, release calls observed
 - [ ] Task: Conductor - User Manual Verification 'Phase 4' (Protocol in workflow.md)
