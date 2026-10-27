@@ -1,0 +1,1 @@
+Task: V9 migration + OrderStatus.Authorized (US-11.1, ADR 0018). Files: V9__add_shipping_address_and_authorized_status.sql (nullable jsonb shipping_address; authorized added to CHECK, legacy values kept), OrderStatus.scala, MigrationsSuite, OrderStatusSuite.
