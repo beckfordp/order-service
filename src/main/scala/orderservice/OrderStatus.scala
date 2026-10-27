@@ -8,9 +8,14 @@ sealed trait OrderStatus {
     case OrderStatus.Confirmed         => "confirmed"
     case OrderStatus.PaymentFailed     => "payment_failed"
     case OrderStatus.Cancelled         => "cancelled"
+    case OrderStatus.Authorized        => "authorized"
   }
 }
 
+/** `Authorized` is where every order starts under ADR 0018 (no row until
+  * payment is authorized). `Pending`/`Reserved`/`ReservationFailed` are no
+  * longer produced; they stay so orders written before ADR 0018 still load.
+  */
 object OrderStatus {
   case object Pending extends OrderStatus
   case object Reserved extends OrderStatus
@@ -18,6 +23,7 @@ object OrderStatus {
   case object Confirmed extends OrderStatus
   case object PaymentFailed extends OrderStatus
   case object Cancelled extends OrderStatus
+  case object Authorized extends OrderStatus
 
   def fromString(raw: String): Either[String, OrderStatus] = raw match {
     case "pending"            => Right(Pending)
@@ -26,6 +32,7 @@ object OrderStatus {
     case "confirmed"          => Right(Confirmed)
     case "payment_failed"     => Right(PaymentFailed)
     case "cancelled"          => Right(Cancelled)
+    case "authorized"         => Right(Authorized)
     case other                => Left(s"Invalid order status: '$other'")
   }
 }

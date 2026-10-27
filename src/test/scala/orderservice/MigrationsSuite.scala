@@ -50,7 +50,8 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
               "total_cents",
               "status",
               "created_at",
-              "updated_at"
+              "updated_at",
+              "shipping_address"
             )
           )
         } finally conn.close()
@@ -115,7 +116,8 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
             "reservation_failed",
             "confirmed",
             "payment_failed",
-            "cancelled"
+            "cancelled",
+            "authorized"
           ).foreach { status =>
             stmt.executeUpdate(
               "insert into \"order\" (id, customer_id, total_cents, status) " +
