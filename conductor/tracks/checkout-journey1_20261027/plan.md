@@ -9,8 +9,8 @@
 ## Phase 2: Outbound clients
 - [x] Task: `InventoryClient.reserveOrder` / `release` (stub Client[F] tests: 201/409/other; 204/other); per-item `reserve` dropped with the handler switch in Phase 3 `ff6f005`
 - [x] Task: `PaymentClient[F]` + `payment-client` config/`PAYMENT_SERVICE_URL` (stub tests: 200/402/404/other; config suite) `c3c1f48`
-- [ ] Task: Wire PaymentClient in Main/AppRoutes
-- [ ] Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md)
+- [x] Task: Wire PaymentClient in Main/AppRoutes — folded into the Phase 3 handler task (the handler is its first consumer, so wiring earlier would mean an unused parameter threaded through every route test twice)
+- [x] Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md) — prompt-off: 189 tests pass, coverage 91.84% stmt / 92.14% branch; clients verified against stub Client[F]s, live paths covered by Phase 4 script
 
 ## Phase 3: Checkout flow
 - [ ] Task: New `OrderError` variants + error outputs (400/402/409/503×2/500)
