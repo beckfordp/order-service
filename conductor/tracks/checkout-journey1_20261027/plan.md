@@ -13,8 +13,8 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md) — prompt-off: 189 tests pass, coverage 91.84% stmt / 92.14% branch; clients verified against stub Client[F]s, live paths covered by Phase 4 script
 
 ## Phase 3: Checkout flow
-- [~] Task: New `OrderError` variants + error outputs (400/402/409/503×2/500)
-- [ ] Task: Reshape `POST /orders` handler (validate → mint → reserve → authorize → persist; release on post-reserve failure; release failure logged only) — route tests per status, assert no row + release calls
+- [x] Task: New `OrderError` variants + error outputs (400/402/409/503×2/500) — landed with the handler task below (outputs are only testable through it)
+- [x] Task: Reshape `POST /orders` handler (validate → mint → reserve → authorize → persist; release on post-reserve failure; release failure logged only) — route tests per status, assert no row + release calls `ee91131`
 - [ ] Task: `PaymentEventConsumer` expects `authorized`
 - [ ] Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)
 
