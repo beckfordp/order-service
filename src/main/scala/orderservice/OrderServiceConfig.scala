@@ -42,6 +42,11 @@ final case class InventoryClientConfig(
     resilience: ResilienceConfig
 ) derives ConfigReader
 
+final case class PaymentClientConfig(
+    baseUrl: String,
+    resilience: ResilienceConfig
+) derives ConfigReader
+
 // Defaults below are for direct Scala construction only (e.g. test helpers
 // that build a KafkaConfig without caring about these three fields) -
 // confirmed empirically that this version's ConfigReader.derived does *not*
@@ -80,6 +85,7 @@ final case class OrderServiceConfig(
     serviceName: String,
     postgres: PostgresConfig,
     inventoryClient: InventoryClientConfig,
+    paymentClient: PaymentClientConfig,
     kafka: KafkaConfig,
     redis: RedisConfig
 ) derives ConfigReader

@@ -34,6 +34,19 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       |    }
       |  }
       |}
+      |payment-client {
+      |  base-url = "http://localhost:8082"
+      |  resilience {
+      |    retry {
+      |      max-retries = 3
+      |      base-delay = 100ms
+      |    }
+      |    circuit-breaker {
+      |      failure-threshold = 5
+      |      reset-timeout = 30s
+      |    }
+      |  }
+      |}
       |kafka {
       |  bootstrap-servers = "localhost:9092"
       |  dlq-retry {
@@ -80,6 +93,16 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
           ),
           inventoryClient = InventoryClientConfig(
             baseUrl = "http://localhost:8081",
+            resilience = ResilienceConfig(
+              retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
+              circuitBreaker = CircuitBreakerConfig(
+                failureThreshold = 5,
+                resetTimeout = 30.seconds
+              )
+            )
+          ),
+          paymentClient = PaymentClientConfig(
+            baseUrl = "http://localhost:8082",
             resilience = ResilienceConfig(
               retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
               circuitBreaker = CircuitBreakerConfig(
@@ -151,6 +174,19 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
         config.inventoryClient,
         InventoryClientConfig(
           baseUrl = "http://localhost:8081",
+          resilience = ResilienceConfig(
+            retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
+            circuitBreaker = CircuitBreakerConfig(
+              failureThreshold = 5,
+              resetTimeout = 30.seconds
+            )
+          )
+        )
+      )
+      assertEquals(
+        config.paymentClient,
+        PaymentClientConfig(
+          baseUrl = "http://localhost:8082",
           resilience = ResilienceConfig(
             retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
             circuitBreaker = CircuitBreakerConfig(
