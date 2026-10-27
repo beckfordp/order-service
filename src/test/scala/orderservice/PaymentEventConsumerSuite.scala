@@ -26,8 +26,8 @@ class PaymentEventConsumerSuite
     with TestContainerForAll {
 
   /** A `DeadLetter` whose `guard` never actually triggers in these tests -
-    * every `handleCaptured`/`handleExpired`/`handleFailed` call here succeeds on its first
-    * attempt, so this is only ever a transparent pass-through.
+    * every `handleCaptured`/`handleExpired`/`handleFailed` call here succeeds
+    * on its first attempt, so this is only ever a transparent pass-through.
     * `KafkaConsumersSuite` is where DLQ routing itself (the failure path) is
     * actually exercised.
     */
@@ -157,8 +157,7 @@ class PaymentEventConsumerSuite
         event = PaymentCapturedEvent(
           order.id,
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
@@ -223,8 +222,7 @@ class PaymentEventConsumerSuite
           "payment-1",
           order.totalCents,
           "capture_failed",
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
@@ -256,8 +254,7 @@ class PaymentEventConsumerSuite
         realEvent = PaymentCapturedEvent(
           order.id,
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         otherPayload = Json.obj(
           "paymentId" -> Json.fromString("payment-irrelevant"),
@@ -300,14 +297,12 @@ class PaymentEventConsumerSuite
         staleEvent = PaymentCapturedEvent(
           stalePendingOrder.id,
           stalePendingOrder.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         liveEvent = PaymentCapturedEvent(
           liveOrder.id,
           liveOrder.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
@@ -353,14 +348,12 @@ class PaymentEventConsumerSuite
         unknownEvent = PaymentCapturedEvent(
           "unknown-order-id",
           999,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         realEvent = PaymentCapturedEvent(
           order.id,
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
@@ -402,8 +395,7 @@ class PaymentEventConsumerSuite
         realEvent = PaymentCapturedEvent(
           order.id,
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
@@ -443,16 +435,14 @@ class PaymentEventConsumerSuite
         settledEvent = PaymentCapturedEvent(
           settledOrder.id,
           settledOrder.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         failedEvent = PaymentFailedEvent(
           failedOrder.id,
           "payment-failed",
           failedOrder.totalCents,
           "capture_failed",
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
@@ -497,8 +487,7 @@ class PaymentEventConsumerSuite
         event = PaymentCapturedEvent(
           order.id,
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
@@ -595,8 +584,7 @@ class PaymentEventConsumerSuite
           "payment-1",
           order.totalCents,
           "capture_failed",
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
@@ -641,8 +629,7 @@ class PaymentEventConsumerSuite
         event = PaymentCapturedEvent(
           order.id,
           order.totalCents,
-          Instant.parse("2026-01-01T00:00:00Z"
-        )
+          Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produceNullValue(config, PaymentEventConsumer.topic, order.id)
         _ <- produce(

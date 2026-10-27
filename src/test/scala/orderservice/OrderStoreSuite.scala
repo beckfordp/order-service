@@ -5,7 +5,10 @@ import munit.CatsEffectSuite
 
 import scala.concurrent.duration._
 
-class OrderStoreSuite extends CatsEffectSuite {
+class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
+
+  def withStore(name: String)(body: OrderStore[IO] => IO[Unit]): Unit =
+    test(name)(OrderStore.inMemory[IO].flatMap(body))
 
   private val oneItem =
     List(NewOrderItem("sku-1", "Widget", 999, 2))

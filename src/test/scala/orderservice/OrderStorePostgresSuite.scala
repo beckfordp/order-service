@@ -15,7 +15,20 @@ import java.sql.DriverManager
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
-class OrderStorePostgresSuite extends CatsEffectSuite with TestContainerForAll {
+class OrderStorePostgresSuite
+    extends CatsEffectSuite
+    with TestContainerForAll
+    with CreateAuthorizedContract {
+
+  def withStore(name: String)(body: OrderStore[IO] => IO[Unit]): Unit =
+    test(name) {
+      withContainers { postgres =>
+        val config = configFor(postgres)
+        Migrations.run[IO](config) *> OrderStore
+          .postgres[IO](config, Meter.noop[IO])
+          .use(body)
+      }
+    }
 
   override val containerDef: PostgreSQLContainer.Def =
     PostgreSQLContainer.Def(dockerImageName =

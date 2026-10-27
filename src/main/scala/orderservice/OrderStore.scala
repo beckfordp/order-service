@@ -5,6 +5,7 @@ import cats.effect.std.Console
 import cats.syntax.all._
 import fs2.io.net.Network
 import io.circe.Json
+import io.circe.parser.decode
 import io.circe.syntax._
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.metrics.Meter
@@ -22,7 +23,9 @@ final case class Order(
     totalCents: Int,
     status: OrderStatus,
     createdAt: java.time.Instant,
-    updatedAt: java.time.Instant
+    updatedAt: java.time.Instant,
+    // None only for orders created before US-11.1.
+    shippingAddress: Option[Address] = None
 )
 
 final case class NewOrderItem(
@@ -70,6 +73,16 @@ trait OrderStore[F[_]] {
   def create(
       customerId: String,
       items: List[NewOrderItem]
+  ): F[(Order, List[OrderItem])]
+
+  /** Persists an already-authorized checkout (ADR 0018): ids are minted by the
+    * caller before reserving/authorizing, so they're stored exactly as given,
+    * order and items in one transaction. Writes no outbox row — payment-service
+    * publishes `PaymentAuthorized`.
+    */
+  def createAuthorized(
+      order: Order,
+      items: List[OrderItem]
   ): F[(Order, List[OrderItem])]
   def get(id: String): F[Option[(Order, List[OrderItem])]]
   def listByCustomer(customerId: String): F[List[(Order, List[OrderItem])]]
@@ -127,6 +140,13 @@ object OrderStore {
   private val orderStatus: Codec[OrderStatus] =
     text.eimap(OrderStatus.fromString)(_.asString)
 
+  // Read as `shipping_address::text` and written as `$text::jsonb`, the same
+  // no-skunk-circe approach as the outbox payload below.
+  private val shippingAddress: Codec[Option[Address]] =
+    text.opt.eimap(
+      _.traverse(raw => decode[Address](raw).leftMap(_.getMessage))
+    )(_.map(_.asJson.noSpaces))
+
   def inMemory[F[_]: Sync]: F[OrderStore[F]] = inMemoryWithOutbox[F].map(_._1)
 
   /** Same as `inMemory`, but also returns a `Ref` capturing every outbox write
@@ -183,6 +203,15 @@ object OrderStore {
             _ <- ordersRef.update(_ + (id -> entity))
             _ <- itemsRef.update(_ + (id -> persistedItems))
           } yield (entity, persistedItems)
+
+        def createAuthorized(
+            order: Order,
+            items: List[OrderItem]
+        ): F[(Order, List[OrderItem])] =
+          for {
+            _ <- ordersRef.update(_ + (order.id -> order))
+            _ <- itemsRef.update(_ + (order.id -> items))
+          } yield (order, items)
 
         def get(id: String): F[Option[(Order, List[OrderItem])]] =
           for {
@@ -331,37 +360,67 @@ object OrderStore {
       RETURNING created_at, updated_at
     """.query(timestamptz *: timestamptz)
 
-  private val selectOrder: skunk.Query[
-    UUID,
-    (String, Int, OrderStatus, OffsetDateTime, OffsetDateTime)
+  private val insertAuthorizedOrder: skunk.Query[
+    (UUID, String, Int, OrderStatus, Option[Address]),
+    (OffsetDateTime, OffsetDateTime)
   ] =
     sql"""
-      SELECT customer_id, total_cents, status, created_at, updated_at
+      INSERT INTO "order" (id, customer_id, total_cents, status, shipping_address)
+      VALUES ($uuid, $text, $int4, $orderStatus, $shippingAddress::jsonb)
+      RETURNING created_at, updated_at
+    """.query(timestamptz *: timestamptz)
+
+  private val selectOrder: skunk.Query[
+    UUID,
+    (
+        String,
+        Int,
+        OrderStatus,
+        OffsetDateTime,
+        OffsetDateTime,
+        Option[Address]
+    )
+  ] =
+    sql"""
+      SELECT customer_id, total_cents, status, created_at, updated_at, shipping_address::text
       FROM "order"
       WHERE id = $uuid
-    """.query(text *: int4 *: orderStatus *: timestamptz *: timestamptz)
+    """.query(
+      text *: int4 *: orderStatus *: timestamptz *: timestamptz *: shippingAddress
+    )
 
   private val selectOrdersByCustomer: skunk.Query[
     String,
-    (UUID, Int, OrderStatus, OffsetDateTime, OffsetDateTime)
+    (UUID, Int, OrderStatus, OffsetDateTime, OffsetDateTime, Option[Address])
   ] =
     sql"""
-      SELECT id, total_cents, status, created_at, updated_at
+      SELECT id, total_cents, status, created_at, updated_at, shipping_address::text
       FROM "order"
       WHERE customer_id = $text
       ORDER BY created_at DESC
-    """.query(uuid *: int4 *: orderStatus *: timestamptz *: timestamptz)
+    """.query(
+      uuid *: int4 *: orderStatus *: timestamptz *: timestamptz *: shippingAddress
+    )
 
   private val updateOrder: skunk.Query[
     (OrderStatus, UUID),
-    (String, Int, OrderStatus, OffsetDateTime, OffsetDateTime)
+    (
+        String,
+        Int,
+        OrderStatus,
+        OffsetDateTime,
+        OffsetDateTime,
+        Option[Address]
+    )
   ] =
     sql"""
       UPDATE "order"
       SET status = $orderStatus, updated_at = now()
       WHERE id = $uuid
-      RETURNING customer_id, total_cents, status, created_at, updated_at
-    """.query(text *: int4 *: orderStatus *: timestamptz *: timestamptz)
+      RETURNING customer_id, total_cents, status, created_at, updated_at, shipping_address::text
+    """.query(
+      text *: int4 *: orderStatus *: timestamptz *: timestamptz *: shippingAddress
+    )
 
   // Joins through order_items to find the owning order, atomically in one
   // statement - avoids a separate lookup + check + update race (two
@@ -592,6 +651,58 @@ object OrderStore {
                 }
               }
 
+              def createAuthorized(
+                  order: Order,
+                  items: List[OrderItem]
+              ): F[(Order, List[OrderItem])] =
+                timed("insert_authorized") {
+                  pool.use { session =>
+                    session.transaction.use { _ =>
+                      for {
+                        orderId <- Sync[F].delay(UUID.fromString(order.id))
+                        timestamps <- session
+                          .prepare(insertAuthorizedOrder)
+                          .flatMap(
+                            _.unique(
+                              (
+                                orderId,
+                                order.customerId,
+                                order.totalCents,
+                                order.status,
+                                order.shippingAddress
+                              )
+                            )
+                          )
+                        insert <- session.prepare(insertOrderItem)
+                        _ <- items.traverse_ { item =>
+                          Sync[F].delay(UUID.fromString(item.id)).flatMap {
+                            itemId =>
+                              insert.execute(
+                                (
+                                  itemId,
+                                  orderId,
+                                  item.sku,
+                                  item.productName,
+                                  item.unitPriceCents,
+                                  item.quantity
+                                )
+                              )
+                          }
+                        }
+                      } yield {
+                        val (createdAt, updatedAt) = timestamps
+                        (
+                          order.copy(
+                            createdAt = createdAt.toInstant,
+                            updatedAt = updatedAt.toInstant
+                          ),
+                          items
+                        )
+                      }
+                    }
+                  }
+                }
+
               def get(id: String): F[Option[(Order, List[OrderItem])]] =
                 scala.util.Try(UUID.fromString(id)).toOption match {
                   case None       => Sync[F].pure(None)
@@ -610,7 +721,8 @@ object OrderStore {
                                 totalCents,
                                 status,
                                 createdAt,
-                                updatedAt
+                                updatedAt,
+                                address
                               )
                             ) =>
                           fetchItems(id, uuid).map { items =>
@@ -622,7 +734,8 @@ object OrderStore {
                                   totalCents,
                                   status,
                                   createdAt.toInstant,
-                                  updatedAt.toInstant
+                                  updatedAt.toInstant,
+                                  address
                                 ),
                                 items
                               )
@@ -641,7 +754,14 @@ object OrderStore {
                   }
                 }.flatMap { rows =>
                   rows.traverse {
-                    case (id, totalCents, status, createdAt, updatedAt) =>
+                    case (
+                          id,
+                          totalCents,
+                          status,
+                          createdAt,
+                          updatedAt,
+                          address
+                        ) =>
                       fetchItems(id.toString, id).map { items =>
                         (
                           Order(
@@ -650,7 +770,8 @@ object OrderStore {
                             totalCents,
                             status,
                             createdAt.toInstant,
-                            updatedAt.toInstant
+                            updatedAt.toInstant,
+                            address
                           ),
                           items
                         )
@@ -676,7 +797,9 @@ object OrderStore {
                                 .flatMap(_.option((status, uuid)))
                               _ <- (updated, outboxEvent) match {
                                 case (
-                                      Some((customerId, totalCents, _, _, _)),
+                                      Some(
+                                        (customerId, totalCents, _, _, _, _)
+                                      ),
                                       Some(event)
                                     ) =>
                                   insertOutboxRow(
@@ -698,7 +821,8 @@ object OrderStore {
                                 totalCents,
                                 newStatus,
                                 createdAt,
-                                updatedAt
+                                updatedAt,
+                                address
                               )
                             ) =>
                           fetchItems(id, uuid).map { items =>
@@ -710,7 +834,8 @@ object OrderStore {
                                   totalCents,
                                   newStatus,
                                   createdAt.toInstant,
-                                  updatedAt.toInstant
+                                  updatedAt.toInstant,
+                                  address
                                 ),
                                 items
                               )

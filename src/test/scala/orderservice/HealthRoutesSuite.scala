@@ -14,6 +14,11 @@ class HealthRoutesSuite extends CatsEffectSuite {
           items: List[NewOrderItem]
       ): IO[(Order, List[OrderItem])] =
         IO.raiseError(new NotImplementedError())
+      def createAuthorized(
+          order: Order,
+          items: List[OrderItem]
+      ): IO[(Order, List[OrderItem])] =
+        IO.raiseError(new NotImplementedError())
       def get(id: String): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def listByCustomer(
           customerId: String
@@ -43,6 +48,11 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def create(
           customerId: String,
           items: List[NewOrderItem]
+      ): IO[(Order, List[OrderItem])] =
+        IO.raiseError(new NotImplementedError())
+      def createAuthorized(
+          order: Order,
+          items: List[OrderItem]
       ): IO[(Order, List[OrderItem])] =
         IO.raiseError(new NotImplementedError())
       def get(id: String): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)

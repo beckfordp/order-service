@@ -56,6 +56,11 @@ class OrderRoutesSuite extends CatsEffectSuite {
           items: List[NewOrderItem]
       ): IO[(Order, List[OrderItem])] =
         IO.raiseError(error)
+      def createAuthorized(
+          order: Order,
+          items: List[OrderItem]
+      ): IO[(Order, List[OrderItem])] =
+        IO.raiseError(error)
       def get(id: String): IO[Option[(Order, List[OrderItem])]] =
         IO.pure(None)
       def listByCustomer(
@@ -1092,6 +1097,11 @@ class OrderRoutesSuite extends CatsEffectSuite {
             customerId: String,
             items: List[NewOrderItem]
         ): IO[(Order, List[OrderItem])] = baseStore.create(customerId, items)
+        def createAuthorized(
+            order: Order,
+            items: List[OrderItem]
+        ): IO[(Order, List[OrderItem])] =
+          baseStore.createAuthorized(order, items)
         def get(id: String): IO[Option[(Order, List[OrderItem])]] =
           baseStore.get(id)
         def listByCustomer(

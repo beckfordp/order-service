@@ -265,6 +265,8 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
   ): OrderStore[IO] = new OrderStore[IO] {
     def create(customerId: String, items: List[NewOrderItem]) =
       base.create(customerId, items)
+    def createAuthorized(order: Order, items: List[OrderItem]) =
+      base.createAuthorized(order, items)
     def get(id: String) = base.get(id)
     def listByCustomer(customerId: String) = base.listByCustomer(customerId)
     def update(
