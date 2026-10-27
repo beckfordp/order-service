@@ -1,0 +1,1 @@
+Task: PaymentEventConsumer expects authorized (ADR 0018). Files: PaymentEventConsumer.scala (all three updateStatusIfCurrent guards Reserved -> Authorized; doc notes Journey 4 narrows capture paths to dispatched), PaymentEventConsumerSuite (12 tests now seed Authorized; red confirmed first).
