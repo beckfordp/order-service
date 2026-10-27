@@ -145,7 +145,7 @@ class PaymentEventConsumerSuite
     List(NewOrderItem("sku-1", "Widget", 999, 2))
 
   test(
-    "a synthetic PaymentCaptured envelope flips a Reserved order's status to Confirmed"
+    "a synthetic PaymentCaptured envelope flips an Authorized order's status to Confirmed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -153,7 +153,7 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentCapturedEvent(
           order.id,
           order.totalCents,
@@ -177,7 +177,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a synthetic PaymentAuthorizationExpired envelope flips a Reserved order's status to Cancelled"
+    "a synthetic PaymentAuthorizationExpired envelope flips an Authorized order's status to Cancelled"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -185,7 +185,7 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentAuthorizationExpiredEvent(
           order.id,
           Instant.parse("2026-01-01T00:00:00Z")
@@ -208,7 +208,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a synthetic PaymentFailed envelope flips a Reserved order's status to PaymentFailed"
+    "a synthetic PaymentFailed envelope flips an Authorized order's status to PaymentFailed"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -216,7 +216,7 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentFailedEvent(
           order.id,
           "payment-1",
@@ -250,7 +250,7 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         realEvent = PaymentCapturedEvent(
           order.id,
           order.totalCents,
@@ -284,7 +284,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "an event for an order that's not Reserved is a no-op and doesn't block later events"
+    "an event for an order that's not Authorized is a no-op and doesn't block later events"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -293,7 +293,7 @@ class PaymentEventConsumerSuite
         store <- OrderStore.inMemory[IO]
         (stalePendingOrder, _) <- store.create("cust-123", oneItem)
         (liveOrder, _) <- store.create("cust-456", oneItem)
-        _ <- store.update(liveOrder.id, OrderStatus.Reserved)
+        _ <- store.update(liveOrder.id, OrderStatus.Authorized)
         staleEvent = PaymentCapturedEvent(
           stalePendingOrder.id,
           stalePendingOrder.totalCents,
@@ -344,7 +344,7 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         unknownEvent = PaymentCapturedEvent(
           "unknown-order-id",
           999,
@@ -391,7 +391,7 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         realEvent = PaymentCapturedEvent(
           order.id,
           order.totalCents,
@@ -429,9 +429,9 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (settledOrder, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(settledOrder.id, OrderStatus.Reserved)
+        _ <- store.update(settledOrder.id, OrderStatus.Authorized)
         (failedOrder, _) <- store.create("cust-456", oneItem)
-        _ <- store.update(failedOrder.id, OrderStatus.Reserved)
+        _ <- store.update(failedOrder.id, OrderStatus.Authorized)
         settledEvent = PaymentCapturedEvent(
           settledOrder.id,
           settledOrder.totalCents,
@@ -483,7 +483,7 @@ class PaymentEventConsumerSuite
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentCapturedEvent(
           order.id,
           order.totalCents,
@@ -529,7 +529,7 @@ class PaymentEventConsumerSuite
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentAuthorizationExpiredEvent(
           order.id,
           Instant.parse("2026-01-01T00:00:00Z")
@@ -578,7 +578,7 @@ class PaymentEventConsumerSuite
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentFailedEvent(
           order.id,
           "payment-1",
@@ -625,7 +625,7 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Reserved)
+        _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentCapturedEvent(
           order.id,
           order.totalCents,

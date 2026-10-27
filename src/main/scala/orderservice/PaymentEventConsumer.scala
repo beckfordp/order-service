@@ -60,15 +60,15 @@ object PaymentFailedEvent {
   * synchronous `POST /payments/authorize` call, so this consumer never sees
   * `PaymentAuthorized` - order-service already has that outcome) and
   * transitions the matching order via `OrderStore.updateStatusIfCurrent`, keyed
-  * by the event's `orderId` directly: `Reserved -> Confirmed` on capture,
-  * `Reserved -> Cancelled` on authorization expiry, `Reserved -> PaymentFailed`
-  * on capture failure. A redelivered/out-of-order event for an order that's no
-  * longer `Reserved` (or an unknown `orderId`) is an idempotent no-op, logged
-  * at info - never an error, per spec.md's "Out of Scope". Publishes
-  * `OrderStatusChanged` on a successful transition, mirroring
-  * `StockEventConsumer`'s precedent exactly. `payment-events` may carry other
-  * event types this consumer doesn't care about - those are silently skipped by
-  * `eventType`, not logged as malformed.
+  * by the event's `orderId` directly: `Authorized -> Confirmed` on capture,
+  * `Authorized -> Cancelled` on authorization expiry,
+  * `Authorized -> PaymentFailed` on capture failure. A redelivered/out-of-order
+  * event for an order that's no longer `Authorized` (or an unknown `orderId`)
+  * is an idempotent no-op, logged at info - never an error, per spec.md's "Out
+  * of Scope". Publishes `OrderStatusChanged` on a successful transition.
+  * Journey 4 narrows capture and capture-failure to expect `dispatched`.
+  * `payment-events` may carry other event types this consumer doesn't care
+  * about - those are silently skipped by `eventType`, not logged as malformed.
   */
 object PaymentEventConsumer {
 
@@ -107,7 +107,7 @@ object PaymentEventConsumer {
             "new_status" -> newStatus.asString
           )
         )(
-          "No matching Reserved order for orderId (unknown order, or already resolved) - ignoring"
+          "No matching Authorized order for orderId (unknown order, or already resolved) - ignoring"
         )
     }
 
@@ -127,7 +127,7 @@ object PaymentEventConsumer {
           store
             .updateStatusIfCurrent(
               event.orderId,
-              OrderStatus.Reserved,
+              OrderStatus.Authorized,
               OrderStatus.Confirmed,
               Some(
                 PendingOutboxEvent(
@@ -164,7 +164,7 @@ object PaymentEventConsumer {
           store
             .updateStatusIfCurrent(
               event.orderId,
-              OrderStatus.Reserved,
+              OrderStatus.Authorized,
               OrderStatus.Cancelled,
               Some(
                 PendingOutboxEvent(
@@ -201,7 +201,7 @@ object PaymentEventConsumer {
           store
             .updateStatusIfCurrent(
               event.orderId,
-              OrderStatus.Reserved,
+              OrderStatus.Authorized,
               OrderStatus.PaymentFailed,
               Some(
                 PendingOutboxEvent(
