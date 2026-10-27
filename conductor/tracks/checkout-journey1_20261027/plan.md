@@ -16,7 +16,7 @@
 - [x] Task: New `OrderError` variants + error outputs (400/402/409/503×2/500) — landed with the handler task below (outputs are only testable through it)
 - [x] Task: Reshape `POST /orders` handler (validate → mint → reserve → authorize → persist; release on post-reserve failure; release failure logged only) — route tests per status, assert no row + release calls `ee91131`
 - [x] Task: `PaymentEventConsumer` expects `authorized` `8631e54`
-- [ ] Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md) — prompt-off: 188 tests pass, coverage 91.74% stmt / 91.04% branch (OrderRoutes 98.1%, PaymentClient 97.5%, InventoryClient/Address 100%); live end-to-end in Phase 4 script
 
 ## Phase 4: Retire legacy + verify
 - [ ] Task: Remove `StockEventConsumer` (+ KafkaConsumers wiring, Subscribe channels, tests), `OrderReservedEvent` channel, now-unused store methods; `OrderStatusChanged` enum drops `reservation_failed`; `schemaRegistryCheck`; delete `order-events-OrderReserved` artifact
