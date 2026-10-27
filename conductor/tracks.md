@@ -2,8 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [~] **Track: TD-10.2 — restore payment-client retries**
-  *Link: [./tracks/payment-retries_20261027/](./tracks/payment-retries_20261027/)*
 
 ## Backlog
 
