@@ -1,0 +1,1 @@
+Task: OrderStore.createAuthorized + shippingAddress reads (ADR 0018, US-11.1). Files: OrderStore.scala (Order.shippingAddress: Option[Address] = None; createAuthorized in-memory + postgres one tx with caller-minted ids; get/list/update read shipping_address::text via text.opt eimap codec), CreateAuthorizedContract (shared by OrderStoreSuite + OrderStorePostgresSuite), test stubs.
