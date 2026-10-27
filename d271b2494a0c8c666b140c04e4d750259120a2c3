@@ -1,0 +1,1 @@
+Phase 4 verification (prompt-off): 170 tests pass, coverage 93.59% stmt / 93.66% branch; verify-checkout-journey1.sh 25/25 live; asyncapi, schema-registry, order-status, order-history-cache scripts pass
