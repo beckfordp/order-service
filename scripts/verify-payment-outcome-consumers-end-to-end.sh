@@ -6,18 +6,17 @@ set -euo pipefail
 # PaymentAuthorizationExpired / PaymentFailed (PaymentAuthorized is learned
 # synchronously and never consumed).
 #
-# Scope note (2026-10-03): US-5.3's own final checkpoint
-# (verify-order-reserved-end-to-end.sh) found and documented a reproducible
-# local-only broker race on this project's single-node KRaft docker-compose
+# Scope note (2026-10-03): US-5.3's own final checkpoint found and documented
+# a reproducible local-only broker race on this project's single-node KRaft docker-compose
 # Kafka - starting a new producer at the same moment a consumer's merged
 # stream joins its consumer groups reliably crashes the colliding consumer.
 # This track adds PaymentEventConsumer's consumer group
 # (order-service-payment-events) joining concurrently with the same
-# outbox-backed publisher at boot, alongside StockEventConsumer's own
-# group - more concurrent connection attempts, not fewer. Rather than
+# outbox-backed publisher at boot (StockEventConsumer's group was
+# retired with ADR 0018). Rather than
 # re-discover that race a second time, this script is scoped from the start
 # to what IS reliably provable live: order-service boots cleanly with
-# PaymentEventConsumer wired in alongside StockEventConsumer, and the health
+# PaymentEventConsumer wired in, and the health
 # endpoint responds. The actual consume -> transition -> publish behavior
 # (PaymentCaptured/PaymentAuthorizationExpired/PaymentFailed, on the single payment-events
 # domain topic + envelope shape per ADR 0009 - migrated by
@@ -95,9 +94,7 @@ SBT_PID=$!
 wait_ready
 echo "   OK: order-service ready on :8080 - boots cleanly with"
 echo "       PaymentEventConsumer (order-service-payment-events) wired in"
-echo "       alongside StockEventConsumer (order-service-inventory-events)"
-echo "       and the outbox-backed publisher, both consumer groups plus"
-echo "       the producer connecting concurrently at startup."
+echo "       and the outbox-backed publisher connecting concurrently at startup."
 
 echo
 echo "3. Confirming no startup crash was logged (e.g. the documented NPE race)..."
