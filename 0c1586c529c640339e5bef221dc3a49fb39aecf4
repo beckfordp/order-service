@@ -1,0 +1,1 @@
+Task: Address type + validation (US-11.1). Files: Address.scala, AddressSuite.scala — ported from payment-service's own copy (no shared lib): line1/city/postalCode required, ISO alpha-2 country.
