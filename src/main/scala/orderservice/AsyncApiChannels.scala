@@ -10,18 +10,16 @@ import purekafka.docs.{
 /** Registers order-service's Kafka event contracts for AsyncAPI documentation
   * (ADR 0010's AsyncAPI follow-up; direction-aware since the CDC-direction
   * track in `purerest`), mirroring the real multiplexed topics:
-  * `StockEventConsumer`/`PaymentEventConsumer` route two event types each
-  * through one topic via the envelope pattern, and are `Subscribe`-only —
-  * order-service only ever consumes those four event types, never publishes
-  * them (inventory-service/payment-service's own outboxes do).
+  * `PaymentEventConsumer` routes three event types through one topic via the
+  * envelope pattern, `Subscribe`-only — order-service consumes them, never
+  * publishes them (payment-service's own outbox does). Stock events are no
+  * longer consumed: checkout reserves synchronously (ADR 0018).
   *
   * order-service *does* publish — via its own `outbox_events` table and the
   * Debezium CDC connector's `route.topic.replacement` config
   * (`infra/k8s/local-infra/debezium-connectors-register.yaml`, gluon repo), not
-  * a direct producer call. `OrderReserved`/`OrderStatusChanged` are registered
-  * as `Publish(Cdc)`, correcting the earlier (incorrect) assumption that Rework
-  * 4's outbox migration removed every publish-side event this service has — it
-  * only removed the *direct* ones.
+  * a direct producer call. `OrderStatusChanged` is registered as
+  * `Publish(Cdc)`; `OrderReserved` was retired with ADR 0018.
   *
   * Implements `AsyncApiChannelsProvider` (not just a plain `List`) so the
   * sbt-purekafka-docs plugin's `AsyncApiSpecWriter` can load this singleton
@@ -38,16 +36,6 @@ object AsyncApiChannels extends AsyncApiChannelsProvider {
   private val orderEventsTopic = "order-events"
 
   val channels: List[AsyncApiChannel[?]] = List(
-    AsyncApiChannel[StockReservedEvent](
-      topic = StockEventConsumer.topic,
-      eventType = "StockReserved",
-      direction = ChannelDirection.Subscribe
-    ),
-    AsyncApiChannel[StockReservationFailedEvent](
-      topic = StockEventConsumer.topic,
-      eventType = "StockReservationFailed",
-      direction = ChannelDirection.Subscribe
-    ),
     AsyncApiChannel[PaymentCapturedEvent](
       topic = PaymentEventConsumer.topic,
       eventType = "PaymentCaptured",
@@ -62,11 +50,6 @@ object AsyncApiChannels extends AsyncApiChannelsProvider {
       topic = PaymentEventConsumer.topic,
       eventType = "PaymentFailed",
       direction = ChannelDirection.Subscribe
-    ),
-    AsyncApiChannel[OrderReservedEvent](
-      topic = orderEventsTopic,
-      eventType = "OrderReserved",
-      direction = ChannelDirection.Publish(PublisherKind.Cdc)
     ),
     AsyncApiChannel[OrderStatusChangedEvent](
       topic = orderEventsTopic,

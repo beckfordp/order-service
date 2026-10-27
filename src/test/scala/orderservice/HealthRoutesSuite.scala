@@ -28,11 +28,6 @@ class HealthRoutesSuite extends CatsEffectSuite {
           status: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
-      def updateStatusByItemId(
-          orderItemId: String,
-          newStatus: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def updateStatusIfCurrent(
           id: String,
           expected: OrderStatus,
@@ -64,11 +59,6 @@ class HealthRoutesSuite extends CatsEffectSuite {
           status: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
-      def updateStatusByItemId(
-          orderItemId: String,
-          newStatus: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def updateStatusIfCurrent(
           id: String,
           expected: OrderStatus,

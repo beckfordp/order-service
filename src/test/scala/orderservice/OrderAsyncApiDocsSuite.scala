@@ -12,7 +12,7 @@ import purerest.docs.Docs
 class OrderAsyncApiDocsSuite extends CatsEffectSuite {
 
   test(
-    "GET /docs/asyncapi.json serves a document containing all 7 registered event types"
+    "GET /docs/asyncapi.json serves a document containing all 4 registered event types"
   ) {
     val routes =
       AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
@@ -23,12 +23,12 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       body <- response.bodyText.compile.string
     } yield {
       assertEquals(response.status, Status.Ok)
-      assert(clue(body).contains("StockReserved"))
-      assert(clue(body).contains("StockReservationFailed"))
+      assert(!clue(body).contains("StockReserved"))
+      assert(!clue(body).contains("StockReservationFailed"))
       assert(clue(body).contains("PaymentCaptured"))
       assert(clue(body).contains("PaymentAuthorizationExpired"))
       assert(clue(body).contains("PaymentFailed"))
-      assert(clue(body).contains("OrderReserved"))
+      assert(!clue(body).contains("OrderReserved"))
       assert(clue(body).contains("OrderStatusChanged"))
       assert(
         clue(body).contains("Debezium"),
@@ -38,7 +38,7 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
   }
 
   test(
-    "GET /docs/asyncapi.json: inventory-events/payment-events have no publish operation, order-events has no subscribe operation"
+    "GET /docs/asyncapi.json: payment-events has no publish operation, order-events has no subscribe operation, inventory-events is gone"
   ) {
     val routes =
       AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
@@ -50,8 +50,8 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
     } yield {
       val channels = json.hcursor.downField("channels")
       assert(
-        channels.downField("inventory-events").downField("publish").failed,
-        "order-service only consumes inventory-events - no publish operation expected"
+        channels.downField("inventory-events").failed,
+        "order-service no longer consumes inventory-events (ADR 0018)"
       )
       assert(
         channels.downField("payment-events").downField("publish").failed,
@@ -75,20 +75,17 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       )
       json <- response.as[io.circe.Json]
     } yield {
-      val orderStatusChangedPayload = json.hcursor
+      // order-events carries one message now, so it isn't wrapped in `oneOf`.
+      val message = json.hcursor
         .downField("channels")
         .downField("order-events")
         .downField("publish")
         .downField("message")
-        .downField("oneOf")
-        .values
-        .toList
-        .flatten
-        .find(
-          _.hcursor.downField("name").as[String].contains("OrderStatusChanged")
-        )
-        .get
-        .hcursor
+      assertEquals(
+        message.downField("name").as[String],
+        Right("OrderStatusChanged")
+      )
+      val orderStatusChangedPayload = message
         .downField("payload")
         .downField("properties")
         .downField("status")
@@ -103,7 +100,7 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       assertEquals(
         enumValues.toSet,
         Set("reservation_failed", "confirmed", "payment_failed", "cancelled"),
-        "expected only the 4 statuses this event actually publishes - never 'pending'/'reserved'"
+        "reservation_failed is no longer published (ADR 0018) but stays for BACKWARD compatibility"
       )
     }
   }

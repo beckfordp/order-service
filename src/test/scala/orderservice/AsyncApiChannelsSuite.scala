@@ -15,20 +15,8 @@ import java.nio.file.Files
 class AsyncApiChannelsSuite extends FunSuite {
 
   test(
-    "AsyncApiChannel constructs for each of order-service's 7 registered event types"
+    "AsyncApiChannel constructs for each of order-service's 4 registered event types"
   ) {
-    val stockReserved =
-      AsyncApiChannel[StockReservedEvent](
-        topic = StockEventConsumer.topic,
-        eventType = "StockReserved",
-        direction = ChannelDirection.Subscribe
-      )
-    val stockReservationFailed =
-      AsyncApiChannel[StockReservationFailedEvent](
-        topic = StockEventConsumer.topic,
-        eventType = "StockReservationFailed",
-        direction = ChannelDirection.Subscribe
-      )
     val paymentCaptured =
       AsyncApiChannel[PaymentCapturedEvent](
         topic = PaymentEventConsumer.topic,
@@ -47,12 +35,6 @@ class AsyncApiChannelsSuite extends FunSuite {
         eventType = "PaymentFailed",
         direction = ChannelDirection.Subscribe
       )
-    val orderReserved =
-      AsyncApiChannel[OrderReservedEvent](
-        topic = "order-events",
-        eventType = "OrderReserved",
-        direction = ChannelDirection.Publish(PublisherKind.Cdc)
-      )
     val orderStatusChanged =
       AsyncApiChannel[OrderStatusChangedEvent](
         topic = "order-events",
@@ -60,17 +42,31 @@ class AsyncApiChannelsSuite extends FunSuite {
         direction = ChannelDirection.Publish(PublisherKind.Cdc)
       )
 
-    assertEquals(stockReserved.topic, "inventory-events")
-    assertEquals(stockReservationFailed.topic, "inventory-events")
     assertEquals(paymentCaptured.topic, "payment-events")
     assertEquals(paymentAuthorizationExpired.topic, "payment-events")
     assertEquals(paymentFailed.topic, "payment-events")
-    assertEquals(orderReserved.topic, "order-events")
     assertEquals(orderStatusChanged.topic, "order-events")
   }
 
   test(
-    "AsyncApiChannels.channels registers all 7 event types with correct topic/eventType pairs"
+    "AsyncApiChannels.channels no longer registers the retired stock/OrderReserved events"
+  ) {
+    val eventTypes = AsyncApiChannels.channels.map(_.eventType).toSet
+    for (
+      retired <- List(
+        "StockReserved",
+        "StockReservationFailed",
+        "OrderReserved"
+      )
+    )
+      assert(
+        !eventTypes.contains(retired),
+        s"$retired should be retired (ADR 0018, TD-7.3)"
+      )
+  }
+
+  test(
+    "AsyncApiChannels.channels registers all 4 event types with correct topic/eventType pairs"
   ) {
     val topicsAndEventTypes =
       AsyncApiChannels.channels.map(c => c.topic -> c.eventType).toSet
@@ -78,27 +74,22 @@ class AsyncApiChannelsSuite extends FunSuite {
     assertEquals(
       topicsAndEventTypes,
       Set(
-        "inventory-events" -> "StockReserved",
-        "inventory-events" -> "StockReservationFailed",
         "payment-events" -> "PaymentCaptured",
         "payment-events" -> "PaymentAuthorizationExpired",
         "payment-events" -> "PaymentFailed",
-        "order-events" -> "OrderReserved",
         "order-events" -> "OrderStatusChanged"
       )
     )
   }
 
   test(
-    "the 5 consumed event types are Subscribe-only; the 2 CDC-published event types are Publish(Cdc)"
+    "the 3 consumed event types are Subscribe-only; the CDC-published OrderStatusChanged is Publish(Cdc)"
   ) {
     val directionsByEventType =
       AsyncApiChannels.channels.map(c => c.eventType -> c.direction).toMap
 
     for (
       consumed <- List(
-        "StockReserved",
-        "StockReservationFailed",
         "PaymentCaptured",
         "PaymentAuthorizationExpired",
         "PaymentFailed"
@@ -110,7 +101,7 @@ class AsyncApiChannelsSuite extends FunSuite {
         s"expected $consumed to be Subscribe-only - order-service only consumes it"
       )
 
-    for (published <- List("OrderReserved", "OrderStatusChanged"))
+    for (published <- List("OrderStatusChanged"))
       assertEquals(
         directionsByEventType(published),
         ChannelDirection.Publish(PublisherKind.Cdc): ChannelDirection,

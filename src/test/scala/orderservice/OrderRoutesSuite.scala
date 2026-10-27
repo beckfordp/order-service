@@ -65,11 +65,6 @@ class OrderRoutesSuite extends CatsEffectSuite {
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] =
         IO.raiseError(error)
-      def updateStatusByItemId(
-          orderItemId: String,
-          newStatus: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
       def updateStatusIfCurrent(
           id: String,
           expected: OrderStatus,
@@ -811,12 +806,6 @@ class OrderRoutesSuite extends CatsEffectSuite {
             outboxEvent: Option[PendingOutboxEvent] = None
         ): IO[Option[(Order, List[OrderItem])]] =
           baseStore.update(id, status, outboxEvent)
-        def updateStatusByItemId(
-            orderItemId: String,
-            newStatus: OrderStatus,
-            outboxEvent: Option[PendingOutboxEvent] = None
-        ): IO[Option[UpdatedOrderRef]] =
-          baseStore.updateStatusByItemId(orderItemId, newStatus, outboxEvent)
         def updateStatusIfCurrent(
             id: String,
             expected: OrderStatus,

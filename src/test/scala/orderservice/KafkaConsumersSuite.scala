@@ -17,10 +17,9 @@ import scala.jdk.CollectionConverters._
 
 /** Proves the per-consumer supervision property `KafkaConsumers.supervised`
   * exists for (TD-2.2/TD-2.4, ADR 0010): wrapping each of
-  * `StockEventConsumer`/`PaymentEventConsumer` in `StreamSupervisor`
-  * *individually*, then merging, means a crash in one doesn't restart or
-  * otherwise affect the other's in-flight processing — unlike supervising the
-  * already-merged stream as one unit.
+  * `PaymentEventConsumer` in `StreamSupervisor` (its only consumer since
+  * `StockEventConsumer` was retired, ADR 0018) keeps a crash or poison message
+  * from stopping later processing.
   */
 class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
 
@@ -175,47 +174,33 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
       Metrics.test[IO]("kafka-consumers-dlq-suite").use { testMeter =>
         for {
           baseStore <- OrderStore.inMemory[IO]
-          (poisonOrder, poisonItems) <- baseStore.create("cust-poison", oneItem)
-          (healthyOrder, healthyItems) <- baseStore.create(
-            "cust-healthy",
-            oneItem
-          )
-          poisonItemId = poisonItems.head.id
-          healthyItemId = healthyItems.head.id
-          store = alwaysFailOn(baseStore, poisonItemId)
-          poisonEvent = StockReservedEvent(
-            poisonItemId,
-            "sku-1",
-            2,
-            Instant.parse("2026-01-01T00:00:00Z")
-          )
-          healthyEvent = StockReservedEvent(
-            healthyItemId,
-            "sku-1",
-            2,
-            Instant.parse("2026-01-01T00:00:00Z")
+          (poisonOrder, _) <- baseStore.create("cust-poison", oneItem)
+          (healthyOrder, _) <- baseStore.create("cust-healthy", oneItem)
+          _ <- baseStore.update(poisonOrder.id, OrderStatus.Authorized)
+          _ <- baseStore.update(healthyOrder.id, OrderStatus.Authorized)
+          store = alwaysFailOn(baseStore, poisonOrder.id)
+          captured = (orderId: String) =>
+            envelopeJson(
+              "payment-service",
+              "PaymentCaptured",
+              orderId,
+              PaymentCapturedEvent(
+                orderId,
+                1998,
+                Instant.parse("2026-01-01T00:00:00Z")
+              ).asJson
+            )
+          _ <- produce(
+            config,
+            PaymentEventConsumer.topic,
+            poisonOrder.id,
+            captured(poisonOrder.id)
           )
           _ <- produce(
             config,
-            StockEventConsumer.topic,
-            "sku-1",
-            envelopeJson(
-              "inventory-service",
-              "StockReserved",
-              poisonItemId,
-              poisonEvent.asJson
-            )
-          )
-          _ <- produce(
-            config,
-            StockEventConsumer.topic,
-            "sku-1",
-            envelopeJson(
-              "inventory-service",
-              "StockReserved",
-              healthyItemId,
-              healthyEvent.asJson
-            )
+            PaymentEventConsumer.topic,
+            healthyOrder.id,
+            captured(healthyOrder.id)
           )
           healthyFinal <-
             KafkaConsumers
@@ -227,12 +212,12 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
                 // Proves the stream didn't get stuck/killed on the poison
                 // message - a later, healthy message on the same topic
                 // still gets processed and updates order status normally.
-                pollForStatus(store, healthyOrder.id, OrderStatus.Reserved)
+                pollForStatus(store, healthyOrder.id, OrderStatus.Confirmed)
                   .timeout(20.seconds)
               }
           dlqMessages <- consumeOneFrom(
             config,
-            s"${StockEventConsumer.topic}-dlq"
+            s"${PaymentEventConsumer.topic}-dlq"
           )
           metrics <- testMeter.collectMetrics
           dlqPublished = metrics
@@ -241,10 +226,10 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
             .map(_.getValue)
             .sum
         } yield {
-          assertEquals(healthyFinal, OrderStatus.Reserved)
+          assertEquals(healthyFinal, OrderStatus.Confirmed)
           assert(
-            dlqMessages.exists(_.contains(poisonItemId)),
-            s"expected a DLQ message mentioning $poisonItemId, got $dlqMessages"
+            dlqMessages.exists(_.contains(poisonOrder.id)),
+            s"expected a DLQ message mentioning ${poisonOrder.id}, got $dlqMessages"
           )
           assert(
             dlqPublished >= 1L,
@@ -255,13 +240,13 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
     }
   }
 
-  /** Like `failOnceOn`, but fails every time for `failOnItemId` - never
+  /** Like `failOnceOn`, but fails every time for `failOnOrderId` - never
     * recovers. Used to prove `DeadLetter` actually exhausts its retry budget
     * and routes to the DLQ, rather than eventually succeeding.
     */
   private def alwaysFailOn(
       base: OrderStore[IO],
-      failOnItemId: String
+      failOnOrderId: String
   ): OrderStore[IO] = new OrderStore[IO] {
     def create(customerId: String, items: List[NewOrderItem]) =
       base.create(customerId, items)
@@ -274,22 +259,17 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
         status: OrderStatus,
         outboxEvent: Option[PendingOutboxEvent] = None
     ) = base.update(id, status, outboxEvent)
-    def updateStatusByItemId(
-        orderItemId: String,
-        newStatus: OrderStatus,
-        outboxEvent: Option[PendingOutboxEvent] = None
-    ) =
-      if (orderItemId == failOnItemId)
-        IO.raiseError(
-          new RuntimeException("synthetic permanent store failure")
-        )
-      else base.updateStatusByItemId(orderItemId, newStatus, outboxEvent)
     def updateStatusIfCurrent(
         id: String,
         expected: OrderStatus,
         newStatus: OrderStatus,
         outboxEvent: Option[PendingOutboxEvent] = None
-    ) = base.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
+    ) =
+      if (id == failOnOrderId)
+        IO.raiseError(
+          new RuntimeException("synthetic permanent store failure")
+        )
+      else base.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
     def delete(id: String) = base.delete(id)
     def ping = base.ping
   }

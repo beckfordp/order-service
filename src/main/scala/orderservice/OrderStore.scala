@@ -44,10 +44,10 @@ final case class OrderItem(
     quantity: Int
 )
 
-/** Minimal projection of an order returned by `updateStatusByItemId` on a
-  * successful transition - just the fields `order.reserved`'s payload needs
-  * (see US-5.3's spec.md), fetched atomically in the same query that does the
-  * update rather than a separate round-trip.
+/** Minimal projection of an order returned by `updateStatusIfCurrent` on a
+  * successful transition - just the fields an outbox payload needs, fetched
+  * atomically in the same query that does the update rather than a separate
+  * round-trip.
   */
 final case class UpdatedOrderRef(
     orderId: String,
@@ -59,10 +59,10 @@ final case class UpdatedOrderRef(
   * atomically alongside its own UPDATE (ADR 0008, TD-3.2) - replacing the old
   * pattern of a separate, non-transactional `OrderEventPublisher` call after
   * the store returned. `payloadFor` is deferred rather than a pre-built `Json`
-  * because `updateStatusByItemId`/`updateStatusIfCurrent` only learn the
-  * order's id/customerId/totalCents from the UPDATE's own result (the caller
-  * doesn't have them beforehand) - `update`'s caller does already have them,
-  * but takes the same shape for one consistent API across all three methods.
+  * because `updateStatusIfCurrent` only learns the order's
+  * id/customerId/totalCents from the UPDATE's own result (the caller doesn't
+  * have them beforehand) - `update`'s caller does already have them, but takes
+  * the same shape for one consistent API across both methods.
   */
 final case class PendingOutboxEvent(
     eventType: String,
@@ -91,11 +91,6 @@ trait OrderStore[F[_]] {
       status: OrderStatus,
       outboxEvent: Option[PendingOutboxEvent] = None
   ): F[Option[(Order, List[OrderItem])]]
-  def updateStatusByItemId(
-      orderItemId: String,
-      newStatus: OrderStatus,
-      outboxEvent: Option[PendingOutboxEvent] = None
-  ): F[Option[UpdatedOrderRef]]
   def updateStatusIfCurrent(
       id: String,
       expected: OrderStatus,
@@ -267,48 +262,6 @@ object OrderStore {
             }
           } yield result
 
-        def updateStatusByItemId(
-            orderItemId: String,
-            newStatus: OrderStatus,
-            outboxEvent: Option[PendingOutboxEvent] = None
-        ): F[Option[UpdatedOrderRef]] =
-          for {
-            items <- itemsRef.get
-            maybeOrderId = items.collectFirst {
-              case (orderId, orderItems)
-                  if orderItems.exists(_.id == orderItemId) =>
-                orderId
-            }
-            now <- Sync[F].realTimeInstant
-            updated <- maybeOrderId match {
-              case None          => Sync[F].pure(None)
-              case Some(orderId) =>
-                ordersRef.modify { entities =>
-                  entities.get(orderId) match {
-                    case Some(existing)
-                        if existing.status == OrderStatus.Pending =>
-                      val next =
-                        existing.copy(status = newStatus, updatedAt = now)
-                      (
-                        entities + (orderId -> next),
-                        Some(
-                          UpdatedOrderRef(
-                            next.id,
-                            next.customerId,
-                            next.totalCents
-                          )
-                        )
-                      )
-                    case _ => (entities, None)
-                  }
-                }
-            }
-            _ <- updated match {
-              case None      => Sync[F].unit
-              case Some(ref) => writeOutboxIfPresent(ref, outboxEvent)
-            }
-          } yield updated
-
         def updateStatusIfCurrent(
             id: String,
             expected: OrderStatus,
@@ -422,26 +375,8 @@ object OrderStore {
       text *: int4 *: orderStatus *: timestamptz *: timestamptz *: shippingAddress
     )
 
-  // Joins through order_items to find the owning order, atomically in one
-  // statement - avoids a separate lookup + check + update race (two
-  // concurrent events for different items of the same order could otherwise
-  // interleave). Only transitions a Pending order; already-resolved orders
-  // or an unknown orderItemId both no-op (0 rows), surfaced as `false`.
-  private val updateOrderStatusByItemId: skunk.Query[
-    (OrderStatus, OrderStatus, UUID),
-    (UUID, String, Int)
-  ] =
-    sql"""
-      UPDATE "order"
-      SET status = $orderStatus, updated_at = now()
-      WHERE status = $orderStatus
-        AND id = (SELECT order_id FROM order_items WHERE id = $uuid)
-      RETURNING id, customer_id, total_cents
-    """.query(uuid *: text *: int4)
-
-  // Atomic guarded transition keyed by the order's own id directly (unlike
-  // updateOrderStatusByItemId above, which joins through order_items) -
-  // payment.settled/payment.failed events carry orderId, not an item id.
+  // Atomic guarded transition keyed by the order's own id - payment events
+  // carry orderId.
   // Only transitions when the order's current status matches `expected`;
   // any other current status or an unknown id both no-op (0 rows).
   private val updateOrderStatusIfCurrent: skunk.Query[
@@ -843,44 +778,6 @@ object OrderStore {
                           }
                       }
                     } yield result
-                }
-
-              def updateStatusByItemId(
-                  orderItemId: String,
-                  newStatus: OrderStatus,
-                  outboxEvent: Option[PendingOutboxEvent] = None
-              ): F[Option[UpdatedOrderRef]] =
-                scala.util.Try(UUID.fromString(orderItemId)).toOption match {
-                  case None           => Sync[F].pure(None)
-                  case Some(itemUuid) =>
-                    timed("update_status_by_item_id") {
-                      pool.use { session =>
-                        session.transaction.use { _ =>
-                          for {
-                            updated <- session
-                              .prepare(updateOrderStatusByItemId)
-                              .flatMap(
-                                _.option(
-                                  (newStatus, OrderStatus.Pending, itemUuid)
-                                )
-                              )
-                              .map(_.map {
-                                case (orderId, customerId, totalCents) =>
-                                  UpdatedOrderRef(
-                                    orderId.toString,
-                                    customerId,
-                                    totalCents
-                                  )
-                              })
-                            _ <- (updated, outboxEvent) match {
-                              case (Some(ref), Some(event)) =>
-                                insertOutboxRow(session, ref, event)
-                              case _ => Sync[F].unit
-                            }
-                          } yield updated
-                        }
-                      }
-                    }
                 }
 
               def updateStatusIfCurrent(
