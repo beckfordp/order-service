@@ -1,0 +1,13 @@
+# Plan: TD-10.2 — restore payment-client retries
+
+## Phase 1: Config + verification
+
+- [ ] Task: Set `payment-client.resilience.retry.max-retries = 3` in `application.conf`, replacing the TD-10 comment with a TD-10.1 idempotency note (Green)
+- [ ] Task: `sbt scalafmtCheck test` green
+- [ ] Task: Rebuild/redeploy order-service; run gshop's `scripts/verify-checkout-real.sh` to prove checkout is unaffected
+- [ ] Task: Conductor - User Manual Verification 'Config + verification' (Protocol in workflow.md)
+
+## Risks / notes
+
+- Retrying a 5xx now reuses the same `orderId`, so payment-service returns the stored authorization instead of holding twice.
+- Authorize declines are not retried by the client (only transport/5xx failures are), unchanged from the inventory-client shape.

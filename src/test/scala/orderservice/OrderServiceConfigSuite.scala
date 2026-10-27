@@ -188,7 +188,7 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
         PaymentClientConfig(
           baseUrl = "http://localhost:8082",
           resilience = ResilienceConfig(
-            retry = RetryConfig(maxRetries = 0, baseDelay = 100.millis),
+            retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
             circuitBreaker = CircuitBreakerConfig(
               failureThreshold = 5,
               resetTimeout = 30.seconds
