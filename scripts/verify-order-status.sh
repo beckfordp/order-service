@@ -14,11 +14,14 @@ cd "$ROOT_DIR"
 
 FAILED=0
 SBT_PID=""
+STUB_PORT=18081
+STUB_PID=""
 
 cleanup() {
   echo
   echo "Cleaning up..."
   [ -n "$SBT_PID" ] && kill "$SBT_PID" >/dev/null 2>&1 || true
+  [ -n "$STUB_PID" ] && kill "$STUB_PID" >/dev/null 2>&1 || true
   docker compose down -v >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -50,11 +53,15 @@ echo "   OK: postgres starting"
 
 echo
 echo "2. Starting order-service (sbt run) in the background..."
+echo "   starting the inventory/payment stand-in (scripts/lib/checkout-stubs.py)..."
+python3 scripts/lib/checkout-stubs.py "$STUB_PORT" /dev/null </dev/null >/dev/null 2>&1 &
+STUB_PID=$!
 if [ -z "${GITHUB_TOKEN:-}" ] || [ -z "${GITHUB_ACTOR:-}" ]; then
   echo "WARN: GITHUB_TOKEN / GITHUB_ACTOR not set - resolving purerestlib from" >&2
   echo "      GitHub Packages will fail without a read:packages token." >&2
 fi
-sbt run >/tmp/order-service-verify.log 2>&1 &
+INVENTORY_SERVICE_URL="http://localhost:${STUB_PORT}" PAYMENT_SERVICE_URL="http://localhost:${STUB_PORT}" \
+  sbt run >/tmp/order-service-verify.log 2>&1 &
 SBT_PID=$!
 wait_ready
 echo "   OK: order-service ready on :8080"
@@ -62,13 +69,13 @@ echo "   OK: order-service ready on :8080"
 echo
 echo "3. POST /orders with a valid body..."
 create_response="$(curl -s -w '\n%{http_code}' -X POST http://localhost:8080/orders \
-  -H "Content-Type: application/json" -d '{"customerId":"cust-123","totalCents":4999}')"
+  -H "Content-Type: application/json" -d '{"customerId":"cust-123","items":[{"sku":"sku-1","productName":"Widget","unitPriceCents":4999,"quantity":1}],"shippingAddress":{"line1":"1 High St","city":"London","postalCode":"N1 1AA","country":"GB"},"paymentMethodId":"6f1c2c1e-6a43-4d2b-9a55-2f3f6c1b9b10"}')"
 create_status="$(echo "$create_response" | tail -1)"
 create_body="$(echo "$create_response" | sed '$d')"
 check "POST /orders returns 201" "201" "$create_status"
 order_id="$(echo "$create_body" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")"
 status_field="$(echo "$create_body" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")"
-check "created order has status pending" "pending" "$status_field"
+check "created order has status authorized" "authorized" "$status_field"
 
 echo
 echo "4. PATCH with an invalid status is rejected and persists nothing..."
@@ -76,17 +83,17 @@ invalid_status="$(curl -s -o /dev/null -w '%{http_code}' -X PATCH "http://localh
   -H "Content-Type: application/json" -d '{"status":"bogus"}')"
 check "PATCH with invalid status returns 400" "400" "$invalid_status"
 unchanged="$(curl -s "http://localhost:8080/orders/${order_id}" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")"
-check "status unchanged after rejected PATCH" "pending" "$unchanged"
+check "status unchanged after rejected PATCH" "authorized" "$unchanged"
 
 echo
 echo "5. PATCH with a valid status succeeds..."
 valid_patch="$(curl -s -w '\n%{http_code}' -X PATCH "http://localhost:8080/orders/${order_id}" \
-  -H "Content-Type: application/json" -d '{"status":"reserved"}')"
+  -H "Content-Type: application/json" -d '{"status":"confirmed"}')"
 valid_patch_status="$(echo "$valid_patch" | tail -1)"
 valid_patch_body="$(echo "$valid_patch" | sed '$d')"
 check "PATCH with valid status returns 200" "200" "$valid_patch_status"
 new_status="$(echo "$valid_patch_body" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")"
-check "status updated to reserved" "reserved" "$new_status"
+check "status updated to confirmed" "confirmed" "$new_status"
 
 echo
 echo "6. PUT with an invalid status is rejected..."

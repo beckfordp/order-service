@@ -15,11 +15,14 @@ cd "$ROOT_DIR"
 
 FAILED=0
 SBT_PID=""
+STUB_PORT=18081
+STUB_PID=""
 
 cleanup() {
   echo
   echo "Cleaning up..."
   [ -n "$SBT_PID" ] && kill "$SBT_PID" >/dev/null 2>&1 || true
+  [ -n "$STUB_PID" ] && kill "$STUB_PID" >/dev/null 2>&1 || true
   docker compose down -v >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -54,12 +57,16 @@ docker compose up -d
 echo "   OK: postgres + kafka + redis starting"
 
 echo
-echo "2. Starting order-service (sbt run) with a 2s history cache TTL, pointed at an unreachable inventory-service (irrelevant to this check)..."
+echo "2. Starting order-service (sbt run) with a 2s history cache TTL, pointed at the inventory/payment stand-in..."
+echo "   starting the inventory/payment stand-in (scripts/lib/checkout-stubs.py)..."
+python3 scripts/lib/checkout-stubs.py "$STUB_PORT" /dev/null </dev/null >/dev/null 2>&1 &
+STUB_PID=$!
 if [ -z "${GITHUB_TOKEN:-}" ] || [ -z "${GITHUB_ACTOR:-}" ]; then
   echo "WARN: GITHUB_TOKEN / GITHUB_ACTOR not set - resolving purerestlib from" >&2
   echo "      GitHub Packages will fail without a read:packages token." >&2
 fi
-INVENTORY_SERVICE_URL="http://localhost:19999" ORDER_HISTORY_CACHE_TTL_SECONDS=2 \
+INVENTORY_SERVICE_URL="http://localhost:${STUB_PORT}" PAYMENT_SERVICE_URL="http://localhost:${STUB_PORT}" \
+  ORDER_HISTORY_CACHE_TTL_SECONDS=2 \
   sbt run >/tmp/order-service-verify.log 2>&1 &
 SBT_PID=$!
 wait_ready
@@ -70,11 +77,11 @@ echo "3. Checking out two orders for the same customer..."
 customer_id="cust-$(date +%s)"
 order1_id="$(curl -s -X POST http://localhost:8080/orders \
   -H "Content-Type: application/json" \
-  -d "{\"customerId\":\"${customer_id}\",\"items\":[{\"sku\":\"sku-1\",\"productName\":\"Widget\",\"unitPriceCents\":999,\"quantity\":2}]}" \
+  -d "{\"customerId\":\"${customer_id}\",\"items\":[{\"sku\":\"sku-1\",\"productName\":\"Widget\",\"unitPriceCents\":999,\"quantity\":2}],\"shippingAddress\":{\"line1\":\"1 High St\",\"city\":\"London\",\"postalCode\":\"N1 1AA\",\"country\":\"GB\"},\"paymentMethodId\":\"6f1c2c1e-6a43-4d2b-9a55-2f3f6c1b9b10\"}" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")"
 order2_id="$(curl -s -X POST http://localhost:8080/orders \
   -H "Content-Type: application/json" \
-  -d "{\"customerId\":\"${customer_id}\",\"items\":[{\"sku\":\"sku-2\",\"productName\":\"Gadget\",\"unitPriceCents\":500,\"quantity\":1}]}" \
+  -d "{\"customerId\":\"${customer_id}\",\"items\":[{\"sku\":\"sku-2\",\"productName\":\"Gadget\",\"unitPriceCents\":500,\"quantity\":1}],\"shippingAddress\":{\"line1\":\"1 High St\",\"city\":\"London\",\"postalCode\":\"N1 1AA\",\"country\":\"GB\"},\"paymentMethodId\":\"6f1c2c1e-6a43-4d2b-9a55-2f3f6c1b9b10\"}" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")"
 echo "   order1=${order1_id}, order2=${order2_id}, customer=${customer_id}"
 
