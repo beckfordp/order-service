@@ -34,6 +34,13 @@ class HealthRoutesSuite extends CatsEffectSuite {
           newStatus: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
+      def recordCaptureOutcome(
+          id: String,
+          newStatus: OrderStatus,
+          outboxEvent: PendingOutboxEvent,
+          reconciliationReason: Option[String]
+      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
+      def reconciliationReason(id: String): IO[Option[String]] = IO.pure(None)
       def delete(id: String): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(true)
     }
@@ -65,6 +72,13 @@ class HealthRoutesSuite extends CatsEffectSuite {
           newStatus: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
+      def recordCaptureOutcome(
+          id: String,
+          newStatus: OrderStatus,
+          outboxEvent: PendingOutboxEvent,
+          reconciliationReason: Option[String]
+      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
+      def reconciliationReason(id: String): IO[Option[String]] = IO.pure(None)
       def delete(id: String): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(false)
     }

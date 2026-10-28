@@ -1,8 +1,10 @@
 package orderservice
 
 import cats.effect.IO
+import io.circe.syntax._
 import munit.CatsEffectSuite
 
+import java.time.Instant
 import scala.concurrent.duration._
 
 class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
@@ -194,5 +196,166 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
       (other, _) <- store.create("cust-456", oneItem)
       history <- store.listByCustomer("cust-456")
     } yield assertEquals(history.map(_._1.id), List(other.id))
+  }
+
+  private val captureInstant = Instant.parse("2026-01-01T00:00:00Z")
+
+  private def statusOutboxEvent(status: OrderStatus): PendingOutboxEvent =
+    PendingOutboxEvent(
+      "OrderStatusChanged",
+      ref =>
+        OrderStatusChangedEvent(
+          ref.orderId,
+          ref.customerId,
+          status.asString,
+          captureInstant
+        ).asJson
+    )
+
+  private def seedOrder(
+      store: OrderStore[IO],
+      status: OrderStatus
+  ): IO[Order] =
+    store
+      .create("cust-123", oneItem)
+      .flatMap { case (order, _) =>
+        store.update(order.id, status).map(_ => order)
+      }
+
+  test(
+    "recordCaptureOutcome moves a dispatched order to confirmed and writes its outbox row"
+  ) {
+    for {
+      (store, outbox) <- OrderStore.inMemoryWithOutbox[IO]
+      order <- seedOrder(store, OrderStatus.Dispatched)
+      updated <- store.recordCaptureOutcome(
+        order.id,
+        OrderStatus.Confirmed,
+        statusOutboxEvent(OrderStatus.Confirmed)
+      )
+      found <- store.get(order.id)
+      events <- outbox.get
+    } yield {
+      assertEquals(
+        updated,
+        Some(UpdatedOrderRef(order.id, "cust-123", order.totalCents))
+      )
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
+      assertEquals(events.size, 1)
+      val (aggregateId, envelope) = events.head
+      assertEquals(aggregateId, order.id)
+      assertEquals(envelope.eventType, "OrderStatusChanged")
+      val payload = envelope.payload.as[OrderStatusChangedEvent].toOption.get
+      assertEquals(payload.status, "confirmed")
+    }
+  }
+
+  test(
+    "recordCaptureOutcome accepts an authorized order when the outcome overtook dispatch"
+  ) {
+    for {
+      (store, outbox) <- OrderStore.inMemoryWithOutbox[IO]
+      order <- seedOrder(store, OrderStatus.Authorized)
+      updated <- store.recordCaptureOutcome(
+        order.id,
+        OrderStatus.Confirmed,
+        statusOutboxEvent(OrderStatus.Confirmed)
+      )
+      found <- store.get(order.id)
+      events <- outbox.get
+    } yield {
+      assert(updated.isDefined)
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
+      assertEquals(events.size, 1)
+    }
+  }
+
+  test("recordCaptureOutcome returns None for a non-waiting status") {
+    for {
+      (store, outbox) <- OrderStore.inMemoryWithOutbox[IO]
+      order <- seedOrder(store, OrderStatus.Pending)
+      updated <- store.recordCaptureOutcome(
+        order.id,
+        OrderStatus.Confirmed,
+        statusOutboxEvent(OrderStatus.Confirmed)
+      )
+      found <- store.get(order.id)
+      events <- outbox.get
+    } yield {
+      assertEquals(updated, None)
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
+      assertEquals(events, Nil)
+    }
+  }
+
+  test("a duplicate capture outcome is a no-op") {
+    for {
+      (store, outbox) <- OrderStore.inMemoryWithOutbox[IO]
+      order <- seedOrder(store, OrderStatus.Confirmed)
+      updated <- store.recordCaptureOutcome(
+        order.id,
+        OrderStatus.Confirmed,
+        statusOutboxEvent(OrderStatus.Confirmed)
+      )
+      events <- outbox.get
+    } yield {
+      assertEquals(updated, None)
+      assertEquals(events, Nil)
+    }
+  }
+
+  test(
+    "recordCaptureOutcome records a payment failure with its reconciliation reason"
+  ) {
+    for {
+      (store, outbox) <- OrderStore.inMemoryWithOutbox[IO]
+      order <- seedOrder(store, OrderStatus.Dispatched)
+      updated <- store.recordCaptureOutcome(
+        order.id,
+        OrderStatus.PaymentFailed,
+        statusOutboxEvent(OrderStatus.PaymentFailed),
+        Some("capture_failed")
+      )
+      found <- store.get(order.id)
+      reason <- store.reconciliationReason(order.id)
+      events <- outbox.get
+    } yield {
+      assert(updated.isDefined)
+      assertEquals(found.map(_._1.status), Some(OrderStatus.PaymentFailed))
+      assertEquals(reason, Some("capture_failed"))
+      assertEquals(events.size, 1)
+      val payload = events.head._2.payload
+        .as[OrderStatusChangedEvent]
+        .toOption
+        .get
+      assertEquals(payload.status, "payment_failed")
+    }
+  }
+
+  test("reconciliationReason is None for a normal or unknown order") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (order, _) <- store.create("cust-123", oneItem)
+      normal <- store.reconciliationReason(order.id)
+      unknown <- store.reconciliationReason("unknown-order-id")
+    } yield {
+      assertEquals(normal, None)
+      assertEquals(unknown, None)
+    }
+  }
+
+  test("recordCaptureOutcome returns None for an unknown order id") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      updated <- store.recordCaptureOutcome(
+        "unknown-order-id",
+        OrderStatus.Confirmed,
+        statusOutboxEvent(OrderStatus.Confirmed)
+      )
+      reason <- store.reconciliationReason("unknown-order-id")
+    } yield {
+      assertEquals(updated, None)
+      assertEquals(reason, None)
+    }
   }
 }

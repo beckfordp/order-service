@@ -52,7 +52,11 @@ class FulfilmentEventConsumerSuite
         .withBootstrapServers(config.bootstrapServers)
     KafkaProducer
       .resource(producerSettings)
-      .use(_.produceOne_(ProducerRecord(FulfilmentEventConsumer.topic, key, json)).flatten.void)
+      .use(
+        _.produceOne_(
+          ProducerRecord(FulfilmentEventConsumer.topic, key, json)
+        ).flatten.void
+      )
   }
 
   private def envelopeJson(eventType: String, payload: Json): String =
@@ -79,7 +83,10 @@ class FulfilmentEventConsumerSuite
 
   private val oneItem = List(NewOrderItem("sku-1", "Widget", 999, 2))
 
-  private def statusOf(store: OrderStore[IO], orderId: String): IO[OrderStatus] =
+  private def statusOf(
+      store: OrderStore[IO],
+      orderId: String
+  ): IO[OrderStatus] =
     store.get(orderId).map(_.map(_._1.status).get)
 
   private def pollForStatus(
@@ -94,7 +101,9 @@ class FulfilmentEventConsumerSuite
       }
       .timeout(15.seconds)
 
-  test("a synthetic DispatchConfirmed moves an Authorized order to Dispatched") {
+  test(
+    "a synthetic DispatchConfirmed moves an Authorized order to Dispatched"
+  ) {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
@@ -115,7 +124,13 @@ class FulfilmentEventConsumerSuite
         )
         finalStatus <- IO.race(
           FulfilmentEventConsumer
-            .run[IO](config, store, inventory(released), NoOpLogger[IO], deadLetter)
+            .run[IO](
+              config,
+              store,
+              inventory(released),
+              NoOpLogger[IO],
+              deadLetter
+            )
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Dispatched)
@@ -144,7 +159,13 @@ class FulfilmentEventConsumerSuite
           envelopeJson("DispatchConfirmed", event.asJson)
         )
         _ <- FulfilmentEventConsumer
-          .run[IO](config, store, inventory(released), NoOpLogger[IO], deadLetter)
+          .run[IO](
+            config,
+            store,
+            inventory(released),
+            NoOpLogger[IO],
+            deadLetter
+          )
           .compile
           .drain
           .background
@@ -154,7 +175,9 @@ class FulfilmentEventConsumerSuite
     }
   }
 
-  test("a synthetic DispatchFailed moves an Authorized order and releases once") {
+  test(
+    "a synthetic DispatchFailed moves an Authorized order and releases once"
+  ) {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {
@@ -190,7 +213,9 @@ class FulfilmentEventConsumerSuite
     }
   }
 
-  test("a DispatchFailed for a non-authorized order is skipped without releasing") {
+  test(
+    "a DispatchFailed for a non-authorized order is skipped without releasing"
+  ) {
     withContainers { kafka =>
       val config = configFor(kafka)
       for {

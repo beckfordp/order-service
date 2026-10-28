@@ -172,6 +172,42 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
     }
   }
 
+  test("running migrations creates the order_reconciliation table") {
+    withContainers { postgres =>
+      val config = PostgresConfig(
+        host = postgres.host,
+        port = postgres.mappedPort(5432),
+        database = postgres.databaseName,
+        user = postgres.username,
+        password = postgres.password
+      )
+
+      Migrations.run[IO](config).map { _ =>
+        val conn = DriverManager.getConnection(
+          postgres.jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val rs = conn
+            .createStatement()
+            .executeQuery(
+              "select column_name from information_schema.columns where table_name = 'order_reconciliation' order by ordinal_position"
+            )
+          val columns = Iterator
+            .unfold(())(_ =>
+              if (rs.next()) Some((rs.getString("column_name"), ())) else None
+            )
+            .toList
+          assertEquals(
+            columns,
+            List("order_id", "reason", "created_at")
+          )
+        } finally conn.close()
+      }
+    }
+  }
+
   test("running migrations creates the order_items table") {
     withContainers { postgres =>
       val config = PostgresConfig(

@@ -97,6 +97,25 @@ trait OrderStore[F[_]] {
       newStatus: OrderStatus,
       outboxEvent: Option[PendingOutboxEvent] = None
   ): F[Option[UpdatedOrderRef]]
+
+  /** Conditional transition for an asynchronous capture outcome (US-19.2/
+    * US-19.3): accepts an order still `Authorized` (the outcome overtook
+    * `DispatchConfirmed`) or already `Dispatched`. On a successful transition
+    * the outbox row is written atomically; a `reconciliationReason` also
+    * inserts the manual-reconciliation flag in the same transaction - a capture
+    * failure must not automatically release inventory.
+    */
+  def recordCaptureOutcome(
+      id: String,
+      newStatus: OrderStatus,
+      outboxEvent: PendingOutboxEvent,
+      reconciliationReason: Option[String] = None
+  ): F[Option[UpdatedOrderRef]]
+
+  /** The manual-reconciliation reason recorded for an order, if any (US-19.3).
+    */
+  def reconciliationReason(id: String): F[Option[String]]
+
   def delete(id: String): F[Boolean]
   def ping: F[Boolean]
 }
@@ -158,6 +177,7 @@ object OrderStore {
       ordersRef <- Ref.of[F, Map[String, Order]](Map.empty)
       itemsRef <- Ref.of[F, Map[String, List[OrderItem]]](Map.empty)
       outboxRef <- Ref.of[F, List[(String, EventEnvelope)]](Nil)
+      reconciliationRef <- Ref.of[F, Map[String, String]](Map.empty)
     } yield {
       def writeOutboxIfPresent(
           ref: UpdatedOrderRef,
@@ -289,6 +309,42 @@ object OrderStore {
             }
           } yield updated
 
+        def recordCaptureOutcome(
+            id: String,
+            newStatus: OrderStatus,
+            outboxEvent: PendingOutboxEvent,
+            reconciliationReason: Option[String]
+        ): F[Option[UpdatedOrderRef]] =
+          for {
+            now <- Sync[F].realTimeInstant
+            updated <- ordersRef.modify { entities =>
+              entities.get(id) match {
+                case Some(existing)
+                    if existing.status == OrderStatus.Authorized ||
+                      existing.status == OrderStatus.Dispatched =>
+                  val next = existing.copy(status = newStatus, updatedAt = now)
+                  (
+                    entities + (id -> next),
+                    Some(
+                      UpdatedOrderRef(next.id, next.customerId, next.totalCents)
+                    )
+                  )
+                case _ => (entities, None)
+              }
+            }
+            _ <- updated match {
+              case None      => Sync[F].unit
+              case Some(ref) =>
+                writeOutboxIfPresent(ref, Some(outboxEvent)) *>
+                  reconciliationReason.traverse_(reason =>
+                    reconciliationRef.update(_ + (id -> reason))
+                  )
+            }
+          } yield updated
+
+        def reconciliationReason(id: String): F[Option[String]] =
+          reconciliationRef.get.map(_.get(id))
+
         def delete(id: String): F[Boolean] =
           for {
             existed <- ordersRef.modify { entities =>
@@ -390,6 +446,33 @@ object OrderStore {
         AND status = $orderStatus
       RETURNING id, customer_id, total_cents
     """.query(uuid *: text *: int4)
+
+  // US-19.2/19.3: a capture outcome may arrive before or after the order's own
+  // DispatchConfirmed consumer applies `authorized -> dispatched`, so either
+  // pre-capture state is accepted.
+  private val updateOrderStatusIfAwaitingCapture: skunk.Query[
+    (OrderStatus, UUID, OrderStatus, OrderStatus),
+    (UUID, String, Int)
+  ] =
+    sql"""
+      UPDATE "order"
+      SET status = $orderStatus, updated_at = now()
+      WHERE id = $uuid
+        AND status IN ($orderStatus, $orderStatus)
+      RETURNING id, customer_id, total_cents
+    """.query(uuid *: text *: int4)
+
+  private val insertReconciliation: skunk.Command[(UUID, String)] =
+    sql"""
+      INSERT INTO order_reconciliation (order_id, reason)
+      VALUES ($uuid, $text)
+      ON CONFLICT (order_id) DO NOTHING
+    """.command
+
+  private val selectReconciliationReason: skunk.Query[UUID, String] =
+    sql"""
+      SELECT reason FROM order_reconciliation WHERE order_id = $uuid
+    """.query(text)
 
   // `payload` is bound as `$text` then cast `::jsonb` in-SQL - avoids adding
   // a skunk-circe dependency just for one write path that nothing in this
@@ -811,6 +894,68 @@ object OrderStore {
                             }
                           } yield updated
                         }
+                      }
+                    }
+                }
+
+              def recordCaptureOutcome(
+                  id: String,
+                  newStatus: OrderStatus,
+                  outboxEvent: PendingOutboxEvent,
+                  reconciliationReason: Option[String]
+              ): F[Option[UpdatedOrderRef]] =
+                scala.util.Try(UUID.fromString(id)).toOption match {
+                  case None       => Sync[F].pure(None)
+                  case Some(uuid) =>
+                    timed("update_capture_outcome") {
+                      pool.use { session =>
+                        session.transaction.use { _ =>
+                          for {
+                            updated <- session
+                              .prepare(updateOrderStatusIfAwaitingCapture)
+                              .flatMap(
+                                _.option(
+                                  (
+                                    newStatus,
+                                    uuid,
+                                    OrderStatus.Authorized,
+                                    OrderStatus.Dispatched
+                                  )
+                                )
+                              )
+                              .map(_.map {
+                                case (orderId, customerId, totalCents) =>
+                                  UpdatedOrderRef(
+                                    orderId.toString,
+                                    customerId,
+                                    totalCents
+                                  )
+                              })
+                            _ <- updated match {
+                              case None      => Sync[F].unit
+                              case Some(ref) =>
+                                insertOutboxRow(session, ref, outboxEvent) *>
+                                  reconciliationReason.traverse_(reason =>
+                                    session
+                                      .prepare(insertReconciliation)
+                                      .flatMap(_.execute((uuid, reason)))
+                                  )
+                            }
+                          } yield updated
+                        }
+                      }
+                    }
+                }
+
+              def reconciliationReason(id: String): F[Option[String]] =
+                scala.util.Try(UUID.fromString(id)).toOption match {
+                  case None       => Sync[F].pure(None)
+                  case Some(uuid) =>
+                    timed("select") {
+                      pool.use { session =>
+                        session
+                          .prepare(selectReconciliationReason)
+                          .flatMap(_.option(uuid))
                       }
                     }
                 }

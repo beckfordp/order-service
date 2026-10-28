@@ -283,6 +283,24 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
           new RuntimeException("synthetic permanent store failure")
         )
       else base.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
+    def recordCaptureOutcome(
+        id: String,
+        newStatus: OrderStatus,
+        outboxEvent: PendingOutboxEvent,
+        reconciliationReason: Option[String]
+    ) =
+      if (id == failOnOrderId)
+        IO.raiseError(
+          new RuntimeException("synthetic permanent store failure")
+        )
+      else
+        base.recordCaptureOutcome(
+          id,
+          newStatus,
+          outboxEvent,
+          reconciliationReason
+        )
+    def reconciliationReason(id: String) = base.reconciliationReason(id)
     def delete(id: String) = base.delete(id)
     def ping = base.ping
   }

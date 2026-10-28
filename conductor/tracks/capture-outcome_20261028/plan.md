@@ -2,7 +2,7 @@
 
 ## Phase 1: Migration + store capture-outcome transition
 
-- [ ] Task: Failing tests — `recordCaptureOutcome` from `Dispatched` and `Authorized`, `None`/no outbox from other states, failure stores `reconciliationReason`, `reconciliationReason` read, unknown order; Postgres atomic rollback of status + flag when the outbox insert fails (Red)
+- [~] Task: Failing tests — `recordCaptureOutcome` from `Dispatched` and `Authorized`, `None`/no outbox from other states, failure stores `reconciliationReason`, `reconciliationReason` read, unknown order; Postgres atomic rollback of status + flag when the outbox insert fails (Red)
 - [ ] Task: Implement V12, both trait methods and both interpreters (Green)
 - [ ] Task: Refactor, `sbt scalafmtCheck test` green
 - [ ] Task: Conductor - User Manual Verification 'Migration + store capture-outcome transition' (Protocol in workflow.md)

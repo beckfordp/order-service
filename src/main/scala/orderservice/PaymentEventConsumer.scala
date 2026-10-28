@@ -58,17 +58,24 @@ object PaymentFailedEvent {
 /** Consumes `PaymentCaptured`/`PaymentAuthorizationExpired`/`PaymentFailed`
   * envelopes on `payment-events` (payment-service; authorization is now the
   * synchronous `POST /payments/authorize` call, so this consumer never sees
-  * `PaymentAuthorized` - order-service already has that outcome) and
-  * transitions the matching order via `OrderStore.updateStatusIfCurrent`, keyed
-  * by the event's `orderId` directly: `Authorized -> Confirmed` on capture,
-  * `Authorized -> Cancelled` on authorization expiry,
-  * `Authorized -> PaymentFailed` on capture failure. A redelivered/out-of-order
-  * event for an order that's no longer `Authorized` (or an unknown `orderId`)
-  * is an idempotent no-op, logged at info - never an error, per spec.md's "Out
-  * of Scope". Publishes `OrderStatusChanged` on a successful transition.
-  * Journey 4 narrows capture and capture-failure to expect `dispatched`.
-  * `payment-events` may carry other event types this consumer doesn't care
-  * about - those are silently skipped by `eventType`, not logged as malformed.
+  * `PaymentAuthorized` - order-service already has that outcome).
+  *
+  * Capture outcomes use `OrderStore.recordCaptureOutcome`, which accepts an
+  * order still `Authorized` or already `Dispatched`: this consumer and the
+  * fulfilment consumer are independent streams, so `PaymentCaptured` can
+  * overtake `DispatchConfirmed`. `PaymentCaptured -> Confirmed`;
+  * `PaymentFailed -> PaymentFailed` with a manual-reconciliation flag and
+  * deliberately **no** inventory release (US-19.3 - the goods may already be
+  * shipped). There is no `InventoryClient` dependency here at all, which
+  * enforces that rule structurally. Expiry stays `Authorized -> Cancelled`
+  * (Journey 5).
+  *
+  * A redelivered/out-of-order event for an order no longer awaiting capture (or
+  * an unknown `orderId`) is an idempotent no-op, logged at info - never an
+  * error, per spec.md's "Out of Scope". Publishes `OrderStatusChanged` on a
+  * successful transition. `payment-events` may carry other event types this
+  * consumer doesn't care about - those are silently skipped by `eventType`, not
+  * logged as malformed.
   */
 object PaymentEventConsumer {
 
@@ -107,7 +114,7 @@ object PaymentEventConsumer {
             "new_status" -> newStatus.asString
           )
         )(
-          "No matching Authorized order for orderId (unknown order, or already resolved) - ignoring"
+          "No order awaiting capture for orderId (unknown order, or already resolved) - ignoring"
         )
     }
 
@@ -125,21 +132,18 @@ object PaymentEventConsumer {
       case Right(event) =>
         Async[F].realTimeInstant.flatMap { now =>
           store
-            .updateStatusIfCurrent(
+            .recordCaptureOutcome(
               event.orderId,
-              OrderStatus.Authorized,
               OrderStatus.Confirmed,
-              Some(
-                PendingOutboxEvent(
-                  "OrderStatusChanged",
-                  ref =>
-                    OrderStatusChangedEvent(
-                      ref.orderId,
-                      ref.customerId,
-                      OrderStatus.Confirmed.asString,
-                      now
-                    ).asJson
-                )
+              PendingOutboxEvent(
+                "OrderStatusChanged",
+                ref =>
+                  OrderStatusChangedEvent(
+                    ref.orderId,
+                    ref.customerId,
+                    OrderStatus.Confirmed.asString,
+                    now
+                  ).asJson
               )
             )
             .flatMap(
@@ -199,22 +203,22 @@ object PaymentEventConsumer {
       case Right(event) =>
         Async[F].realTimeInstant.flatMap { now =>
           store
-            .updateStatusIfCurrent(
+            .recordCaptureOutcome(
               event.orderId,
-              OrderStatus.Authorized,
               OrderStatus.PaymentFailed,
-              Some(
-                PendingOutboxEvent(
-                  "OrderStatusChanged",
-                  ref =>
-                    OrderStatusChangedEvent(
-                      ref.orderId,
-                      ref.customerId,
-                      OrderStatus.PaymentFailed.asString,
-                      now
-                    ).asJson
-                )
-              )
+              PendingOutboxEvent(
+                "OrderStatusChanged",
+                ref =>
+                  OrderStatusChangedEvent(
+                    ref.orderId,
+                    ref.customerId,
+                    OrderStatus.PaymentFailed.asString,
+                    now
+                  ).asJson
+              ),
+              // US-19.3: flag for manual reconciliation, never auto-release
+              // inventory (the order may already be physically shipped).
+              reconciliationReason = Some(event.reason)
             )
             .flatMap(
               logOutcome(logger, event.orderId, OrderStatus.PaymentFailed, _)

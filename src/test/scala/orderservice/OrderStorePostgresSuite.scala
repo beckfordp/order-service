@@ -747,4 +747,221 @@ class OrderStorePostgresSuite
         }
     }
   }
+
+  private def reconciliationRowsFor(
+      postgres: PostgreSQLContainer,
+      orderId: String
+  ): IO[List[String]] =
+    IO {
+      val conn = DriverManager.getConnection(
+        postgres.jdbcUrl,
+        postgres.username,
+        postgres.password
+      )
+      try {
+        val rs = conn
+          .createStatement()
+          .executeQuery(
+            s"select reason from order_reconciliation where order_id = '$orderId'"
+          )
+        Iterator
+          .unfold(())(_ =>
+            if (rs.next()) Some((rs.getString("reason"), ())) else None
+          )
+          .toList
+      } finally conn.close()
+    }
+
+  private def captureOutboxEvent(status: OrderStatus): PendingOutboxEvent =
+    PendingOutboxEvent(
+      "OrderStatusChanged",
+      ref =>
+        OrderStatusChangedEvent(
+          ref.orderId,
+          ref.customerId,
+          status.asString,
+          java.time.Instant.EPOCH
+        ).asJson
+    )
+
+  test(
+    "recordCaptureOutcome moves a dispatched order to confirmed and writes its outbox row"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            _ <- store.update(created.id, OrderStatus.Dispatched)
+            updated <- store.recordCaptureOutcome(
+              created.id,
+              OrderStatus.Confirmed,
+              captureOutboxEvent(OrderStatus.Confirmed)
+            )
+            found <- store.get(created.id)
+            rows <- outboxRowsFor(postgres, created.id)
+          } yield {
+            assert(updated.isDefined)
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
+            assertEquals(rows.size, 1)
+            val envelope = decode[EventEnvelope](rows.head._3)
+            assertEquals(envelope.map(_.eventType), Right("OrderStatusChanged"))
+            val payload =
+              envelope.flatMap(_.payload.as[OrderStatusChangedEvent])
+            assertEquals(payload.map(_.status), Right("confirmed"))
+          }
+        }
+    }
+  }
+
+  test(
+    "recordCaptureOutcome accepts an authorized order when the outcome overtook dispatch"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            _ <- store.update(created.id, OrderStatus.Authorized)
+            updated <- store.recordCaptureOutcome(
+              created.id,
+              OrderStatus.Confirmed,
+              captureOutboxEvent(OrderStatus.Confirmed)
+            )
+            found <- store.get(created.id)
+          } yield {
+            assert(updated.isDefined)
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
+          }
+        }
+    }
+  }
+
+  test(
+    "recordCaptureOutcome returns None and writes no outbox row for a non-waiting status"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            updated <- store.recordCaptureOutcome(
+              created.id,
+              OrderStatus.Confirmed,
+              captureOutboxEvent(OrderStatus.Confirmed)
+            )
+            found <- store.get(created.id)
+            rows <- outboxRowsFor(postgres, created.id)
+          } yield {
+            assertEquals(updated, None)
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
+            assertEquals(rows, Nil)
+          }
+        }
+    }
+  }
+
+  test(
+    "recordCaptureOutcome records a failure flag and writes its payment_failed outbox row"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            _ <- store.update(created.id, OrderStatus.Dispatched)
+            updated <- store.recordCaptureOutcome(
+              created.id,
+              OrderStatus.PaymentFailed,
+              captureOutboxEvent(OrderStatus.PaymentFailed),
+              Some("capture_failed")
+            )
+            found <- store.get(created.id)
+            reason <- store.reconciliationReason(created.id)
+            rows <- outboxRowsFor(postgres, created.id)
+            flags <- reconciliationRowsFor(postgres, created.id)
+          } yield {
+            assert(updated.isDefined)
+            assertEquals(
+              found.map(_._1.status),
+              Some(OrderStatus.PaymentFailed)
+            )
+            assertEquals(reason, Some("capture_failed"))
+            assertEquals(flags, List("capture_failed"))
+            val envelope = decode[EventEnvelope](rows.head._3)
+            val payload =
+              envelope.flatMap(_.payload.as[OrderStatusChangedEvent])
+            assertEquals(payload.map(_.status), Right("payment_failed"))
+          }
+        }
+    }
+  }
+
+  test(
+    "recordCaptureOutcome rolls back the status and reconciliation flag when the outbox write fails"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- store.create("cust-123", oneItem)
+            _ <- store.update(created.id, OrderStatus.Dispatched)
+            _ <- IO.blocking {
+              val conn = DriverManager.getConnection(
+                postgres.jdbcUrl,
+                postgres.username,
+                postgres.password
+              )
+              try
+                conn
+                  .createStatement()
+                  .execute(
+                    "alter table outbox_events add constraint reject_all check (false) not valid"
+                  )
+              finally conn.close()
+            }
+            result <- store
+              .recordCaptureOutcome(
+                created.id,
+                OrderStatus.PaymentFailed,
+                captureOutboxEvent(OrderStatus.PaymentFailed),
+                Some("capture_failed")
+              )
+              .attempt
+            _ <- IO.blocking {
+              val conn = DriverManager.getConnection(
+                postgres.jdbcUrl,
+                postgres.username,
+                postgres.password
+              )
+              try
+                conn
+                  .createStatement()
+                  .execute(
+                    "alter table outbox_events drop constraint reject_all"
+                  )
+              finally conn.close()
+            }
+            found <- store.get(created.id)
+            flags <- reconciliationRowsFor(postgres, created.id)
+            rows <- outboxRowsFor(postgres, created.id)
+          } yield {
+            assert(result.isLeft)
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Dispatched))
+            assertEquals(flags, Nil)
+            assertEquals(rows, Nil)
+          }
+        }
+    }
+  }
 }

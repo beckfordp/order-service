@@ -71,6 +71,14 @@ class OrderRoutesSuite extends CatsEffectSuite {
           newStatus: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
+      def recordCaptureOutcome(
+          id: String,
+          newStatus: OrderStatus,
+          outboxEvent: PendingOutboxEvent,
+          reconciliationReason: Option[String]
+      ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
+      def reconciliationReason(id: String): IO[Option[String]] =
+        IO.raiseError(error)
       def delete(id: String): IO[Boolean] = IO.raiseError(error)
       def ping: IO[Boolean] = IO.raiseError(error)
     }
@@ -813,6 +821,20 @@ class OrderRoutesSuite extends CatsEffectSuite {
             outboxEvent: Option[PendingOutboxEvent] = None
         ): IO[Option[UpdatedOrderRef]] =
           baseStore.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
+        def recordCaptureOutcome(
+            id: String,
+            newStatus: OrderStatus,
+            outboxEvent: PendingOutboxEvent,
+            reconciliationReason: Option[String]
+        ): IO[Option[UpdatedOrderRef]] =
+          baseStore.recordCaptureOutcome(
+            id,
+            newStatus,
+            outboxEvent,
+            reconciliationReason
+          )
+        def reconciliationReason(id: String): IO[Option[String]] =
+          baseStore.reconciliationReason(id)
         def delete(id: String): IO[Boolean] = baseStore.delete(id)
         def ping: IO[Boolean] = baseStore.ping
       }

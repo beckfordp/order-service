@@ -57,11 +57,15 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   (`PaymentEventConsumer`) subscribes to the `payment-events` domain topic
   and listens for payment-service's `PaymentCaptured`,
   `PaymentAuthorizationExpired`, and `PaymentFailed` envelopes: capture flips
-  an `Authorized` order to `confirmed`, an expired authorization flips it to
-  `cancelled`, and a capture failure flips it to `payment_failed`, all by
-  exact `orderId` match. Publishes `OrderStatusChanged` on a successful
+  an order awaiting capture (`authorized` or `dispatched`) to `confirmed`, an
+  expired authorization flips an `authorized` order to `cancelled`, and a
+  capture failure flips it to `payment_failed` **and records an
+  `order_reconciliation` row** instead of releasing inventory (the goods may
+  already be shipped — US-19.3), all by exact `orderId` match. Two accepted
+  source states cover the race between this consumer and the independent
+  `DispatchConfirmed` consumer. Publishes `OrderStatusChanged` on a successful
   transition. A redelivered/out-of-order event for an order that's no longer
-  `Authorized` (or an unknown `orderId`) is an idempotent no-op.
+  awaiting capture (or an unknown `orderId`) is an idempotent no-op.
   `PaymentAuthorized` is deliberately not consumed — authorization is the
   synchronous REST call now (Rework 7).
 - **Order history** — `GET /orders?customerId=<id>` (required query param,
@@ -129,3 +133,9 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   `DispatchFailed` — authorized→`dispatch_failed`, then best-effort
   `InventoryClient.release(orderId)` (failures logged for reconciliation).
   No `OrderStatusChanged` on failure.
+- US-19.2/19.3 (2026-10-28): `PaymentEventConsumer` transitions
+  `authorized`/`dispatched` → `confirmed` on `PaymentCaptured`, and
+  `authorized`/`dispatched` → `payment_failed` on `PaymentFailed`, writing an
+  `order_reconciliation` row (reason from the event) in the same transaction.
+  No inventory release on the capture-failure path — the consumer has no
+  `InventoryClient` dependency at all.
