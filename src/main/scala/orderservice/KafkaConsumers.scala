@@ -39,14 +39,39 @@ object KafkaConsumers {
           dlqProducerSettings
         )(logger)(meter)
       )
-      result <- StreamSupervisor.supervise[F, Unit](config.streamSupervisor)(
-        logger
-      )(meter)(
-        Async[F].pure(
-          PaymentEventConsumer.run[F](config, store, logger, paymentDeadLetter)
-        )
+      fulfilmentDeadLetter <- Stream.resource(
+        DeadLetter.resource[F, String, String](
+          config.dlqRetry,
+          config.dlqPublishResilience,
+          dlqProducerSettings
+        )(logger)(meter)
       )
-    } yield result
+      merged <- StreamSupervisor
+        .supervise[F, Unit](config.streamSupervisor)(logger)(meter)(
+          Async[F].pure(
+            PaymentEventConsumer.run[F](
+              config,
+              store,
+              logger,
+              paymentDeadLetter
+            )
+          )
+        )
+        .merge(
+          StreamSupervisor.supervise[F, Unit](config.streamSupervisor)(
+            logger
+          )(meter)(
+            Async[F].pure(
+              FulfilmentEventConsumer.run[F](
+                config,
+                store,
+                logger,
+                fulfilmentDeadLetter
+              )
+            )
+          )
+        )
+    } yield merged
   }
 
   /** `supervised`, backgrounded as a fire-and-forget fiber - so `Main` wires

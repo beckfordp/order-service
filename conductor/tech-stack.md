@@ -16,8 +16,10 @@
   `cors_20261010` track (TD-1.2).
 - fs2-kafka 3.6.0 — consumer side: `PaymentEventConsumer` subscribes to
   `payment-events` (`PaymentCaptured`/`PaymentAuthorizationExpired`/
-  `PaymentFailed`; Rework 7). The earlier `StockEventConsumer`
-  (`inventory-events`) was retired under ADR 0018 (TD-7.3).
+  `PaymentFailed`; Rework 7) and `FulfilmentEventConsumer` subscribes to
+  `fulfilment-events` (`DispatchConfirmed`, US-17.4). The earlier
+  `StockEventConsumer` (`inventory-events`) was retired under ADR 0018
+  (TD-7.3).
   Producer side (`OrderEventPublisher`,
   added for US-5.3) was deleted in TD-3.2/ADR 0008: publishing an
   `order-events` event is now a write to the
@@ -25,7 +27,7 @@
   change it announces (see `OrderStore.PendingOutboxEvent`), not a direct
   Kafka produce call
 - purekafka (`io.github.beckfordp`) — `consumer.StreamSupervisor` wraps
-  `PaymentEventConsumer`'s stream (restart-with-backoff) and
+  each consumer's stream (restart-with-backoff, merged) and
   `consumer.DeadLetter` wraps its per-message processing (bounded retry, then
   routes to `payment-events-dlq` on exhaustion) — TD-2.2/TD-2.4, ADR 0010.
   Wired together in `KafkaConsumers.supervised`

@@ -55,6 +55,11 @@ object AsyncApiChannels extends AsyncApiChannelsProvider {
       topic = orderEventsTopic,
       eventType = "OrderStatusChanged",
       direction = ChannelDirection.Publish(PublisherKind.Cdc)
+    ),
+    AsyncApiChannel[DispatchConfirmedEvent](
+      topic = "fulfilment-events",
+      eventType = "DispatchConfirmed",
+      direction = ChannelDirection.Subscribe
     )
   )
 }

@@ -67,4 +67,15 @@ class OrderStatusSuite extends CatsEffectSuite {
       assertEquals(OrderStatus.fromString(status.asString), Right(status))
     }
   }
+
+  test("fromString parses dispatched as Dispatched") {
+    assertEquals(
+      OrderStatus.fromString("dispatched"),
+      Right(OrderStatus.Dispatched)
+    )
+  }
+
+  test("Dispatched serializes to dispatched") {
+    assertEquals(OrderStatus.Dispatched.asString, "dispatched")
+  }
 }

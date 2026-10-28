@@ -58,7 +58,7 @@ Swagger UI (generated from the same tapir endpoint definitions as the real route
 ## View Kafka AsyncAPI docs
 
 This service's Kafka consumer (`PaymentEventConsumer`) registers its event types —
-`PaymentCaptured`/`PaymentAuthorizationExpired`/`PaymentFailed` on `payment-events` — for
+`PaymentCaptured`/`PaymentAuthorizationExpired`/`PaymentFailed` on `payment-events` and `DispatchConfirmed` on `fulfilment-events` — for
 [AsyncAPI](https://www.asyncapi.com/) documentation via `purekafka.docs` (see `AsyncApiChannels`),
 the same way tapir generates the OpenAPI docs above. It publishes `OrderStatusChanged` via the
 outbox pattern, so it has no direct Kafka publish call sites. `StockEventConsumer` was retired

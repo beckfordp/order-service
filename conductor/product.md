@@ -118,3 +118,9 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 - Payment processing (payment-service's job)
 - Catalog data (catalog-service's job; order_items snapshots catalog values
   at order-create time only, never looks them up live)
+
+- US-17.4 (2026-10-28): `FulfilmentEventConsumer` consumes
+  `fulfilment-events: DispatchConfirmed` and moves an `authorized` order to
+  `dispatched` via the conditional status update; unknown/non-authorized
+  orders are logged and skipped. No `OrderStatusChanged` on dispatch.
+  `DispatchFailed` handling is US-18.3 (not yet built).
