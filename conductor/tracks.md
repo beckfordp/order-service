@@ -4,6 +4,9 @@ This file tracks all major tracks for the project.
 
 
 
+- [~] **Track: US-18.3 — DispatchFailed → dispatch_failed + release**
+  *Link: [./tracks/dispatch-failed_20261028/](./tracks/dispatch-failed_20261028/)*
+
 ## Backlog
 
 Title-only placeholders for future tracks — not yet detailed (no spec/plan, no linked
