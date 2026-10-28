@@ -124,3 +124,8 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   `dispatched` via the conditional status update; unknown/non-authorized
   orders are logged and skipped. No `OrderStatusChanged` on dispatch.
   `DispatchFailed` handling is US-18.3 (not yet built).
+
+- US-18.3 (2026-10-28): `FulfilmentEventConsumer` also handles
+  `DispatchFailed` — authorized→`dispatch_failed`, then best-effort
+  `InventoryClient.release(orderId)` (failures logged for reconciliation).
+  No `OrderStatusChanged` on failure.

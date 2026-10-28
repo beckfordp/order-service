@@ -39,6 +39,13 @@ object DispatchConfirmedEvent {
   implicit val schema: Schema[DispatchConfirmedEvent] = Schema.derived
 }
 
+final case class DispatchFailedEvent(orderId: String, reason: String)
+
+object DispatchFailedEvent {
+  implicit val codec: Codec[DispatchFailedEvent] = deriveCodec
+  implicit val schema: Schema[DispatchFailedEvent] = Schema.derived
+}
+
 /** Consumes `DispatchConfirmed` on `fulfilment-events` (US-17.4): moves the
   * order from `authorized` to `dispatched`, once. Unknown or non-authorized
   * orders are a normal no-op (logged, offset committed). Malformed
@@ -48,8 +55,6 @@ object DispatchConfirmedEvent {
 object FulfilmentEventConsumer {
 
   val topic: String = "fulfilment-events"
-
-  private val eventType: String = "DispatchConfirmed"
 
   private def consumerSettings[F[_]: Async](
       config: KafkaConfig
@@ -62,6 +67,7 @@ object FulfilmentEventConsumer {
   def run[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
+      inventoryClient: InventoryClient[F],
       logger: StructuredLogger[F],
       deadLetter: DeadLetter[F, String, String]
   ): Stream[F, Unit] =
@@ -70,7 +76,7 @@ object FulfilmentEventConsumer {
       .subscribeTo(topic)
       .records
       .evalMap { committable =>
-        def handleEvent(event: DispatchConfirmedEvent): F[Unit] =
+        def handleConfirmed(event: DispatchConfirmedEvent): F[Unit] =
           store
             .updateStatusIfCurrent(
               event.orderId,
@@ -91,6 +97,32 @@ object FulfilmentEventConsumer {
                 )
             }
 
+        def handleFailed(event: DispatchFailedEvent): F[Unit] =
+          store
+            .updateStatusIfCurrent(
+              event.orderId,
+              OrderStatus.Authorized,
+              OrderStatus.DispatchFailed
+            )
+            .flatMap {
+              case Some(_) =>
+                inventoryClient.release(event.orderId).handleErrorWith {
+                  error =>
+                    logger.warn(
+                      Map("order_id" -> event.orderId),
+                      error
+                    )(
+                      "Releasing reservations for a dispatch failure failed - reconciliation needed"
+                    )
+                } *> logger.warn(
+                  Map("order_id" -> event.orderId, "reason" -> event.reason)
+                )("Order dispatch failed")
+              case None =>
+                logger.warn(Map("order_id" -> event.orderId))(
+                  "DispatchFailed for an unknown or non-authorized order - skipping"
+                )
+            }
+
         val key = committable.record.key.getOrElse("")
 
         val handled: F[Unit] = committable.record.value match {
@@ -104,16 +136,31 @@ object FulfilmentEventConsumer {
                 logger.error(Map("raw" -> raw), error)(
                   "Failed to decode fulfilment-events envelope"
                 )
-              case Right(envelope) if envelope.eventType != eventType =>
-                Async[F].unit
               case Right(envelope) =>
-                envelope.payload.as[DispatchConfirmedEvent] match {
-                  case Left(error) =>
-                    logger.error(Map("raw" -> raw), error)(
-                      "Failed to decode DispatchConfirmed payload"
-                    )
-                  case Right(event) =>
-                    deadLetter.guard(topic, key, raw)(handleEvent(event))
+                envelope.eventType match {
+                  case "DispatchConfirmed" =>
+                    envelope.payload.as[DispatchConfirmedEvent] match {
+                      case Left(error) =>
+                        logger.error(Map("raw" -> raw), error)(
+                          "Failed to decode DispatchConfirmed payload"
+                        )
+                      case Right(event) =>
+                        deadLetter.guard(topic, key, raw)(
+                          handleConfirmed(event)
+                        )
+                    }
+                  case "DispatchFailed" =>
+                    envelope.payload.as[DispatchFailedEvent] match {
+                      case Left(error) =>
+                        logger.error(Map("raw" -> raw), error)(
+                          "Failed to decode DispatchFailed payload"
+                        )
+                      case Right(event) =>
+                        deadLetter.guard(topic, key, raw)(
+                          handleFailed(event)
+                        )
+                    }
+                  case _ => Async[F].unit
                 }
             }
         }

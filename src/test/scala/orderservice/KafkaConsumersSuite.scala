@@ -204,7 +204,20 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
           )
           healthyFinal <-
             KafkaConsumers
-              .supervised[IO](config, store, NoOpLogger[IO], testMeter.meter)
+              .supervised[IO](
+                config,
+                store,
+                new InventoryClient[IO] {
+                  def reserveOrder(
+                      orderId: String,
+                      items: List[OrderReservationLine]
+                  ): IO[OrderReservationResult] =
+                    IO.raiseError(new NotImplementedError())
+                  def release(orderId: String): IO[Unit] = IO.unit
+                },
+                NoOpLogger[IO],
+                testMeter.meter
+              )
               .compile
               .drain
               .background

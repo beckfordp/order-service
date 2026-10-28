@@ -24,6 +24,7 @@ object KafkaConsumers {
   def supervised[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
+      inventoryClient: InventoryClient[F],
       logger: StructuredLogger[F],
       meter: Meter[F]
   ): Stream[F, Unit] = {
@@ -65,6 +66,7 @@ object KafkaConsumers {
               FulfilmentEventConsumer.run[F](
                 config,
                 store,
+                inventoryClient,
                 logger,
                 fulfilmentDeadLetter
               )
@@ -81,8 +83,15 @@ object KafkaConsumers {
   def resource[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
+      inventoryClient: InventoryClient[F],
       logger: StructuredLogger[F],
       meter: Meter[F]
   ): Resource[F, Unit] =
-    supervised[F](config, store, logger, meter).compile.drain.background.void
+    supervised[F](
+      config,
+      store,
+      inventoryClient,
+      logger,
+      meter
+    ).compile.drain.background.void
 }

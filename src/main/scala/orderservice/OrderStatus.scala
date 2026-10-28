@@ -10,6 +10,7 @@ sealed trait OrderStatus {
     case OrderStatus.Cancelled         => "cancelled"
     case OrderStatus.Authorized        => "authorized"
     case OrderStatus.Dispatched        => "dispatched"
+    case OrderStatus.DispatchFailed    => "dispatch_failed"
   }
 }
 
@@ -26,6 +27,7 @@ object OrderStatus {
   case object Cancelled extends OrderStatus
   case object Authorized extends OrderStatus
   case object Dispatched extends OrderStatus
+  case object DispatchFailed extends OrderStatus
 
   def fromString(raw: String): Either[String, OrderStatus] = raw match {
     case "pending"            => Right(Pending)
@@ -36,6 +38,7 @@ object OrderStatus {
     case "cancelled"          => Right(Cancelled)
     case "authorized"         => Right(Authorized)
     case "dispatched"         => Right(Dispatched)
+    case "dispatch_failed"    => Right(DispatchFailed)
     case other                => Left(s"Invalid order status: '$other'")
   }
 }

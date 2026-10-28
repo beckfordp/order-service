@@ -66,7 +66,7 @@ class AsyncApiChannelsSuite extends FunSuite {
   }
 
   test(
-    "AsyncApiChannels.channels registers all 4 event types with correct topic/eventType pairs"
+    "AsyncApiChannels.channels registers all 6 event types with correct topic/eventType pairs"
   ) {
     val topicsAndEventTypes =
       AsyncApiChannels.channels.map(c => c.topic -> c.eventType).toSet
@@ -77,13 +77,15 @@ class AsyncApiChannelsSuite extends FunSuite {
         "payment-events" -> "PaymentCaptured",
         "payment-events" -> "PaymentAuthorizationExpired",
         "payment-events" -> "PaymentFailed",
-        "order-events" -> "OrderStatusChanged"
+        "order-events" -> "OrderStatusChanged",
+        "fulfilment-events" -> "DispatchConfirmed",
+        "fulfilment-events" -> "DispatchFailed"
       )
     )
   }
 
   test(
-    "the 3 consumed event types are Subscribe-only; the CDC-published OrderStatusChanged is Publish(Cdc)"
+    "the 5 consumed event types are Subscribe-only; the CDC-published OrderStatusChanged is Publish(Cdc)"
   ) {
     val directionsByEventType =
       AsyncApiChannels.channels.map(c => c.eventType -> c.direction).toMap
@@ -92,7 +94,9 @@ class AsyncApiChannelsSuite extends FunSuite {
       consumed <- List(
         "PaymentCaptured",
         "PaymentAuthorizationExpired",
-        "PaymentFailed"
+        "PaymentFailed",
+        "DispatchConfirmed",
+        "DispatchFailed"
       )
     )
       assertEquals(

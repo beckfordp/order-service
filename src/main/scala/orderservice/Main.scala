@@ -34,17 +34,18 @@ object Main extends IOApp.Simple {
       )("order-service starting")
     )
     store <- OrderStore.postgres[IO](config.postgres, telemetry.meter)
-    _ <- KafkaConsumers.resource[IO](
-      config.kafka,
-      store,
-      telemetry.logger,
-      telemetry.meter
-    )
     httpClient <- EmberClientBuilder.default[IO].build
     inventoryClient = InventoryClient.resilient[IO](
       httpClient,
       config.inventoryClient,
       telemetry
+    )
+    _ <- KafkaConsumers.resource[IO](
+      config.kafka,
+      store,
+      inventoryClient,
+      telemetry.logger,
+      telemetry.meter
     )
     paymentClient = PaymentClient.resilient[IO](
       httpClient,

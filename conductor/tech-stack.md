@@ -17,7 +17,7 @@
 - fs2-kafka 3.6.0 — consumer side: `PaymentEventConsumer` subscribes to
   `payment-events` (`PaymentCaptured`/`PaymentAuthorizationExpired`/
   `PaymentFailed`; Rework 7) and `FulfilmentEventConsumer` subscribes to
-  `fulfilment-events` (`DispatchConfirmed`, US-17.4). The earlier
+  `fulfilment-events` (`DispatchConfirmed`/`DispatchFailed`, US-17.4/18.3). The earlier
   `StockEventConsumer` (`inventory-events`) was retired under ADR 0018
   (TD-7.3).
   Producer side (`OrderEventPublisher`,
