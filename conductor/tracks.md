@@ -3,8 +3,6 @@
 This file tracks all major tracks for the project.
 
 
-- [~] **Track: US-17.4 — DispatchConfirmed → Dispatched**
-  *Link: [./tracks/dispatch-confirmed_20261028/](./tracks/dispatch-confirmed_20261028/)*
 
 ## Backlog
 
