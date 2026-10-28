@@ -1,0 +1,8 @@
+{
+  "track_id": "dispatch-confirmed_20261028",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-28T16:00:00Z",
+  "updated_at": "2026-10-28T16:00:00Z",
+  "description": "US-17.4 — consume fulfilment-events DispatchConfirmed and move the order status to Dispatched"
+}
