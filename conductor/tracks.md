@@ -2,7 +2,8 @@
 
 This file tracks all major tracks for the project.
 
-
+- [ ] **Track: US-19.2 + US-19.3 — Capture outcome (Confirmed / PaymentFailed + reconciliation)**
+  *Link: [./tracks/capture-outcome_20261028/](./tracks/capture-outcome_20261028/)*
 
 
 ## Backlog

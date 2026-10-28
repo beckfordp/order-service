@@ -1,0 +1,8 @@
+{
+  "track_id": "capture-outcome_20261028",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-10-28T20:11:54Z",
+  "updated_at": "2026-10-28T20:11:54Z",
+  "description": "US-19.2 + US-19.3 — PaymentCaptured -> Confirmed; capture failure -> PaymentFailed with a manual-reconciliation flag and no auto inventory release"
+}
