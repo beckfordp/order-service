@@ -30,8 +30,8 @@
 
 ## Phase 5 — Verification, registry, docs
 
-- [ ] Update `scripts/verify-kafka-asyncapi-docs.sh` and `verify-order-status.sh` for the new event names.
-- [ ] Run full suite + coverage (`sbt coverage test coverageReport`), `sbt scalafmtAll scalafmtSbt`, `sbt scalafmtCheckAll scalafmtSbtCheck test`.
-- [ ] Run `sbt schemaRegistryCheck`; delete `order-events-OrderStatusChanged` from the local Apicurio registry; confirm 3 new artifacts registered.
-- [ ] Run the live `scripts/verify-kafka-asyncapi-docs.sh` (and the order-status script) against a running instance.
-- [ ] Task: Conductor - User Manual Verification 'Phase 5 — Verification & registry' (Protocol in workflow.md)
+- [x] Update `scripts/verify-kafka-asyncapi-docs.sh` and `verify-order-status.sh` for the new event names. — c735eee
+- [x] Run full suite + coverage (`sbt coverage test coverageReport`), `sbt scalafmtAll scalafmtSbt`, `sbt scalafmtCheckAll scalafmtSbtCheck test`. — 199 tests green, 88.52% statement / 87.90% branch coverage
+- [x] Run `sbt schemaRegistryCheck`; delete `order-events-OrderStatusChanged` from the local Apicurio registry; confirm 3 new artifacts registered. — registry group `gluon` holds only the 3 new `order-events-*` artifacts; no `OrderStatusChanged` artifact
+- [x] Run the live `scripts/verify-kafka-asyncapi-docs.sh` (and the order-status script) against a running instance. — both scripts passed
+- [x] Task: Conductor - User Manual Verification 'Phase 5 — Verification & registry' (Protocol in workflow.md) — covered by the two live scripts above

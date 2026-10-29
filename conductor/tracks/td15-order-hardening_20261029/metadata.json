@@ -1,7 +1,7 @@
 {
   "track_id": "td15-order-hardening_20261029",
   "type": "chore",
-  "status": "new",
+  "status": "completed",
   "created_at": "2026-10-29T00:00:00Z",
   "updated_at": "2026-10-29T00:00:00Z",
   "description": "TD-15.1 — cross-repo consistency hardening: order-event split (OrderConfirmed/OrderPaymentFailed/OrderCancelled), typed OrderId, Uri/asyncApiHtmlDir config, unknown-event logging, raw-log redaction, ScalaCheck, narrower constraints (gluon/TECHNICAL_DEBT.md TD-15)"

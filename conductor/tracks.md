@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: TD-15.1 — Cross-repo consistency hardening (order-service)**
+- [x] **Track: TD-15.1 — Cross-repo consistency hardening (order-service)**
   *Link: [./tracks/td15-order-hardening_20261029/](./tracks/td15-order-hardening_20261029/)*
 
 ## Backlog
