@@ -135,16 +135,29 @@ object FulfilmentEventConsumer {
                   case Right(_) =>
                     inventoryClient
                       .release(OrderId.render(orderId))
-                      .handleErrorWith { error =>
-                        store.flagReconciliation(
-                          orderId,
-                          s"inventory release failed after DispatchFailed: ${error.getMessage}"
-                        ) *> logger.warn(
-                          Map("order_id" -> event.orderId),
-                          error
-                        )(
-                          "Releasing reservations for a dispatch failure failed - reconciliation flagged"
-                        )
+                      .handleErrorWith { releaseError =>
+                        store
+                          .flagReconciliation(
+                            orderId,
+                            s"inventory release failed after DispatchFailed: ${releaseError.getMessage}"
+                          )
+                          .attempt
+                          .flatMap {
+                            case Left(flagError) =>
+                              logger.error(
+                                Map("order_id" -> event.orderId),
+                                flagError
+                              )(
+                                "Inventory release failed AND the reconciliation flag could not be written"
+                              )
+                            case Right(_) =>
+                              logger.warn(
+                                Map("order_id" -> event.orderId),
+                                releaseError
+                              )(
+                                "Releasing reservations for a dispatch failure failed - reconciliation flagged"
+                              )
+                          }
                       } *> logger.warn(
                       Map(
                         "order_id" -> event.orderId,

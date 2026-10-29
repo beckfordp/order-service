@@ -610,18 +610,21 @@ object OrderStore {
               def get(id: OrderId): F[Option[(Order, List[OrderItem])]] =
                 timed("select") {
                   pool.use { session =>
-                    val uuid = OrderId.uuid(id)
-                    for {
-                      row <- session
-                        .prepare(selectOrder)
-                        .flatMap(_.option(uuid))
-                      items <- row.traverse(_ =>
-                        session
-                          .prepare(selectOrderItems)
-                          .flatMap(_.stream(uuid, 64).compile.toList)
-                          .map(toItems(id, _))
-                      )
-                    } yield row.map(r => (toOrder(id, r), items.getOrElse(Nil)))
+                    session.transaction.use { _ =>
+                      val uuid = OrderId.uuid(id)
+                      for {
+                        row <- session
+                          .prepare(selectOrder)
+                          .flatMap(_.option(uuid))
+                        items <- row.traverse(_ =>
+                          session
+                            .prepare(selectOrderItems)
+                            .flatMap(_.stream(uuid, 64).compile.toList)
+                            .map(toItems(id, _))
+                        )
+                      } yield row
+                        .map(r => (toOrder(id, r), items.getOrElse(Nil)))
+                    }
                   }
                 }
 
@@ -699,20 +702,25 @@ object OrderStore {
                   pool.use { session =>
                     session.transaction.use { _ =>
                       val updatedF: F[Option[UpdatedOrderRef]] =
-                        if (allowed.size == 2) {
-                          val statuses = allowed.toList.sortBy(_.asString)
-                          session
-                            .prepare(updateOrderStatusIfAwaitingCapture)
-                            .flatMap(
-                              _.option((target, uuid, statuses(0), statuses(1)))
+                        allowed.toList.sortBy(_.asString) match {
+                          case only :: Nil =>
+                            session
+                              .prepare(updateOrderStatusIfCurrent)
+                              .flatMap(_.option((target, uuid, only)))
+                              .map(_.map(ref))
+                          case first :: second :: Nil =>
+                            session
+                              .prepare(updateOrderStatusIfAwaitingCapture)
+                              .flatMap(
+                                _.option((target, uuid, first, second))
+                              )
+                              .map(_.map(ref))
+                          case unsupported =>
+                            Sync[F].raiseError(
+                              new IllegalStateException(
+                                s"Unsupported transition rule for event ${event.label}: $unsupported"
+                              )
                             )
-                            .map(_.map(ref))
-                        } else {
-                          val only = allowed.head
-                          session
-                            .prepare(updateOrderStatusIfCurrent)
-                            .flatMap(_.option((target, uuid, only)))
-                            .map(_.map(ref))
                         }
                       for {
                         updated <- updatedF
