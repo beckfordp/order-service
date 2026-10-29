@@ -23,9 +23,9 @@
 
 ## Phase 4 — Observability, ScalaCheck, narrower constraints
 
-- [ ] Write failing tests: consumer logging assertions (unknown eventType logged; raw payload absent; byte length/error class present); add `munit-scalacheck` and properties (OrderId round-trip, item/total arithmetic); confirm failure.
-- [ ] Implement logging changes, property suites, and narrow `Cors` (`Applicative`), `HealthRoutes` (`Applicative`/`Monad`), route endpoints (`Monad`/`MonadThrow`), clients (`Concurrent`/`Clock`).
-- [ ] Refactor: keep `Async` only where skunk/Kafka/fs2 require it.
+- [x] Write failing tests: consumer logging assertions (unknown eventType logged; raw payload absent; byte length/error class present); add `munit-scalacheck` and properties (OrderId round-trip, item/total arithmetic); confirm failure. — f7e7edc
+- [x] Implement logging changes, property suites, and narrow `Cors` (`Applicative`), `HealthRoutes` (`Applicative`/`Monad`), route endpoints (`Monad`/`MonadThrow`), clients (`Concurrent`/`Clock`). — f7e7edc (Cors narrowed to `Monad`; `HealthRoutes.routes`/`AppRoutes` keep `Async` where http4s requires it)
+- [x] Refactor: keep `Async` only where skunk/Kafka/fs2 require it. — f7e7edc
 - [ ] Task: Conductor - User Manual Verification 'Phase 4 — Observability & purity' (Protocol in workflow.md)
 
 ## Phase 5 — Verification, registry, docs
