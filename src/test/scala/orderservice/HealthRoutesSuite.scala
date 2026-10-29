@@ -10,11 +10,6 @@ class HealthRoutesSuite extends CatsEffectSuite {
 
   private val readyStore: OrderStore[IO] =
     new OrderStore[IO] {
-      def create(
-          customerId: String,
-          items: List[NewOrderItem]
-      ): IO[(Order, List[OrderItem])] =
-        IO.raiseError(new NotImplementedError())
       def createAuthorized(
           order: Order,
           items: List[OrderItem]
@@ -24,23 +19,18 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def listByCustomer(
           customerId: String
       ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
-      def update(
+      def transition(
           id: OrderId,
-          status: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
-      def updateStatusIfCurrent(
-          id: OrderId,
-          expected: OrderStatus,
-          newStatus: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
-      def recordCaptureOutcome(
-          id: OrderId,
-          newStatus: OrderStatus,
-          outboxEvent: PendingOutboxEvent,
-          reconciliationReason: Option[String]
-      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
+          event: orderservice.domain.OrderEvent,
+          outboxEvent: Option[PendingOutboxEvent] = None,
+          reconciliationReason: Option[String] = None
+      ): IO[Either[
+        orderservice.domain.TransitionRejected,
+        UpdatedOrderRef
+      ]] =
+        IO.pure(Left(orderservice.domain.TransitionRejected.UnknownOrder))
+      def flagReconciliation(id: OrderId, reason: String): IO[Boolean] =
+        IO.pure(false)
       def reconciliationReason(id: OrderId): IO[Option[String]] = IO.pure(None)
       def delete(id: OrderId): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(true)
@@ -48,11 +38,6 @@ class HealthRoutesSuite extends CatsEffectSuite {
 
   private val notReadyStore: OrderStore[IO] =
     new OrderStore[IO] {
-      def create(
-          customerId: String,
-          items: List[NewOrderItem]
-      ): IO[(Order, List[OrderItem])] =
-        IO.raiseError(new NotImplementedError())
       def createAuthorized(
           order: Order,
           items: List[OrderItem]
@@ -62,23 +47,18 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def listByCustomer(
           customerId: String
       ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
-      def update(
+      def transition(
           id: OrderId,
-          status: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
-      def updateStatusIfCurrent(
-          id: OrderId,
-          expected: OrderStatus,
-          newStatus: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
-      def recordCaptureOutcome(
-          id: OrderId,
-          newStatus: OrderStatus,
-          outboxEvent: PendingOutboxEvent,
-          reconciliationReason: Option[String]
-      ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
+          event: orderservice.domain.OrderEvent,
+          outboxEvent: Option[PendingOutboxEvent] = None,
+          reconciliationReason: Option[String] = None
+      ): IO[Either[
+        orderservice.domain.TransitionRejected,
+        UpdatedOrderRef
+      ]] =
+        IO.pure(Left(orderservice.domain.TransitionRejected.UnknownOrder))
+      def flagReconciliation(id: OrderId, reason: String): IO[Boolean] =
+        IO.pure(false)
       def reconciliationReason(id: OrderId): IO[Option[String]] = IO.pure(None)
       def delete(id: OrderId): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(false)

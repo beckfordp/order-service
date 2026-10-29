@@ -7,7 +7,13 @@ import fs2.io.net.Network
 import io.circe.Json
 import io.circe.parser.decode
 import io.circe.syntax._
-import orderservice.domain.{OrderId, OrderItemId}
+import orderservice.domain.{
+  OrderEvent,
+  OrderId,
+  OrderItemId,
+  OrderLifecycle,
+  TransitionRejected
+}
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.metrics.Meter
 import skunk.{Codec, Session}
@@ -71,10 +77,6 @@ final case class PendingOutboxEvent(
 )
 
 trait OrderStore[F[_]] {
-  def create(
-      customerId: String,
-      items: List[NewOrderItem]
-  ): F[(Order, List[OrderItem])]
 
   /** Persists an already-authorized checkout (ADR 0018): ids are minted by the
     * caller before reserving/authorizing, so they're stored exactly as given,
@@ -87,31 +89,26 @@ trait OrderStore[F[_]] {
   ): F[(Order, List[OrderItem])]
   def get(id: OrderId): F[Option[(Order, List[OrderItem])]]
   def listByCustomer(customerId: String): F[List[(Order, List[OrderItem])]]
-  def update(
-      id: OrderId,
-      status: OrderStatus,
-      outboxEvent: Option[PendingOutboxEvent] = None
-  ): F[Option[(Order, List[OrderItem])]]
-  def updateStatusIfCurrent(
-      id: OrderId,
-      expected: OrderStatus,
-      newStatus: OrderStatus,
-      outboxEvent: Option[PendingOutboxEvent] = None
-  ): F[Option[UpdatedOrderRef]]
 
-  /** Conditional transition for an asynchronous capture outcome (US-19.2/
-    * US-19.3): accepts an order still `Authorized` (the outcome overtook
-    * `DispatchConfirmed`) or already `Dispatched`. On a successful transition
-    * the outbox row is written atomically; a `reconciliationReason` also
-    * inserts the manual-reconciliation flag in the same transaction - a capture
-    * failure must not automatically release inventory.
+  /** The only status-changing API: applies `OrderLifecycle.transition` as an
+    * atomic compare-and-set. `Left(UnknownOrder)` means no such row;
+    * `Left(IllegalTransition)` means the row exists but is in the wrong state
+    * (decided from a same-transaction status re-read, never guessed). On
+    * success the outbox row, and any reconciliation flag, are written in the
+    * same transaction.
     */
-  def recordCaptureOutcome(
+  def transition(
       id: OrderId,
-      newStatus: OrderStatus,
-      outboxEvent: PendingOutboxEvent,
+      event: OrderEvent,
+      outboxEvent: Option[PendingOutboxEvent] = None,
       reconciliationReason: Option[String] = None
-  ): F[Option[UpdatedOrderRef]]
+  ): F[Either[TransitionRejected, UpdatedOrderRef]]
+
+  /** Records a manual-reconciliation flag without changing status (used when a
+    * `DispatchFailed` inventory release fails). Returns false for an unknown
+    * order.
+    */
+  def flagReconciliation(id: OrderId, reason: String): F[Boolean]
 
   /** The manual-reconciliation reason recorded for an order, if any (US-19.3).
     */
@@ -123,7 +120,6 @@ trait OrderStore[F[_]] {
 
 object OrderStore {
 
-  private val defaultStatus = OrderStatus.Pending
   private val eventSource = "order-service"
 
   /** Mints `eventId`/`timestamp` and assembles the full envelope - mirrors the
@@ -200,33 +196,6 @@ object OrderStore {
         }
 
       val store = new OrderStore[F] {
-        def create(
-            customerId: String,
-            items: List[NewOrderItem]
-        ): F[(Order, List[OrderItem])] =
-          for {
-            id <- Sync[F].delay(OrderId.fromUuid(java.util.UUID.randomUUID()))
-            now <- Sync[F].realTimeInstant
-            totalCents = items.map(i => i.unitPriceCents * i.quantity).sum
-            entity = Order(id, customerId, totalCents, defaultStatus, now, now)
-            persistedItems <- items.traverse { item =>
-              Sync[F]
-                .delay(OrderItemId.fromUuid(java.util.UUID.randomUUID()))
-                .map { itemId =>
-                  OrderItem(
-                    itemId,
-                    id,
-                    item.sku,
-                    item.productName,
-                    item.unitPriceCents,
-                    item.quantity
-                  )
-                }
-            }
-            _ <- ordersRef.update(_ + (id -> entity))
-            _ <- itemsRef.update(_ + (id -> persistedItems))
-          } yield (entity, persistedItems)
-
         def createAuthorized(
             order: Order,
             items: List[OrderItem]
@@ -254,101 +223,53 @@ object OrderStore {
             .sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse)
             .map(order => (order, items.getOrElse(order.id, Nil)))
 
-        def update(
+        def transition(
             id: OrderId,
-            status: OrderStatus,
-            outboxEvent: Option[PendingOutboxEvent] = None
-        ): F[Option[(Order, List[OrderItem])]] =
+            event: OrderEvent,
+            outboxEvent: Option[PendingOutboxEvent] = None,
+            reconciliationReason: Option[String] = None
+        ): F[Either[TransitionRejected, UpdatedOrderRef]] =
           for {
             now <- Sync[F].realTimeInstant
             updated <- ordersRef.modify { entities =>
               entities.get(id) match {
-                case None           => (entities, None)
+                case None =>
+                  (entities, Left(TransitionRejected.UnknownOrder))
                 case Some(existing) =>
-                  val next =
-                    existing.copy(
-                      status = status,
-                      updatedAt = now
-                    )
-                  (entities + (id -> next), Some(next))
+                  OrderLifecycle.transition(existing.status, event) match {
+                    case Left(rejected)    => (entities, Left(rejected))
+                    case Right(nextStatus) =>
+                      val next =
+                        existing.copy(status = nextStatus, updatedAt = now)
+                      (
+                        entities + (id -> next),
+                        Right(
+                          UpdatedOrderRef(
+                            next.id,
+                            next.customerId,
+                            next.totalCents
+                          )
+                        )
+                      )
+                  }
               }
             }
             _ <- updated match {
-              case None        => Sync[F].unit
-              case Some(order) =>
-                writeOutboxIfPresent(
-                  UpdatedOrderRef(order.id, order.customerId, order.totalCents),
-                  outboxEvent
-                )
-            }
-            result <- updated match {
-              case None        => Sync[F].pure(None)
-              case Some(order) =>
-                itemsRef.get.map(items =>
-                  Some((order, items.getOrElse(id, Nil)))
-                )
-            }
-          } yield result
-
-        def updateStatusIfCurrent(
-            id: OrderId,
-            expected: OrderStatus,
-            newStatus: OrderStatus,
-            outboxEvent: Option[PendingOutboxEvent] = None
-        ): F[Option[UpdatedOrderRef]] =
-          for {
-            now <- Sync[F].realTimeInstant
-            updated <- ordersRef.modify { entities =>
-              entities.get(id) match {
-                case Some(existing) if existing.status == expected =>
-                  val next = existing.copy(status = newStatus, updatedAt = now)
-                  (
-                    entities + (id -> next),
-                    Some(
-                      UpdatedOrderRef(next.id, next.customerId, next.totalCents)
-                    )
-                  )
-                case _ => (entities, None)
-              }
-            }
-            _ <- updated match {
-              case None      => Sync[F].unit
-              case Some(ref) => writeOutboxIfPresent(ref, outboxEvent)
-            }
-          } yield updated
-
-        def recordCaptureOutcome(
-            id: OrderId,
-            newStatus: OrderStatus,
-            outboxEvent: PendingOutboxEvent,
-            reconciliationReason: Option[String]
-        ): F[Option[UpdatedOrderRef]] =
-          for {
-            now <- Sync[F].realTimeInstant
-            updated <- ordersRef.modify { entities =>
-              entities.get(id) match {
-                case Some(existing)
-                    if existing.status == OrderStatus.Authorized ||
-                      existing.status == OrderStatus.Dispatched =>
-                  val next = existing.copy(status = newStatus, updatedAt = now)
-                  (
-                    entities + (id -> next),
-                    Some(
-                      UpdatedOrderRef(next.id, next.customerId, next.totalCents)
-                    )
-                  )
-                case _ => (entities, None)
-              }
-            }
-            _ <- updated match {
-              case None      => Sync[F].unit
-              case Some(ref) =>
-                writeOutboxIfPresent(ref, Some(outboxEvent)) *>
+              case Left(_)    => Sync[F].unit
+              case Right(ref) =>
+                writeOutboxIfPresent(ref, outboxEvent) *>
                   reconciliationReason.traverse_(reason =>
                     reconciliationRef.update(_ + (id -> reason))
                   )
             }
           } yield updated
+
+        def flagReconciliation(id: OrderId, reason: String): F[Boolean] =
+          ordersRef.get.map(_.contains(id)).flatMap {
+            case true =>
+              reconciliationRef.update(_ + (id -> reason)).as(true)
+            case false => Sync[F].pure(false)
+          }
 
         def reconciliationReason(id: OrderId): F[Option[String]] =
           reconciliationRef.get.map(_.get(id))
@@ -366,16 +287,6 @@ object OrderStore {
       }
       (store, outboxRef)
     }
-
-  private val insertOrder: skunk.Query[
-    (UUID, String, Int, OrderStatus),
-    (OffsetDateTime, OffsetDateTime)
-  ] =
-    sql"""
-      INSERT INTO "order" (id, customer_id, total_cents, status)
-      VALUES ($uuid, $text, $int4, $orderStatus)
-      RETURNING created_at, updated_at
-    """.query(timestamptz *: timestamptz)
 
   private val insertAuthorizedOrder: skunk.Query[
     (UUID, String, Int, OrderStatus, Option[Address]),
@@ -419,26 +330,6 @@ object OrderStore {
       uuid *: int4 *: orderStatus *: timestamptz *: timestamptz *: shippingAddress
     )
 
-  private val updateOrder: skunk.Query[
-    (OrderStatus, UUID),
-    (
-        String,
-        Int,
-        OrderStatus,
-        OffsetDateTime,
-        OffsetDateTime,
-        Option[Address]
-    )
-  ] =
-    sql"""
-      UPDATE "order"
-      SET status = $orderStatus, updated_at = now()
-      WHERE id = $uuid
-      RETURNING customer_id, total_cents, status, created_at, updated_at, shipping_address::text
-    """.query(
-      text *: int4 *: orderStatus *: timestamptz *: timestamptz *: shippingAddress
-    )
-
   // Atomic guarded transition keyed by the order's own id - payment events
   // carry orderId.
   // Only transitions when the order's current status matches `expected`;
@@ -469,6 +360,19 @@ object OrderStore {
         AND status IN ($orderStatus, $orderStatus)
       RETURNING id, customer_id, total_cents
     """.query(uuid *: text *: int4)
+
+  private val selectStatus: skunk.Query[UUID, OrderStatus] =
+    sql"""SELECT status FROM "order" WHERE id = $uuid""".query(orderStatus)
+
+  private val insertReconciliationIfOrderExists
+      : skunk.Query[(UUID, String, UUID), UUID] =
+    sql"""
+      INSERT INTO order_reconciliation (order_id, reason)
+      SELECT $uuid, $text
+      WHERE EXISTS (SELECT 1 FROM "order" WHERE id = $uuid)
+      ON CONFLICT (order_id) DO NOTHING
+      RETURNING order_id
+    """.query(uuid)
 
   private val insertReconciliation: skunk.Command[(UUID, String)] =
     sql"""
@@ -516,6 +420,15 @@ object OrderStore {
       WHERE order_id = $uuid
       ORDER BY sku
     """.query(uuid *: text *: text *: int4 *: int4)
+
+  private val selectOrderItemsForOrders
+      : skunk.Query[String, (UUID, UUID, String, String, Int, Int)] =
+    sql"""
+      SELECT order_id, id, sku, product_name, unit_price_cents, quantity
+      FROM order_items
+      WHERE order_id = ANY(string_to_array($text, ',')::uuid[])
+      ORDER BY order_id, sku
+    """.query(uuid *: uuid *: text *: text *: int4 *: int4)
 
   private val pingQuery: skunk.Query[skunk.Void, Int] = sql"SELECT 1".query(
     int4
@@ -598,94 +511,53 @@ object OrderStore {
                   )
               } yield ()
 
-            def fetchItems(id: OrderId, uuid: UUID): F[List[OrderItem]] =
-              timed("select_items") {
-                pool.use { session => session.execute(selectOrderItems)(uuid) }
-              }.map(_.map {
-                case (itemId, sku, productName, unitPriceCents, quantity) =>
-                  OrderItem(
-                    OrderItemId.fromUuid(itemId),
-                    id,
-                    sku,
-                    productName,
-                    unitPriceCents,
-                    quantity
-                  )
-              })
-
-            new OrderStore[F] {
-              def create(
-                  customerId: String,
-                  items: List[NewOrderItem]
-              ): F[(Order, List[OrderItem])] = {
-                val totalCents =
-                  items.map(i => i.unitPriceCents * i.quantity).sum
-                timed("insert") {
-                  pool.use { session =>
-                    session.transaction.use { _ =>
-                      for {
-                        id <- Sync[F].delay(
-                          OrderId.fromUuid(UUID.randomUUID())
-                        )
-                        timestamps <- session
-                          .prepare(insertOrder)
-                          .flatMap(
-                            _.unique(
-                              (
-                                OrderId.uuid(id),
-                                customerId,
-                                totalCents,
-                                defaultStatus
-                              )
-                            )
-                          )
-                        persistedItems <- items.traverse { item =>
-                          for {
-                            itemId <- Sync[F].delay(
-                              OrderItemId.fromUuid(UUID.randomUUID())
-                            )
-                            _ <- session
-                              .prepare(insertOrderItem)
-                              .flatMap(
-                                _.execute(
-                                  (
-                                    OrderItemId.uuid(itemId),
-                                    OrderId.uuid(id),
-                                    item.sku,
-                                    item.productName,
-                                    item.unitPriceCents,
-                                    item.quantity
-                                  )
-                                )
-                              )
-                          } yield OrderItem(
-                            itemId,
-                            id,
-                            item.sku,
-                            item.productName,
-                            item.unitPriceCents,
-                            item.quantity
-                          )
-                        }
-                      } yield {
-                        val (createdAt, updatedAt) = timestamps
-                        (
-                          Order(
-                            id,
-                            customerId,
-                            totalCents,
-                            defaultStatus,
-                            createdAt.toInstant,
-                            updatedAt.toInstant
-                          ),
-                          persistedItems
-                        )
-                      }
-                    }
-                  }
-                }
+            def toItems(
+                id: OrderId,
+                rows: List[(UUID, String, String, Int, Int)]
+            ): List[OrderItem] =
+              rows.map { case (itemId, sku, name, price, qty) =>
+                OrderItem(
+                  OrderItemId.fromUuid(itemId),
+                  id,
+                  sku,
+                  name,
+                  price,
+                  qty
+                )
               }
 
+            def toOrder(
+                id: OrderId,
+                row: (
+                    String,
+                    Int,
+                    OrderStatus,
+                    OffsetDateTime,
+                    OffsetDateTime,
+                    Option[Address]
+                )
+            ): Order = {
+              val (
+                customerId,
+                totalCents,
+                status,
+                createdAt,
+                updatedAt,
+                address
+              ) =
+                row
+              Order(
+                id,
+                customerId,
+                totalCents,
+                status,
+                createdAt.toInstant,
+                updatedAt.toInstant,
+                address
+              )
+            }
+
+            new OrderStore[F] {
               def createAuthorized(
                   order: Order,
                   items: List[OrderItem]
@@ -735,45 +607,23 @@ object OrderStore {
                   }
                 }
 
-              def get(id: OrderId): F[Option[(Order, List[OrderItem])]] = {
-                val uuid = OrderId.uuid(id)
-                for {
-                  row <- timed("select") {
-                    pool.use { session =>
-                      session.prepare(selectOrder).flatMap(_.option(uuid))
-                    }
+              def get(id: OrderId): F[Option[(Order, List[OrderItem])]] =
+                timed("select") {
+                  pool.use { session =>
+                    val uuid = OrderId.uuid(id)
+                    for {
+                      row <- session
+                        .prepare(selectOrder)
+                        .flatMap(_.option(uuid))
+                      items <- row.traverse(_ =>
+                        session
+                          .prepare(selectOrderItems)
+                          .flatMap(_.stream(uuid, 64).compile.toList)
+                          .map(toItems(id, _))
+                      )
+                    } yield row.map(r => (toOrder(id, r), items.getOrElse(Nil)))
                   }
-                  result <- row match {
-                    case None => Sync[F].pure(None)
-                    case Some(
-                          (
-                            customerId,
-                            totalCents,
-                            status,
-                            createdAt,
-                            updatedAt,
-                            address
-                          )
-                        ) =>
-                      fetchItems(id, uuid).map { items =>
-                        Some(
-                          (
-                            Order(
-                              id,
-                              customerId,
-                              totalCents,
-                              status,
-                              createdAt.toInstant,
-                              updatedAt.toInstant,
-                              address
-                            ),
-                            items
-                          )
-                        )
-                      }
-                  }
-                } yield result
-              }
+                }
 
               def listByCustomer(
                   customerId: String
@@ -783,170 +633,137 @@ object OrderStore {
                     session.execute(selectOrdersByCustomer)(customerId)
                   }
                 }.flatMap { rows =>
-                  rows.traverse {
-                    case (
-                          id,
-                          totalCents,
-                          status,
-                          createdAt,
-                          updatedAt,
-                          address
-                        ) =>
-                      fetchItems(OrderId.fromUuid(id), id).map { items =>
-                        (
-                          Order(
-                            OrderId.fromUuid(id),
-                            customerId,
-                            totalCents,
-                            status,
-                            createdAt.toInstant,
-                            updatedAt.toInstant,
-                            address
-                          ),
-                          items
+                  val ids = rows.map(_._1)
+                  if (ids.isEmpty) Sync[F].pure(Nil)
+                  else
+                    timed("select_items_batch") {
+                      pool.use { session =>
+                        session.execute(selectOrderItemsForOrders)(
+                          ids.mkString(",")
                         )
                       }
-                  }
-                }
-
-              def update(
-                  id: OrderId,
-                  status: OrderStatus,
-                  outboxEvent: Option[PendingOutboxEvent] = None
-              ): F[Option[(Order, List[OrderItem])]] = {
-                val uuid = OrderId.uuid(id)
-                for {
-                  row <- timed("update") {
-                    pool.use { session =>
-                      session.transaction.use { _ =>
-                        for {
-                          updated <- session
-                            .prepare(updateOrder)
-                            .flatMap(_.option((status, uuid)))
-                          _ <- (updated, outboxEvent) match {
-                            case (
-                                  Some(
-                                    (customerId, totalCents, _, _, _, _)
-                                  ),
-                                  Some(event)
-                                ) =>
-                              insertOutboxRow(
-                                session,
-                                UpdatedOrderRef(id, customerId, totalCents),
-                                event
-                              )
-                            case _ => Sync[F].unit
-                          }
-                        } yield updated
-                      }
-                    }
-                  }
-                  result <- row match {
-                    case None => Sync[F].pure(None)
-                    case Some(
-                          (
-                            customerId,
-                            totalCents,
-                            newStatus,
-                            createdAt,
-                            updatedAt,
-                            address
-                          )
-                        ) =>
-                      fetchItems(id, uuid).map { items =>
-                        Some(
+                    }.map { itemRows =>
+                      val grouped = itemRows
+                        .groupBy(_._1)
+                        .view
+                        .mapValues(_.map {
+                          case (orderUuid, iid, sku, name, price, qty) =>
+                            OrderItem(
+                              OrderItemId.fromUuid(iid),
+                              OrderId.fromUuid(orderUuid),
+                              sku,
+                              name,
+                              price,
+                              qty
+                            )
+                        })
+                        .toMap
+                      rows.map {
+                        case (id, total, status, created, updated, address) =>
                           (
                             Order(
-                              id,
+                              OrderId.fromUuid(id),
                               customerId,
-                              totalCents,
-                              newStatus,
-                              createdAt.toInstant,
-                              updatedAt.toInstant,
+                              total,
+                              status,
+                              created.toInstant,
+                              updated.toInstant,
                               address
                             ),
-                            items
+                            grouped.getOrElse(id, Nil)
                           )
-                        )
                       }
-                  }
-                } yield result
-              }
-
-              def updateStatusIfCurrent(
-                  id: OrderId,
-                  expected: OrderStatus,
-                  newStatus: OrderStatus,
-                  outboxEvent: Option[PendingOutboxEvent] = None
-              ): F[Option[UpdatedOrderRef]] = {
-                val uuid = OrderId.uuid(id)
-                timed("update_status_if_current") {
-                  pool.use { session =>
-                    session.transaction.use { _ =>
-                      for {
-                        updated <- session
-                          .prepare(updateOrderStatusIfCurrent)
-                          .flatMap(_.option((newStatus, uuid, expected)))
-                          .map(_.map { case (orderId, customerId, totalCents) =>
-                            UpdatedOrderRef(
-                              OrderId.fromUuid(orderId),
-                              customerId,
-                              totalCents
-                            )
-                          })
-                        _ <- (updated, outboxEvent) match {
-                          case (Some(ref), Some(event)) =>
-                            insertOutboxRow(session, ref, event)
-                          case _ => Sync[F].unit
-                        }
-                      } yield updated
                     }
-                  }
                 }
-              }
 
-              def recordCaptureOutcome(
+              def transition(
                   id: OrderId,
-                  newStatus: OrderStatus,
-                  outboxEvent: PendingOutboxEvent,
-                  reconciliationReason: Option[String]
-              ): F[Option[UpdatedOrderRef]] = {
+                  event: OrderEvent,
+                  outboxEvent: Option[PendingOutboxEvent] = None,
+                  reconciliationReason: Option[String] = None
+              ): F[Either[TransitionRejected, UpdatedOrderRef]] = {
                 val uuid = OrderId.uuid(id)
-                timed("update_capture_outcome") {
+                val target = OrderLifecycle.target(event)
+                val allowed = OrderLifecycle.allowedFrom(event)
+                def ref(
+                    row: (UUID, String, Int)
+                ): UpdatedOrderRef = {
+                  val (orderId, customerId, totalCents) = row
+                  UpdatedOrderRef(
+                    OrderId.fromUuid(orderId),
+                    customerId,
+                    totalCents
+                  )
+                }
+                timed("transition") {
                   pool.use { session =>
                     session.transaction.use { _ =>
+                      val updatedF: F[Option[UpdatedOrderRef]] =
+                        if (allowed.size == 2) {
+                          val statuses = allowed.toList.sortBy(_.asString)
+                          session
+                            .prepare(updateOrderStatusIfAwaitingCapture)
+                            .flatMap(
+                              _.option((target, uuid, statuses(0), statuses(1)))
+                            )
+                            .map(_.map(ref))
+                        } else {
+                          val only = allowed.head
+                          session
+                            .prepare(updateOrderStatusIfCurrent)
+                            .flatMap(_.option((target, uuid, only)))
+                            .map(_.map(ref))
+                        }
                       for {
-                        updated <- session
-                          .prepare(updateOrderStatusIfAwaitingCapture)
-                          .flatMap(
-                            _.option(
-                              (
-                                newStatus,
-                                uuid,
-                                OrderStatus.Authorized,
-                                OrderStatus.Dispatched
-                              )
-                            )
-                          )
-                          .map(_.map { case (orderId, customerId, totalCents) =>
-                            UpdatedOrderRef(
-                              OrderId.fromUuid(orderId),
-                              customerId,
-                              totalCents
-                            )
-                          })
-                        _ <- updated match {
-                          case None      => Sync[F].unit
-                          case Some(ref) =>
-                            insertOutboxRow(session, ref, outboxEvent) *>
+                        updated <- updatedF
+                        result <- updated match {
+                          case Some(updatedRef) =>
+                            outboxEvent.traverse_(event =>
+                              insertOutboxRow(session, updatedRef, event)
+                            ) *>
                               reconciliationReason.traverse_(reason =>
                                 session
                                   .prepare(insertReconciliation)
                                   .flatMap(_.execute((uuid, reason)))
+                              ) *>
+                              Sync[F].pure(
+                                Right(
+                                  updatedRef
+                                ): Either[TransitionRejected, UpdatedOrderRef]
                               )
+                          case None =>
+                            session
+                              .prepare(selectStatus)
+                              .flatMap(_.option(uuid))
+                              .map {
+                                case None =>
+                                  Left(TransitionRejected.UnknownOrder)
+                                case Some(current) =>
+                                  Left(
+                                    TransitionRejected.IllegalTransition(
+                                      current,
+                                      target
+                                    )
+                                  )
+                              }
                         }
-                      } yield updated
+                      } yield result
                     }
+                  }
+                }
+              }
+
+              def flagReconciliation(
+                  id: OrderId,
+                  reason: String
+              ): F[Boolean] = {
+                val uuid = OrderId.uuid(id)
+                timed("flag_reconciliation") {
+                  pool.use { session =>
+                    session
+                      .prepare(insertReconciliationIfOrderExists)
+                      .flatMap(_.option((uuid, reason, uuid)))
+                      .map(_.isDefined)
                   }
                 }
               }

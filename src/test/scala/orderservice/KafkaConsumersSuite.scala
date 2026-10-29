@@ -175,10 +175,18 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
       Metrics.test[IO]("kafka-consumers-dlq-suite").use { testMeter =>
         for {
           baseStore <- OrderStore.inMemory[IO]
-          (poisonOrder, _) <- baseStore.create("cust-poison", oneItem)
-          (healthyOrder, _) <- baseStore.create("cust-healthy", oneItem)
-          _ <- baseStore.update(poisonOrder.id, OrderStatus.Authorized)
-          _ <- baseStore.update(healthyOrder.id, OrderStatus.Authorized)
+          (poisonOrder, _) <- StoreFixtures.seeded(
+            baseStore,
+            "cust-poison",
+            oneItem,
+            OrderStatus.Authorized
+          )
+          (healthyOrder, _) <- StoreFixtures.seeded(
+            baseStore,
+            "cust-healthy",
+            oneItem,
+            OrderStatus.Authorized
+          )
           store = alwaysFailOn(baseStore, poisonOrder.id)
           captured = (orderId: String) =>
             envelopeJson(
@@ -262,45 +270,24 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
       base: OrderStore[IO],
       failOnOrderId: OrderId
   ): OrderStore[IO] = new OrderStore[IO] {
-    def create(customerId: String, items: List[NewOrderItem]) =
-      base.create(customerId, items)
     def createAuthorized(order: Order, items: List[OrderItem]) =
       base.createAuthorized(order, items)
     def get(id: OrderId) = base.get(id)
     def listByCustomer(customerId: String) = base.listByCustomer(customerId)
-    def update(
+    def transition(
         id: OrderId,
-        status: OrderStatus,
-        outboxEvent: Option[PendingOutboxEvent] = None
-    ) = base.update(id, status, outboxEvent)
-    def updateStatusIfCurrent(
-        id: OrderId,
-        expected: OrderStatus,
-        newStatus: OrderStatus,
-        outboxEvent: Option[PendingOutboxEvent] = None
-    ) =
-      if (id == failOnOrderId)
-        IO.raiseError(
-          new RuntimeException("synthetic permanent store failure")
-        )
-      else base.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
-    def recordCaptureOutcome(
-        id: OrderId,
-        newStatus: OrderStatus,
-        outboxEvent: PendingOutboxEvent,
-        reconciliationReason: Option[String]
+        event: orderservice.domain.OrderEvent,
+        outboxEvent: Option[PendingOutboxEvent] = None,
+        reconciliationReason: Option[String] = None
     ) =
       if (id == failOnOrderId)
         IO.raiseError(
           new RuntimeException("synthetic permanent store failure")
         )
       else
-        base.recordCaptureOutcome(
-          id,
-          newStatus,
-          outboxEvent,
-          reconciliationReason
-        )
+        base.transition(id, event, outboxEvent, reconciliationReason)
+    def flagReconciliation(id: OrderId, reason: String) =
+      base.flagReconciliation(id, reason)
     def reconciliationReason(id: OrderId) = base.reconciliationReason(id)
     def delete(id: OrderId) = base.delete(id)
     def ping = base.ping

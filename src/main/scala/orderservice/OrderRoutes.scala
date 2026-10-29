@@ -1,11 +1,18 @@
 package orderservice
 
-import cats.Monad
+import cats.{Monad, MonadThrow}
 import cats.effect.{Async, Clock, Sync}
 import cats.syntax.all._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
-import orderservice.domain.{OrderId, OrderItemId, Pricing}
+import io.circe.syntax._
+import orderservice.domain.{
+  OrderEvent,
+  OrderId,
+  OrderItemId,
+  Pricing,
+  TransitionRejected
+}
 import org.http4s.HttpRoutes
 import org.typelevel.log4cats.StructuredLogger
 import sttp.model.StatusCode
@@ -175,6 +182,16 @@ object OrderRoutes {
         .map(e => InvalidCheckout(e.error))(e => ErrorResponse(e.message))
     )
 
+  private val illegalTransitionVariant
+      : EndpointOutput.OneOfVariant[IllegalTransition] =
+    oneOfVariant(
+      statusCode(StatusCode.Conflict)
+        .and(jsonBody[ErrorResponse])
+        .map[IllegalTransition](e => IllegalTransition(e.error))(e =>
+          ErrorResponse(s"Illegal status transition to '${e.to}'")
+        )
+    )
+
   private val paymentDeclinedVariant
       : EndpointOutput.OneOfVariant[PaymentDeclined] =
     oneOfVariant(
@@ -226,6 +243,7 @@ object OrderRoutes {
       emptyOrderItemsVariant,
       invalidOrderItemVariant,
       invalidCheckoutVariant,
+      illegalTransitionVariant,
       paymentDeclinedVariant,
       insufficientStockVariant,
       fixedVariant(
@@ -535,11 +553,32 @@ object OrderRoutes {
     * store, populates the cache (TTL-only freshness - see spec.md's "Out of
     * Scope"), and returns the freshly-queried result.
     */
-  def listOrdersServerEndpoint[F[_]: Monad](
+  def listOrdersServerEndpoint[F[_]: MonadThrow](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       historyCache: OrderHistoryCache[F]
   ): ServerEndpoint[Any, F] =
+    def fromStore(customerId: String): F[List[OrderResponse]] =
+      for {
+        orders <- store.listByCustomer(customerId)
+        history = orders.map { case (order, items) =>
+          OrderResponse(order, items)
+        }
+        _ <- historyCache
+          .set(customerId, history)
+          .attempt
+          .flatMap {
+            case Left(error) =>
+              logger.warn(
+                Map("customer_id" -> customerId, "cache" -> "write_error"),
+                error
+              )("Order-history cache write failed - response unaffected")
+            case Right(_) => Monad[F].unit
+          }
+        _ <- logger.info(
+          Map("customer_id" -> customerId, "cache" -> "miss")
+        )("Request completed")
+      } yield history
     listOrdersEndpoint.serverLogicSuccess[F] { customerId =>
       for {
         _ <- logger.info(
@@ -549,25 +588,21 @@ object OrderRoutes {
             "customer_id" -> customerId
           )
         )("Received request")
-        cached <- historyCache.get(customerId)
+        cached <- historyCache.get(customerId).attempt
         result <- cached match {
-          case Some(history) =>
+          case Right(Some(history)) =>
             logger
               .info(Map("customer_id" -> customerId, "cache" -> "hit"))(
                 "Request completed"
               )
               .as(history)
-          case None =>
-            for {
-              orders <- store.listByCustomer(customerId)
-              history = orders.map { case (order, items) =>
-                OrderResponse(order, items)
-              }
-              _ <- historyCache.set(customerId, history)
-              _ <- logger.info(
-                Map("customer_id" -> customerId, "cache" -> "miss")
-              )("Request completed")
-            } yield history
+          case Right(None) => fromStore(customerId)
+          case Left(error) =>
+            logger.warn(
+              Map("customer_id" -> customerId, "cache" -> "read_error"),
+              error
+            )("Order-history cache read failed - falling back to Postgres") *>
+              fromStore(customerId)
         }
       } yield result
     }
@@ -605,7 +640,7 @@ object OrderRoutes {
     * both call `OrderStore.update` with the same required update body; only the
     * logged HTTP method differs.
     */
-  private def updateLogic[F[_]: Monad](
+  private def updateLogic[F[_]: Monad: Clock](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       httpMethod: String
@@ -614,6 +649,38 @@ object OrderRoutes {
       req: UpdateOrderRequest
   ): F[Either[OrderError, OrderResponse]] = {
     val renderedId = OrderId.render(id)
+
+    def respond(
+        result: Either[TransitionRejected, UpdatedOrderRef]
+    ): F[Either[OrderError, OrderResponse]] =
+      result match {
+        case Right(_) =>
+          store.get(id).flatMap {
+            case Some((order, items)) =>
+              logger
+                .info(Map("order_id" -> renderedId))("Request completed")
+                .as(Right(OrderResponse(order, items)))
+            case None =>
+              logger
+                .warn(Map("order_id" -> renderedId))("Order not found")
+                .as(Left(OrderNotFound))
+          }
+        case Left(TransitionRejected.UnknownOrder) =>
+          logger
+            .warn(Map("order_id" -> renderedId))("Order not found")
+            .as(Left(OrderNotFound))
+        case Left(TransitionRejected.IllegalTransition(from, to)) =>
+          logger
+            .warn(
+              Map(
+                "order_id" -> renderedId,
+                "from" -> from.asString,
+                "to" -> to.asString
+              )
+            )("Illegal status transition")
+            .as(Left(IllegalTransition(to.asString)))
+      }
+
     for {
       _ <- logger.info(
         Map(
@@ -629,22 +696,37 @@ object OrderRoutes {
               "Invalid status"
             )
             .as(Left(InvalidStatus(req.status)))
-        case Right(status) =>
-          store.update(id, status).flatMap {
-            case Some((order, items)) =>
-              logger
-                .info(Map("order_id" -> renderedId))("Request completed")
-                .as(Right(OrderResponse(order, items)))
-            case None =>
-              logger
-                .warn(Map("order_id" -> renderedId))("Order not found")
-                .as(Left(OrderNotFound))
+        case Right(OrderStatus.Cancelled) =>
+          Clock[F].realTimeInstant.flatMap { now =>
+            store
+              .transition(
+                id,
+                OrderEvent.CustomerCancelled,
+                Some(
+                  PendingOutboxEvent(
+                    "OrderCancelled",
+                    ref =>
+                      OrderCancelledEvent(
+                        OrderId.render(ref.orderId),
+                        ref.customerId,
+                        now
+                      ).asJson
+                  )
+                )
+              )
+              .flatMap(respond)
           }
+        case Right(other) =>
+          logger
+            .warn(Map("order_id" -> renderedId, "status" -> other.asString))(
+              "Status is not reachable through PATCH/PUT"
+            )
+            .as(Left(IllegalTransition(other.asString)))
       }
     } yield result
   }
 
-  def updateOrderServerEndpoint[F[_]: Monad](
+  def updateOrderServerEndpoint[F[_]: Monad: Clock](
       store: OrderStore[F],
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =
@@ -652,7 +734,7 @@ object OrderRoutes {
       updateLogic(store, logger, "PATCH")(id, req)
     }
 
-  def replaceOrderServerEndpoint[F[_]: Monad](
+  def replaceOrderServerEndpoint[F[_]: Monad: Clock](
       store: OrderStore[F],
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =

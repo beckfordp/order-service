@@ -50,11 +50,6 @@ class OrderRoutesSuite extends CatsEffectSuite {
 
   private def failingStore(error: Throwable): OrderStore[IO] =
     new OrderStore[IO] {
-      def create(
-          customerId: String,
-          items: List[NewOrderItem]
-      ): IO[(Order, List[OrderItem])] =
-        IO.raiseError(error)
       def createAuthorized(
           order: Order,
           items: List[OrderItem]
@@ -65,24 +60,17 @@ class OrderRoutesSuite extends CatsEffectSuite {
       def listByCustomer(
           customerId: String
       ): IO[List[(Order, List[OrderItem])]] = IO.raiseError(error)
-      def update(
+      def transition(
           id: OrderId,
-          status: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[(Order, List[OrderItem])]] =
+          event: orderservice.domain.OrderEvent,
+          outboxEvent: Option[PendingOutboxEvent] = None,
+          reconciliationReason: Option[String] = None
+      ): IO[Either[
+        orderservice.domain.TransitionRejected,
+        UpdatedOrderRef
+      ]] = IO.raiseError(error)
+      def flagReconciliation(id: OrderId, reason: String): IO[Boolean] =
         IO.raiseError(error)
-      def updateStatusIfCurrent(
-          id: OrderId,
-          expected: OrderStatus,
-          newStatus: OrderStatus,
-          outboxEvent: Option[PendingOutboxEvent] = None
-      ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
-      def recordCaptureOutcome(
-          id: OrderId,
-          newStatus: OrderStatus,
-          outboxEvent: PendingOutboxEvent,
-          reconciliationReason: Option[String]
-      ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
       def reconciliationReason(id: OrderId): IO[Option[String]] =
         IO.raiseError(error)
       def delete(id: OrderId): IO[Boolean] = IO.raiseError(error)
@@ -343,13 +331,14 @@ class OrderRoutesSuite extends CatsEffectSuite {
       created <- postResponse.as[OrderResponse]
       patchResponse <- routes.orNotFound.run(
         Request[IO](Method.PATCH, uri"/orders" / created.id)
-          .withEntity(UpdateOrderRequest("pending"))
+          .withEntity(UpdateOrderRequest("cancelled"))
       )
       updated <- patchResponse.as[OrderResponse]
     } yield {
       assertEquals(patchResponse.status, Status.Ok)
       assertEquals(updated.id, created.id)
       assertEquals(updated.items, created.items)
+      assertEquals(updated.status, "cancelled")
     }
   }
 
@@ -367,7 +356,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.PATCH, uri"/orders" / unknownOrderId)
-          .withEntity(UpdateOrderRequest("pending"))
+          .withEntity(UpdateOrderRequest("cancelled"))
       )
       body <- response.as[io.circe.Json]
     } yield {
@@ -376,6 +365,35 @@ class OrderRoutesSuite extends CatsEffectSuite {
         body.asObject.exists(_.contains("error")),
         s"expected a JSON error body, got: $body"
       )
+    }
+  }
+
+  test(
+    "PATCH /orders/{id} returns 409 for a status the lifecycle does not allow"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
+        noOpHistoryCache
+      )
+      postResponse <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      created <- postResponse.as[OrderResponse]
+      patchResponse <- routes.orNotFound.run(
+        Request[IO](Method.PATCH, uri"/orders" / created.id)
+          .withEntity(UpdateOrderRequest("confirmed"))
+      )
+      found <- store.get(
+        orderservice.domain.OrderId.parse(created.id).toOption.get
+      )
+    } yield {
+      assertEquals(patchResponse.status, Status.Conflict)
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Authorized))
     }
   }
 
@@ -502,7 +520,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       _ <- testLogger.logged // drain POST's own log lines before the PATCH
       patchResponse <- routes.orNotFound.run(
         Request[IO](Method.PATCH, uri"/orders" / created.id)
-          .withEntity(UpdateOrderRequest("pending"))
+          .withEntity(UpdateOrderRequest("cancelled"))
       )
       logged <- testLogger.logged
     } yield {
@@ -539,7 +557,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.PATCH, uri"/orders" / unknownOrderId)
-          .withEntity(UpdateOrderRequest("pending"))
+          .withEntity(UpdateOrderRequest("cancelled"))
       )
       logged <- testLogger.logged
     } yield {
@@ -695,12 +713,13 @@ class OrderRoutesSuite extends CatsEffectSuite {
       created <- postResponse.as[OrderResponse]
       putResponse <- routes.orNotFound.run(
         Request[IO](Method.PUT, uri"/orders" / created.id)
-          .withEntity(UpdateOrderRequest("pending"))
+          .withEntity(UpdateOrderRequest("cancelled"))
       )
       replaced <- putResponse.as[OrderResponse]
     } yield {
       assertEquals(putResponse.status, Status.Ok)
       assertEquals(replaced.id, created.id)
+      assertEquals(replaced.status, "cancelled")
       assertEquals(replaced.items, created.items)
     }
   }
@@ -719,7 +738,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       )
       response <- routes.orNotFound.run(
         Request[IO](Method.PUT, uri"/orders" / unknownOrderId)
-          .withEntity(UpdateOrderRequest("pending"))
+          .withEntity(UpdateOrderRequest("cancelled"))
       )
       body <- response.as[io.circe.Json]
     } yield {
@@ -820,10 +839,6 @@ class OrderRoutesSuite extends CatsEffectSuite {
       baseStore <- OrderStore.inMemory[IO]
       callCount <- IO.ref(0)
       countingStore = new OrderStore[IO] {
-        def create(
-            customerId: String,
-            items: List[NewOrderItem]
-        ): IO[(Order, List[OrderItem])] = baseStore.create(customerId, items)
         def createAuthorized(
             order: Order,
             items: List[OrderItem]
@@ -835,31 +850,18 @@ class OrderRoutesSuite extends CatsEffectSuite {
             customerId: String
         ): IO[List[(Order, List[OrderItem])]] =
           callCount.update(_ + 1) *> baseStore.listByCustomer(customerId)
-        def update(
+        def transition(
             id: OrderId,
-            status: OrderStatus,
-            outboxEvent: Option[PendingOutboxEvent] = None
-        ): IO[Option[(Order, List[OrderItem])]] =
-          baseStore.update(id, status, outboxEvent)
-        def updateStatusIfCurrent(
-            id: OrderId,
-            expected: OrderStatus,
-            newStatus: OrderStatus,
-            outboxEvent: Option[PendingOutboxEvent] = None
-        ): IO[Option[UpdatedOrderRef]] =
-          baseStore.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
-        def recordCaptureOutcome(
-            id: OrderId,
-            newStatus: OrderStatus,
-            outboxEvent: PendingOutboxEvent,
-            reconciliationReason: Option[String]
-        ): IO[Option[UpdatedOrderRef]] =
-          baseStore.recordCaptureOutcome(
-            id,
-            newStatus,
-            outboxEvent,
-            reconciliationReason
-          )
+            event: orderservice.domain.OrderEvent,
+            outboxEvent: Option[PendingOutboxEvent] = None,
+            reconciliationReason: Option[String] = None
+        ): IO[Either[
+          orderservice.domain.TransitionRejected,
+          UpdatedOrderRef
+        ]] =
+          baseStore.transition(id, event, outboxEvent, reconciliationReason)
+        def flagReconciliation(id: OrderId, reason: String): IO[Boolean] =
+          baseStore.flagReconciliation(id, reason)
         def reconciliationReason(id: OrderId): IO[Option[String]] =
           baseStore.reconciliationReason(id)
         def delete(id: OrderId): IO[Boolean] = baseStore.delete(id)
@@ -893,6 +895,44 @@ class OrderRoutesSuite extends CatsEffectSuite {
       assertEquals(firstList.status, Status.Ok)
       assertEquals(secondList.status, Status.Ok)
       assertEquals(calls, 1)
+    }
+  }
+
+  test("GET /orders falls back to Postgres when the cache read fails") {
+    val failingCache = new OrderHistoryCache[IO] {
+      def get(customerId: String): IO[Option[List[OrderResponse]]] =
+        IO.raiseError(new RuntimeException("redis down"))
+      def set(customerId: String, value: List[OrderResponse]): IO[Unit] =
+        IO.unit
+    }
+    for {
+      store <- OrderStore.inMemory[IO]
+      logger = StructuredTestingLogger.impl[IO]()
+      routes = OrderRoutes.routes[IO](
+        store,
+        logger,
+        alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
+        failingCache
+      )
+      _ <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      response <- routes.orNotFound.run(
+        Request[IO](
+          Method.GET,
+          uri"/orders".withQueryParam("customerId", "cust-123")
+        )
+      )
+      body <- response.as[List[OrderResponse]]
+      logged <- logger.logged
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assertEquals(body.map(_.customerId), List("cust-123"))
+      assert(
+        logged.exists(_.ctx.get("cache").contains("read_error")),
+        s"expected a cache read_error warning, got: $logged"
+      )
     }
   }
 }

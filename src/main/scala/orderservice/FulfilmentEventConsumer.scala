@@ -8,7 +8,7 @@ import fs2.kafka._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
-import orderservice.domain.OrderId
+import orderservice.domain.{OrderEvent, OrderId, TransitionRejected}
 import org.typelevel.log4cats.StructuredLogger
 import purekafka.consumer.DeadLetter
 import sttp.tapir.Schema
@@ -16,6 +16,10 @@ import sttp.tapir.Schema
 /** Local mirror of fulfillment-service's `DispatchConfirmed` payload
   * (`gluon/docs/system-design.md`). Items are a full snapshot but this service
   * only needs the orderId; they are decoded to keep the contract checked.
+  *
+  * Both outcomes apply through `OrderStore.transition` / `OrderEvent`, the same
+  * pure lifecycle every other status change uses. A failed inventory release on
+  * `DispatchFailed` records a reconciliation flag instead of only logging.
   */
 final case class FulfilmentItem(
     sku: String,
@@ -88,22 +92,30 @@ object FulfilmentEventConsumer {
               )("Invalid orderId in DispatchConfirmed payload")
             case Right(orderId) =>
               store
-                .updateStatusIfCurrent(
-                  orderId,
-                  OrderStatus.Authorized,
-                  OrderStatus.Dispatched
-                )
+                .transition(orderId, OrderEvent.DispatchConfirmed)
                 .flatMap {
-                  case Some(_) =>
+                  case Right(_) =>
                     logger.info(
                       Map(
                         "order_id" -> event.orderId,
                         "tracking_no" -> event.trackingNo
                       )
                     )("Order dispatched")
-                  case None =>
+                  case Left(TransitionRejected.UnknownOrder) =>
                     logger.warn(Map("order_id" -> event.orderId))(
-                      "DispatchConfirmed for an unknown or non-authorized order - skipping"
+                      "DispatchConfirmed for an unknown order - skipping"
+                    )
+                  case Left(
+                        TransitionRejected.IllegalTransition(from, to)
+                      ) =>
+                    logger.warn(
+                      Map(
+                        "order_id" -> event.orderId,
+                        "from" -> from.asString,
+                        "to" -> to.asString
+                      )
+                    )(
+                      "DispatchConfirmed rejected for the order's current status"
                     )
                 }
           }
@@ -118,21 +130,20 @@ object FulfilmentEventConsumer {
               )("Invalid orderId in DispatchFailed payload")
             case Right(orderId) =>
               store
-                .updateStatusIfCurrent(
-                  orderId,
-                  OrderStatus.Authorized,
-                  OrderStatus.DispatchFailed
-                )
+                .transition(orderId, OrderEvent.DispatchFailed)
                 .flatMap {
-                  case Some(_) =>
+                  case Right(_) =>
                     inventoryClient
                       .release(OrderId.render(orderId))
                       .handleErrorWith { error =>
-                        logger.warn(
+                        store.flagReconciliation(
+                          orderId,
+                          s"inventory release failed after DispatchFailed: ${error.getMessage}"
+                        ) *> logger.warn(
                           Map("order_id" -> event.orderId),
                           error
                         )(
-                          "Releasing reservations for a dispatch failure failed - reconciliation needed"
+                          "Releasing reservations for a dispatch failure failed - reconciliation flagged"
                         )
                       } *> logger.warn(
                       Map(
@@ -140,10 +151,20 @@ object FulfilmentEventConsumer {
                         "reason" -> event.reason
                       )
                     )("Order dispatch failed")
-                  case None =>
+                  case Left(TransitionRejected.UnknownOrder) =>
                     logger.warn(Map("order_id" -> event.orderId))(
-                      "DispatchFailed for an unknown or non-authorized order - skipping"
+                      "DispatchFailed for an unknown order - skipping"
                     )
+                  case Left(
+                        TransitionRejected.IllegalTransition(from, to)
+                      ) =>
+                    logger.warn(
+                      Map(
+                        "order_id" -> event.orderId,
+                        "from" -> from.asString,
+                        "to" -> to.asString
+                      )
+                    )("DispatchFailed rejected for the order's current status")
                 }
           }
 
@@ -200,10 +221,6 @@ object FulfilmentEventConsumer {
                 }
             }
         }
-        handled *> committerCommit(committable)
+        handled *> KafkaCommit.commit(committable)
       }
-
-  private def committerCommit[F[_]](
-      committable: CommittableConsumerRecord[F, Option[String], Option[String]]
-  ): F[Unit] = committable.offset.commit
 }

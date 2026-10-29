@@ -7,6 +7,12 @@ import com.dimafeng.testcontainers.munit.TestContainerForAll
 import io.circe.parser.decode
 import io.circe.syntax._
 import munit.CatsEffectSuite
+import orderservice.domain.{
+  OrderEvent,
+  OrderId,
+  OrderItemId,
+  TransitionRejected
+}
 import orderservice.domain.{OrderId, OrderItemId}
 import org.testcontainers.utility.DockerImageName
 import org.typelevel.otel4s.metrics.Meter
@@ -53,6 +59,31 @@ class OrderStorePostgresSuite
       NewOrderItem("sku-1", "Widget", 999, 2),
       NewOrderItem("sku-2", "Gadget", 500, 3)
     )
+
+  private def seedAuthorized(
+      store: OrderStore[IO],
+      customerId: String,
+      items: List[NewOrderItem],
+      status: OrderStatus = OrderStatus.Authorized
+  ): IO[(Order, List[OrderItem])] = {
+    val orderId = OrderId.fromUuid(java.util.UUID.randomUUID())
+    val orderItems = items.map(item =>
+      OrderItem(
+        OrderItemId.fromUuid(java.util.UUID.randomUUID()),
+        orderId,
+        item.sku,
+        item.productName,
+        item.unitPriceCents,
+        item.quantity
+      )
+    )
+    val total = items.map(i => i.unitPriceCents * i.quantity).sum
+    val now = java.time.Instant.now()
+    store.createAuthorized(
+      Order(orderId, customerId, total, status, now, now),
+      orderItems
+    )
+  }
 
   /** Raw-JDBC read of outbox_events for a given aggregate_id - mirrors
     * MigrationsSuite's own raw-JDBC pattern; this track's production code never
@@ -101,7 +132,7 @@ class OrderStorePostgresSuite
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
-          store.create("cust-123", oneItem).map { case (order, _) =>
+          seedAuthorized(store, "cust-123", oneItem).map { case (order, _) =>
             assert(OrderId.render(order.id).nonEmpty)
           }
         }
@@ -114,7 +145,7 @@ class OrderStorePostgresSuite
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
-          store.create("cust-123", twoItems).map { case (order, _) =>
+          seedAuthorized(store, "cust-123", twoItems).map { case (order, _) =>
             assertEquals(order.totalCents, 999 * 2 + 500 * 3)
           }
         }
@@ -127,10 +158,11 @@ class OrderStorePostgresSuite
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
-          store.create("cust-123", twoItems).map { case (order, items) =>
-            assertEquals(items.map(_.sku), List("sku-1", "sku-2"))
-            assert(items.forall(item => OrderItemId.render(item.id).nonEmpty))
-            assert(items.forall(_.orderId == order.id))
+          seedAuthorized(store, "cust-123", twoItems).map {
+            case (order, items) =>
+              assertEquals(items.map(_.sku), List("sku-1", "sku-2"))
+              assert(items.forall(item => OrderItemId.render(item.id).nonEmpty))
+              assert(items.forall(_.orderId == order.id))
           }
         }
     }
@@ -144,8 +176,8 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (first, _) <- store.create("cust-123", oneItem)
-            (second, _) <- store.create("cust-123", oneItem)
+            (first, _) <- seedAuthorized(store, "cust-123", oneItem)
+            (second, _) <- seedAuthorized(store, "cust-123", oneItem)
           } yield assertNotEquals(first.id, second.id)
         }
     }
@@ -163,11 +195,12 @@ class OrderStorePostgresSuite
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
-          store.create("cust-rollback", badItems).attempt.map { result =>
-            assert(
-              result.isLeft,
-              s"expected the create to fail, got: $result"
-            )
+          seedAuthorized(store, "cust-rollback", badItems).attempt.map {
+            result =>
+              assert(
+                result.isLeft,
+                s"expected the create to fail, got: $result"
+              )
           }
         } *> IO {
         val conn = DriverManager.getConnection(
@@ -195,7 +228,7 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            created <- store.create("cust-123", twoItems)
+            created <- seedAuthorized(store, "cust-123", twoItems)
             found <- store.get(created._1.id)
           } yield assertEquals(found, Some(created))
         }
@@ -215,108 +248,75 @@ class OrderStorePostgresSuite
     }
   }
 
-  test("update returns the updated entity and preserves its items") {
+  test("transition applies an allowed event and preserves the items") {
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, items) <- store.create("cust-123", twoItems)
-            updated <- store.update(created.id, OrderStatus.Reserved)
+            (created, items) <- seedAuthorized(store, "cust-123", twoItems)
+            updated <- store.transition(created.id, OrderEvent.PaymentCaptured)
+            found <- store.get(created.id)
           } yield {
-            assertEquals(updated.map(_._1.id), Some(created.id))
-            assertEquals(updated.map(_._2), Some(items))
+            assertEquals(
+              updated,
+              Right(
+                UpdatedOrderRef(created.id, "cust-123", created.totalCents)
+              )
+            )
+            assertEquals(found.map(_._2), Some(items))
             assert(
-              updated.exists(!_._1.updatedAt.isBefore(created.updatedAt)),
-              s"expected updatedAt not to move backwards, got: $updated"
+              found.exists(!_._1.updatedAt.isBefore(created.updatedAt)),
+              s"expected updatedAt not to move backwards, got: $found"
             )
           }
         }
     }
   }
 
-  test("update returns None for an unknown id") {
+  test("transition reports UnknownOrder for an unknown id") {
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           store
-            .update(
+            .transition(
               OrderId.fromUuid(java.util.UUID.randomUUID()),
-              OrderStatus.Pending
+              OrderEvent.PaymentCaptured
             )
-            .map(assertEquals(_, None))
+            .map(assertEquals(_, Left(TransitionRejected.UnknownOrder)))
         }
     }
   }
 
-  test(
-    "updateStatusIfCurrent transitions when the order's current status matches expected, returning the order's details"
-  ) {
+  test("transition rejects an illegal status and leaves it unchanged") {
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            _ <- store.update(created.id, OrderStatus.Reserved)
-            updated <- store.updateStatusIfCurrent(
+            (created, _) <-
+              seedAuthorized(store, "cust-123", oneItem, OrderStatus.Pending)
+            updated <- store.transition(
               created.id,
-              OrderStatus.Reserved,
-              OrderStatus.Confirmed
+              OrderEvent.PaymentCaptured
             )
             found <- store.get(created.id)
           } yield {
             assertEquals(
               updated,
-              Some(UpdatedOrderRef(created.id, "cust-123", created.totalCents))
+              Left(
+                TransitionRejected.IllegalTransition(
+                  OrderStatus.Pending,
+                  OrderStatus.Confirmed
+                )
+              )
             )
-            assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
-          }
-        }
-    }
-  }
-
-  test(
-    "updateStatusIfCurrent returns None and leaves status unchanged when the order's current status doesn't match expected"
-  ) {
-    withContainers { postgres =>
-      val config = configFor(postgres)
-      Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
-        .use { store =>
-          for {
-            (created, _) <- store.create("cust-123", oneItem)
-            updated <- store.updateStatusIfCurrent(
-              created.id,
-              OrderStatus.Reserved,
-              OrderStatus.Confirmed
-            )
-            found <- store.get(created.id)
-          } yield {
-            assertEquals(updated, None)
             assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
           }
-        }
-    }
-  }
-
-  test("updateStatusIfCurrent returns None for an unknown order id") {
-    withContainers { postgres =>
-      val config = configFor(postgres)
-      Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
-        .use { store =>
-          store
-            .updateStatusIfCurrent(
-              OrderId.fromUuid(java.util.UUID.randomUUID()),
-              OrderStatus.Reserved,
-              OrderStatus.Confirmed
-            )
-            .map(updated => assertEquals(updated, None))
         }
     }
   }
@@ -332,9 +332,9 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (first, _) <- store.create(customerId, oneItem)
+            (first, _) <- seedAuthorized(store, customerId, oneItem)
             _ <- IO.sleep(2.millis)
-            (second, _) <- store.create(customerId, oneItem)
+            (second, _) <- seedAuthorized(store, customerId, oneItem)
             history <- store.listByCustomer(customerId)
           } yield assertEquals(
             history.map(_._1.id),
@@ -366,8 +366,8 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            _ <- store.create(customerA, oneItem)
-            (other, _) <- store.create(customerB, oneItem)
+            _ <- seedAuthorized(store, customerA, oneItem)
+            (other, _) <- seedAuthorized(store, customerB, oneItem)
             history <- store.listByCustomer(customerB)
           } yield assertEquals(history.map(_._1.id), List(other.id))
         }
@@ -383,7 +383,7 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", twoItems)
+            (created, _) <- seedAuthorized(store, "cust-123", twoItems)
             deleted <- store.delete(created.id)
             found <- store.get(created.id)
           } yield {
@@ -439,7 +439,7 @@ class OrderStorePostgresSuite
           .postgres[IO](config, testMeter.meter)
           .use { store =>
             for {
-              created <- store.create("cust-123", oneItem)
+              created <- seedAuthorized(store, "cust-123", oneItem)
               _ <- store.get(created._1.id)
               metrics <- testMeter.collectMetrics
             } yield {
@@ -458,9 +458,9 @@ class OrderStorePostgresSuite
                 )
                 .toSet
               assert(
-                operations
-                  .contains("insert") && operations.contains("select"),
-                s"expected db.operation attributes for both insert and select, got: $operations"
+                operations.contains("insert_authorized") &&
+                  operations.contains("select"),
+                s"expected db.operation attributes for both insert_authorized and select, got: $operations"
               )
             }
           }
@@ -481,7 +481,7 @@ class OrderStorePostgresSuite
           .postgres[IO](unreachableConfig, testMeter.meter)
           .use { store =>
             for {
-              result <- store.create("cust-123", oneItem).attempt
+              result <- seedAuthorized(store, "cust-123", oneItem).attempt
               metrics <- testMeter.collectMetrics
             } yield {
               assert(
@@ -523,19 +523,20 @@ class OrderStorePostgresSuite
         .use { store =>
           for {
             ready <- store.ping
-            created <- store.create("cust-123", oneItem)
+            created <- seedAuthorized(store, "cust-123", oneItem)
             read1 <- store.get(created._1.id)
-            updated <- store.update(created._1.id, OrderStatus.Reserved)
+            updated <- store.transition(
+              created._1.id,
+              OrderEvent.PaymentCaptured
+            )
             read2 <- store.get(created._1.id)
             deleted <- store.delete(created._1.id)
             read3 <- store.get(created._1.id)
           } yield {
             assert(ready, "expected the database to be ready")
             assertEquals(read1, Some(created))
-            assertEquals(updated.map(_._1.customerId), Some("cust-123"))
-            assertEquals(updated.map(_._1.totalCents), Some(999 * 2))
-            assertEquals(updated.map(_._1.status), Some(OrderStatus.Reserved))
-            assertEquals(read2, updated)
+            assert(updated.isRight)
+            assertEquals(read2.map(_._1.status), Some(OrderStatus.Confirmed))
             assert(deleted, "expected delete to report the entity existed")
             assertEquals(read3, None)
           }
@@ -561,15 +562,15 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            updated <- store.update(
+            (created, _) <- seedAuthorized(store, "cust-123", oneItem)
+            updated <- store.transition(
               created.id,
-              OrderStatus.ReservationFailed,
+              OrderEvent.PaymentCaptured,
               Some(outboxEvent)
             )
             rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
-            assert(updated.isDefined)
+            assert(updated.isRight)
             assertEquals(rows.size, 1)
             val (aggregateId, correlationId, payloadJson) = rows.head
             assertEquals(aggregateId, OrderId.render(created.id))
@@ -608,14 +609,14 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            updated <- store.update(
+            updated <- store.transition(
               unknownId,
-              OrderStatus.ReservationFailed,
+              OrderEvent.PaymentCaptured,
               Some(outboxEvent)
             )
             rows <- outboxRowsFor(postgres, OrderId.render(unknownId))
           } yield {
-            assertEquals(updated, None)
+            assertEquals(updated, Left(TransitionRejected.UnknownOrder))
             assertEquals(rows, Nil)
           }
         }
@@ -640,17 +641,15 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            _ <- store.update(created.id, OrderStatus.Reserved)
-            updated <- store.updateStatusIfCurrent(
+            (created, _) <- seedAuthorized(store, "cust-123", oneItem)
+            updated <- store.transition(
               created.id,
-              OrderStatus.Reserved,
-              OrderStatus.Confirmed,
+              OrderEvent.PaymentCaptured,
               Some(outboxEvent)
             )
             rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
-            assert(updated.isDefined)
+            assert(updated.isRight)
             assertEquals(rows.size, 1)
             val envelope = decode[EventEnvelope](rows.head._3)
             assertEquals(envelope.map(_.eventType), Right("OrderConfirmed"))
@@ -683,17 +682,24 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            // order is still Pending, not Reserved - expected status won't match
-            updated <- store.updateStatusIfCurrent(
+            (created, _) <-
+              seedAuthorized(store, "cust-123", oneItem, OrderStatus.Confirmed)
+            updated <- store.transition(
               created.id,
-              OrderStatus.Reserved,
-              OrderStatus.Confirmed,
+              OrderEvent.PaymentCaptured,
               Some(outboxEvent)
             )
             rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
-            assertEquals(updated, None)
+            assertEquals(
+              updated,
+              Left(
+                TransitionRejected.IllegalTransition(
+                  OrderStatus.Confirmed,
+                  OrderStatus.Confirmed
+                )
+              )
+            )
             assertEquals(rows, Nil)
           }
         }
@@ -754,7 +760,7 @@ class OrderStorePostgresSuite
     }
 
   test(
-    "recordCaptureOutcome moves a dispatched order to confirmed and writes its outbox row"
+    "transition moves a dispatched order to confirmed and writes its outbox row"
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -762,17 +768,21 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            _ <- store.update(created.id, OrderStatus.Dispatched)
-            updated <- store.recordCaptureOutcome(
+            (created, _) <- seedAuthorized(
+              store,
+              "cust-123",
+              oneItem,
+              OrderStatus.Dispatched
+            )
+            updated <- store.transition(
               created.id,
-              OrderStatus.Confirmed,
-              captureOutboxEvent(OrderStatus.Confirmed)
+              OrderEvent.PaymentCaptured,
+              Some(captureOutboxEvent(OrderStatus.Confirmed))
             )
             found <- store.get(created.id)
             rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
-            assert(updated.isDefined)
+            assert(updated.isRight)
             assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
             assertEquals(rows.size, 1)
             val envelope = decode[EventEnvelope](rows.head._3)
@@ -789,7 +799,7 @@ class OrderStorePostgresSuite
   }
 
   test(
-    "recordCaptureOutcome accepts an authorized order when the outcome overtook dispatch"
+    "transition accepts an authorized order when the outcome overtook dispatch"
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -797,16 +807,20 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            _ <- store.update(created.id, OrderStatus.Authorized)
-            updated <- store.recordCaptureOutcome(
+            (created, _) <- seedAuthorized(
+              store,
+              "cust-123",
+              oneItem,
+              OrderStatus.Authorized
+            )
+            updated <- store.transition(
               created.id,
-              OrderStatus.Confirmed,
-              captureOutboxEvent(OrderStatus.Confirmed)
+              OrderEvent.PaymentCaptured,
+              Some(captureOutboxEvent(OrderStatus.Confirmed))
             )
             found <- store.get(created.id)
           } yield {
-            assert(updated.isDefined)
+            assert(updated.isRight)
             assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
           }
         }
@@ -814,7 +828,7 @@ class OrderStorePostgresSuite
   }
 
   test(
-    "recordCaptureOutcome returns None and writes no outbox row for a non-waiting status"
+    "transition returns None and writes no outbox row for a non-waiting status"
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -822,16 +836,29 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            updated <- store.recordCaptureOutcome(
+            (created, _) <- seedAuthorized(
+              store,
+              "cust-123",
+              oneItem,
+              OrderStatus.Pending
+            )
+            updated <- store.transition(
               created.id,
-              OrderStatus.Confirmed,
-              captureOutboxEvent(OrderStatus.Confirmed)
+              OrderEvent.PaymentCaptured,
+              Some(captureOutboxEvent(OrderStatus.Confirmed))
             )
             found <- store.get(created.id)
             rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
-            assertEquals(updated, None)
+            assertEquals(
+              updated,
+              Left(
+                TransitionRejected.IllegalTransition(
+                  OrderStatus.Pending,
+                  OrderStatus.Confirmed
+                )
+              )
+            )
             assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
             assertEquals(rows, Nil)
           }
@@ -840,7 +867,7 @@ class OrderStorePostgresSuite
   }
 
   test(
-    "recordCaptureOutcome records a failure flag and writes its payment_failed outbox row"
+    "transition records a failure flag and writes its payment_failed outbox row"
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -848,20 +875,24 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            _ <- store.update(created.id, OrderStatus.Dispatched)
-            updated <- store.recordCaptureOutcome(
+            (created, _) <- seedAuthorized(
+              store,
+              "cust-123",
+              oneItem,
+              OrderStatus.Dispatched
+            )
+            updated <- store.transition(
               created.id,
-              OrderStatus.PaymentFailed,
-              captureOutboxEvent(OrderStatus.PaymentFailed),
-              Some("capture_failed")
+              OrderEvent.PaymentFailed("capture_failed"),
+              Some(captureOutboxEvent(OrderStatus.PaymentFailed)),
+              reconciliationReason = Some("capture_failed")
             )
             found <- store.get(created.id)
             reason <- store.reconciliationReason(created.id)
             rows <- outboxRowsFor(postgres, OrderId.render(created.id))
             flags <- reconciliationRowsFor(postgres, OrderId.render(created.id))
           } yield {
-            assert(updated.isDefined)
+            assert(updated.isRight)
             assertEquals(
               found.map(_._1.status),
               Some(OrderStatus.PaymentFailed)
@@ -879,7 +910,7 @@ class OrderStorePostgresSuite
   }
 
   test(
-    "recordCaptureOutcome rolls back the status and reconciliation flag when the outbox write fails"
+    "transition rolls back the status and reconciliation flag when the outbox write fails"
   ) {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -887,8 +918,12 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           for {
-            (created, _) <- store.create("cust-123", oneItem)
-            _ <- store.update(created.id, OrderStatus.Dispatched)
+            (created, _) <- seedAuthorized(
+              store,
+              "cust-123",
+              oneItem,
+              OrderStatus.Dispatched
+            )
             _ <- IO.blocking {
               val conn = DriverManager.getConnection(
                 postgres.jdbcUrl,
@@ -904,11 +939,11 @@ class OrderStorePostgresSuite
               finally conn.close()
             }
             result <- store
-              .recordCaptureOutcome(
+              .transition(
                 created.id,
-                OrderStatus.PaymentFailed,
-                captureOutboxEvent(OrderStatus.PaymentFailed),
-                Some("capture_failed")
+                OrderEvent.PaymentFailed("capture_failed"),
+                Some(captureOutboxEvent(OrderStatus.PaymentFailed)),
+                reconciliationReason = Some("capture_failed")
               )
               .attempt
             _ <- IO.blocking {

@@ -110,8 +110,12 @@ class FulfilmentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         event = DispatchConfirmedEvent(
           OrderId.render(order.id),
           "GLN-1",
@@ -146,8 +150,12 @@ class FulfilmentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Cancelled)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Cancelled
+        )
         event = DispatchConfirmedEvent(
           OrderId.render(order.id),
           "GLN-2",
@@ -185,8 +193,12 @@ class FulfilmentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         released <- Ref.of[IO, List[String]](Nil)
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         event = DispatchFailedEvent(OrderId.render(order.id), "damaged")
         _ <- produce(
           config,
@@ -223,8 +235,12 @@ class FulfilmentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         released <- Ref.of[IO, List[String]](Nil)
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Dispatched)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Dispatched
+        )
         event = DispatchFailedEvent(OrderId.render(order.id), "damaged")
         _ <- produce(
           config,

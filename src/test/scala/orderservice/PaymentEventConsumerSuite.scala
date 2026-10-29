@@ -156,8 +156,12 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Dispatched)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Dispatched
+        )
         event = PaymentCapturedEvent(
           OrderId.render(order.id),
           order.totalCents,
@@ -192,8 +196,12 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         event = PaymentAuthorizationExpiredEvent(
           OrderId.render(order.id),
           Instant.parse("2026-01-01T00:00:00Z")
@@ -227,8 +235,12 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Dispatched)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Dispatched
+        )
         event = PaymentFailedEvent(
           OrderId.render(order.id),
           "payment-1",
@@ -266,8 +278,12 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         testLogger = StructuredTestingLogger.impl[IO]()
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         realEvent = PaymentCapturedEvent(
           OrderId.render(order.id),
           order.totalCents,
@@ -324,9 +340,18 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (stalePendingOrder, _) <- store.create("cust-123", oneItem)
-        (liveOrder, _) <- store.create("cust-456", oneItem)
-        _ <- store.update(liveOrder.id, OrderStatus.Authorized)
+        (stalePendingOrder, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Pending
+        )
+        (liveOrder, _) <- StoreFixtures.seeded(
+          store,
+          "cust-456",
+          oneItem,
+          OrderStatus.Authorized
+        )
         staleEvent = PaymentCapturedEvent(
           OrderId.render(stalePendingOrder.id),
           stalePendingOrder.totalCents,
@@ -380,8 +405,12 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         unknownEvent = PaymentCapturedEvent(
           "unknown-order-id",
           999,
@@ -432,8 +461,12 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
         testLogger = StructuredTestingLogger.impl[IO]()
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         realEvent = PaymentCapturedEvent(
           OrderId.render(order.id),
           order.totalCents,
@@ -489,10 +522,18 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (settledOrder, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(settledOrder.id, OrderStatus.Dispatched)
-        (failedOrder, _) <- store.create("cust-456", oneItem)
-        _ <- store.update(failedOrder.id, OrderStatus.Dispatched)
+        (settledOrder, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Dispatched
+        )
+        (failedOrder, _) <- StoreFixtures.seeded(
+          store,
+          "cust-456",
+          oneItem,
+          OrderStatus.Dispatched
+        )
         settledEvent = PaymentCapturedEvent(
           OrderId.render(settledOrder.id),
           settledOrder.totalCents,
@@ -551,8 +592,12 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Dispatched)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Dispatched
+        )
         event = PaymentCapturedEvent(
           OrderId.render(order.id),
           order.totalCents,
@@ -600,8 +645,12 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         event = PaymentAuthorizationExpiredEvent(
           OrderId.render(order.id),
           Instant.parse("2026-01-01T00:00:00Z")
@@ -648,8 +697,12 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Dispatched)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Dispatched
+        )
         event = PaymentFailedEvent(
           OrderId.render(order.id),
           "payment-1",
@@ -695,8 +748,12 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         event = PaymentCapturedEvent(
           OrderId.render(order.id),
           order.totalCents,
@@ -736,8 +793,12 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         event = PaymentCapturedEvent(
           OrderId.render(order.id),
           order.totalCents,
@@ -772,8 +833,12 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Authorized)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
         event = PaymentFailedEvent(
           OrderId.render(order.id),
           "payment-1",
@@ -809,8 +874,12 @@ class PaymentEventConsumerSuite
         deadLetter <- noOpDeadLetter
         storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
         (store, outboxRef) = storeAndOutbox
-        (order, _) <- store.create("cust-123", oneItem)
-        _ <- store.update(order.id, OrderStatus.Dispatched)
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Dispatched
+        )
         event = PaymentCapturedEvent(
           OrderId.render(order.id),
           order.totalCents,

@@ -69,12 +69,12 @@ object AsyncApiChannels extends AsyncApiChannelsProvider {
       direction = ChannelDirection.Publish(PublisherKind.Cdc)
     ),
     AsyncApiChannel[DispatchConfirmedEvent](
-      topic = "fulfilment-events",
+      topic = FulfilmentEventConsumer.topic,
       eventType = "DispatchConfirmed",
       direction = ChannelDirection.Subscribe
     ),
     AsyncApiChannel[DispatchFailedEvent](
-      topic = "fulfilment-events",
+      topic = FulfilmentEventConsumer.topic,
       eventType = "DispatchFailed",
       direction = ChannelDirection.Subscribe
     )

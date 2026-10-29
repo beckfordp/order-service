@@ -1,6 +1,6 @@
 package orderservice
 
-import cats.Functor
+import cats.Monad
 import cats.effect.{Async, Ref, Resource, Sync}
 import cats.syntax.all._
 import dev.profunktor.redis4cats.Redis
@@ -41,15 +41,31 @@ object OrderHistoryCache {
 
   private def keyFor(customerId: String): String = s"order-history:$customerId"
 
-  def fromRedisCommands[F[_]: Functor](
+  def fromRedisCommands[F[_]: Monad](
       commands: RedisCommands[F, String, String],
-      ttl: FiniteDuration
+      ttl: FiniteDuration,
+      logger: StructuredLogger[F]
   ): OrderHistoryCache[F] =
     new OrderHistoryCache[F] {
       def get(customerId: String): F[Option[List[OrderResponse]]] =
         commands
           .get(keyFor(customerId))
-          .map(_.flatMap(decode[List[OrderResponse]](_).toOption))
+          .flatMap {
+            case None      => Monad[F].pure(None)
+            case Some(raw) =>
+              decode[List[OrderResponse]](raw) match {
+                case Right(value) => Monad[F].pure(Some(value))
+                case Left(error)  =>
+                  logger.warn(
+                    Map(
+                      "cache_key" -> keyFor(customerId),
+                      "bytes" -> raw.length.toString
+                    ),
+                    error
+                  )("Discarding malformed order-history cache entry") *>
+                    Monad[F].pure(None)
+              }
+          }
 
       def set(customerId: String, value: List[OrderResponse]): F[Unit] =
         commands.setEx(keyFor(customerId), value.asJson.noSpaces, ttl)
@@ -66,7 +82,8 @@ object OrderHistoryCache {
       .map(
         fromRedisCommands(
           _,
-          FiniteDuration(config.historyTtlSeconds, "seconds")
+          FiniteDuration(config.historyTtlSeconds, "seconds"),
+          logger
         )
       )
   }

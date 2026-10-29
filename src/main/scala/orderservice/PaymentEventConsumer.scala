@@ -9,7 +9,7 @@ import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
 import io.circe.syntax._
-import orderservice.domain.OrderId
+import orderservice.domain.{OrderEvent, OrderId, TransitionRejected}
 import org.typelevel.log4cats.StructuredLogger
 import purekafka.consumer.DeadLetter
 import sttp.tapir.Schema
@@ -99,26 +99,30 @@ object PaymentEventConsumer {
   private def logOutcome[F[_]: Monad](
       logger: StructuredLogger[F],
       orderId: String,
-      newStatus: OrderStatus,
-      updated: Option[UpdatedOrderRef]
+      eventLabel: String,
+      updated: Either[TransitionRejected, UpdatedOrderRef]
   ): F[Unit] =
     updated match {
-      case Some(_) =>
+      case Right(_) =>
         logger.info(
           Map(
             "order_id" -> orderId,
-            "new_status" -> newStatus.asString
+            "event" -> eventLabel
           )
         )("Order status updated from payment event")
-      case None =>
+      case Left(TransitionRejected.UnknownOrder) =>
+        logger.info(
+          Map("order_id" -> orderId, "event" -> eventLabel)
+        )("Unknown orderId - ignoring")
+      case Left(TransitionRejected.IllegalTransition(from, to)) =>
         logger.info(
           Map(
             "order_id" -> orderId,
-            "new_status" -> newStatus.asString
+            "event" -> eventLabel,
+            "from" -> from.asString,
+            "to" -> to.asString
           )
-        )(
-          "No order awaiting capture for orderId (unknown order, or already resolved) - ignoring"
-        )
+        )("Order not awaiting this transition - ignoring")
     }
 
   private def handleCaptured[F[_]: Monad: Clock](
@@ -144,21 +148,28 @@ object PaymentEventConsumer {
           case Right(orderId) =>
             Clock[F].realTimeInstant.flatMap { now =>
               store
-                .recordCaptureOutcome(
+                .transition(
                   orderId,
-                  OrderStatus.Confirmed,
-                  PendingOutboxEvent(
-                    "OrderConfirmed",
-                    ref =>
-                      OrderConfirmedEvent(
-                        OrderId.render(ref.orderId),
-                        ref.customerId,
-                        now
-                      ).asJson
+                  OrderEvent.PaymentCaptured,
+                  Some(
+                    PendingOutboxEvent(
+                      "OrderConfirmed",
+                      ref =>
+                        OrderConfirmedEvent(
+                          OrderId.render(ref.orderId),
+                          ref.customerId,
+                          now
+                        ).asJson
+                    )
                   )
                 )
                 .flatMap(
-                  logOutcome(logger, event.orderId, OrderStatus.Confirmed, _)
+                  logOutcome(
+                    logger,
+                    event.orderId,
+                    "PaymentCaptured",
+                    _
+                  )
                 )
             }
         }
@@ -187,10 +198,9 @@ object PaymentEventConsumer {
           case Right(orderId) =>
             Clock[F].realTimeInstant.flatMap { now =>
               store
-                .updateStatusIfCurrent(
+                .transition(
                   orderId,
-                  OrderStatus.Authorized,
-                  OrderStatus.Cancelled,
+                  OrderEvent.AuthorizationExpired,
                   Some(
                     PendingOutboxEvent(
                       "OrderCancelled",
@@ -204,7 +214,12 @@ object PaymentEventConsumer {
                   )
                 )
                 .flatMap(
-                  logOutcome(logger, event.orderId, OrderStatus.Cancelled, _)
+                  logOutcome(
+                    logger,
+                    event.orderId,
+                    "PaymentAuthorizationExpired",
+                    _
+                  )
                 )
             }
         }
@@ -233,18 +248,20 @@ object PaymentEventConsumer {
           case Right(orderId) =>
             Clock[F].realTimeInstant.flatMap { now =>
               store
-                .recordCaptureOutcome(
+                .transition(
                   orderId,
-                  OrderStatus.PaymentFailed,
-                  PendingOutboxEvent(
-                    "OrderPaymentFailed",
-                    ref =>
-                      OrderPaymentFailedEvent(
-                        OrderId.render(ref.orderId),
-                        ref.customerId,
-                        event.reason,
-                        now
-                      ).asJson
+                  OrderEvent.PaymentFailed(event.reason),
+                  Some(
+                    PendingOutboxEvent(
+                      "OrderPaymentFailed",
+                      ref =>
+                        OrderPaymentFailedEvent(
+                          OrderId.render(ref.orderId),
+                          ref.customerId,
+                          event.reason,
+                          now
+                        ).asJson
+                    )
                   ),
                   // US-19.3: flag for manual reconciliation, never auto-release
                   // inventory (the order may already be physically shipped).
@@ -254,7 +271,7 @@ object PaymentEventConsumer {
                   logOutcome(
                     logger,
                     event.orderId,
-                    OrderStatus.PaymentFailed,
+                    "PaymentFailed",
                     _
                   )
                 )
@@ -315,6 +332,6 @@ object PaymentEventConsumer {
                 }
             }
         }
-        handled *> committable.offset.commit
+        handled *> KafkaCommit.commit(committable)
       }
 }

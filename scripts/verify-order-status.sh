@@ -86,14 +86,20 @@ unchanged="$(curl -s "http://localhost:8080/orders/${order_id}" | python3 -c "im
 check "status unchanged after rejected PATCH" "authorized" "$unchanged"
 
 echo
-echo "5. PATCH with a valid status succeeds..."
+echo "5. PATCH with a lifecycle-legal status succeeds..."
 valid_patch="$(curl -s -w '\n%{http_code}' -X PATCH "http://localhost:8080/orders/${order_id}" \
-  -H "Content-Type: application/json" -d '{"status":"confirmed"}')"
+  -H "Content-Type: application/json" -d '{"status":"cancelled"}')"
 valid_patch_status="$(echo "$valid_patch" | tail -1)"
 valid_patch_body="$(echo "$valid_patch" | sed '$d')"
 check "PATCH with valid status returns 200" "200" "$valid_patch_status"
 new_status="$(echo "$valid_patch_body" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")"
-check "status updated to confirmed" "confirmed" "$new_status"
+check "status updated to cancelled" "cancelled" "$new_status"
+
+echo
+echo "5b. PATCH with a status the lifecycle does not allow is 409..."
+conflict_patch="$(curl -s -o /dev/null -w '%{http_code}' -X PATCH "http://localhost:8080/orders/${order_id}" \
+  -H "Content-Type: application/json" -d '{"status":"confirmed"}')"
+check "PATCH with an illegal transition returns 409" "409" "$conflict_patch"
 
 echo
 echo "6. PUT with an invalid status is rejected..."

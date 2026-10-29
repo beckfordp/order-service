@@ -6,6 +6,10 @@ case object OrderNotFound extends OrderError
 
 final case class InvalidStatus(raw: String) extends OrderError
 
+/** A syntactically valid status that the lifecycle does not allow next (409).
+  */
+final case class IllegalTransition(to: String) extends OrderError
+
 case object EmptyOrderItems extends OrderError
 
 final case class InvalidOrderItem(reason: String) extends OrderError

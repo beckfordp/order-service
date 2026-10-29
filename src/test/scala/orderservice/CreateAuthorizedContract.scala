@@ -2,7 +2,7 @@ package orderservice
 
 import cats.effect.IO
 import munit.CatsEffectSuite
-import orderservice.domain.{OrderId, OrderItemId}
+import orderservice.domain.{OrderEvent, OrderId, OrderItemId}
 
 import java.time.Instant
 import java.util.UUID
@@ -70,26 +70,51 @@ trait CreateAuthorizedContract { self: CatsEffectSuite =>
     }
   }
 
-  withStore("listByCustomer and update return the shipping address") { store =>
-    val customerId = s"cust-${UUID.randomUUID()}"
-    val (order, items) = authorizedOrder(customerId)
-    for {
-      _ <- store.createAuthorized(order, items)
-      listed <- store.listByCustomer(customerId)
-      updated <- store.update(order.id, OrderStatus.Cancelled)
-    } yield {
-      assertEquals(listed.map(_._1.shippingAddress), List(Some(address)))
-      assertEquals(updated.map(_._1.shippingAddress), Some(Some(address)))
-    }
+  withStore("listByCustomer and transition return the shipping address") {
+    store =>
+      val customerId = s"cust-${UUID.randomUUID()}"
+      val (order, items) = authorizedOrder(customerId)
+      for {
+        _ <- store.createAuthorized(order, items)
+        listed <- store.listByCustomer(customerId)
+        transitioned <- store.transition(
+          order.id,
+          OrderEvent.CustomerCancelled
+        )
+        found <- store.get(order.id)
+      } yield {
+        assertEquals(listed.map(_._1.shippingAddress), List(Some(address)))
+        assert(transitioned.isRight)
+        assertEquals(found.map(_._1.shippingAddress), Some(Some(address)))
+        assertEquals(found.map(_._1.status), Some(OrderStatus.Cancelled))
+      }
   }
 
   withStore("orders created without an address read back as None") { store =>
-    for {
-      created <- store.create(
-        s"cust-${UUID.randomUUID()}",
-        List(NewOrderItem("sku-1", "Widget", 999, 1))
+    val now = Instant.now()
+    val orderId = OrderId.fromUuid(UUID.randomUUID())
+    val order = Order(
+      orderId,
+      s"cust-${UUID.randomUUID()}",
+      999,
+      OrderStatus.Authorized,
+      now,
+      now,
+      None
+    )
+    val items = List(
+      OrderItem(
+        OrderItemId.fromUuid(UUID.randomUUID()),
+        orderId,
+        "sku-1",
+        "Widget",
+        999,
+        1
       )
-      found <- store.get(created._1.id)
+    )
+    for {
+      _ <- store.createAuthorized(order, items)
+      found <- store.get(orderId)
     } yield assertEquals(found.map(_._1.shippingAddress), Some(None))
   }
 }
