@@ -45,7 +45,7 @@ if echo "$RESPONSE" | grep -q "order-events-OrderReserved"; then
 else
   echo "   OK: retired artifact order-events-OrderReserved is gone"
 fi
-for needle in "payment-events-PaymentCaptured" "payment-events-PaymentAuthorizationExpired" "payment-events-PaymentFailed" "order-events-OrderStatusChanged"; do
+for needle in "payment-events-PaymentCaptured" "payment-events-PaymentAuthorizationExpired" "payment-events-PaymentFailed" "order-events-OrderConfirmed" "order-events-OrderPaymentFailed" "order-events-OrderCancelled"; do
   if ! echo "$RESPONSE" | grep -q "$needle"; then
     echo "FAIL: registry missing expected artifact: ${needle}" >&2
     FAILED=1

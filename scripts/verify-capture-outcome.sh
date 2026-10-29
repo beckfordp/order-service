@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Live verification for track capture-outcome_20261028 (US-19.2 + US-19.3).
 # 1) dispatched order, normal card -> order `confirmed`; duplicate
-#    PaymentCaptured is harmless (one OrderStatusChanged row);
+#    PaymentCaptured is harmless (one OrderConfirmed row);
 # 2) decline-at-capture card -> order `payment_failed`, an
 #    order_reconciliation row (`capture_failed`), and its inventory
 #    reservations are NOT released. Cleans up test data.
@@ -50,7 +50,7 @@ reconciliation_reason() {
 }
 confirmed_outbox_count() {
   kubectl exec -n "$NAMESPACE" deploy/order-postgres -- psql -U order -d order -tAc \
-    "select count(*) from outbox_events where aggregate_id = '$1' and payload->>'eventType' = 'OrderStatusChanged' and payload->'payload'->>'status' = 'confirmed'" | tr -d '[:space:]'
+    "select count(*) from outbox_events where aggregate_id = '$1' and payload->>'eventType' = 'OrderConfirmed'" | tr -d '[:space:]'
 }
 wait_order_status() {
   for _ in $(seq 1 30); do
@@ -138,8 +138,8 @@ echo "-- duplicate PaymentCaptured is harmless --"
 inject_payment_captured "$ORDER_OK"
 sleep 3
 [ "$(order_status "$ORDER_OK")" = "confirmed" ] || { echo "FAIL: duplicate changed the status" >&2; exit 1; }
-[ "$(confirmed_outbox_count "$ORDER_OK")" = "1" ] || { echo "FAIL: duplicate published another OrderStatusChanged" >&2; exit 1; }
-echo "   still confirmed, one OrderStatusChanged row"
+[ "$(confirmed_outbox_count "$ORDER_OK")" = "1" ] || { echo "FAIL: duplicate published another OrderConfirmed" >&2; exit 1; }
+echo "   still confirmed, one OrderConfirmed row"
 
 echo "-- capture failure flags reconciliation and does NOT release inventory --"
 SKU_DECLINED="$(stocked_sku)"

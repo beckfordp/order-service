@@ -48,9 +48,9 @@ echo "1. sbt asyncApiGenerate (no server needed - AsyncApiSpecWriter reads Async
 sbt asyncApiGenerate
 
 echo
-echo "2. Checking the generated raw spec for all 4 registered event types..."
+echo "2. Checking the generated raw spec for all 8 registered event types..."
 SPEC_FILE="target/asyncapi-docs-spec/asyncapi.json"
-for needle in "payment-events" "order-events" "PaymentCaptured" "PaymentAuthorizationExpired" "PaymentFailed" "OrderStatusChanged"; do
+for needle in "payment-events" "order-events" "PaymentCaptured" "PaymentAuthorizationExpired" "PaymentFailed" "OrderConfirmed" "OrderPaymentFailed" "OrderCancelled"; do
   if ! grep -q "$needle" "$SPEC_FILE"; then
     echo "FAIL: generated spec missing expected content: ${needle}" >&2
     FAILED=1
@@ -58,7 +58,7 @@ for needle in "payment-events" "order-events" "PaymentCaptured" "PaymentAuthoriz
     echo "   OK: generated spec contains \"${needle}\""
   fi
 done
-for needle in "inventory-events" "StockReserved" "StockReservationFailed" "OrderReserved"; do
+for needle in "inventory-events" "StockReserved" "StockReservationFailed" "OrderReserved" "OrderStatusChanged"; do
   if grep -q "$needle" "$SPEC_FILE"; then
     echo "FAIL: generated spec still contains retired content: ${needle}" >&2
     FAILED=1
@@ -70,7 +70,7 @@ done
 echo
 echo "3. Checking the generated static HTML for the same content..."
 HTML_FILE="target/asyncapi-docs/index.html"
-for needle in "PaymentCaptured" "PaymentAuthorizationExpired" "PaymentFailed" "OrderStatusChanged"; do
+for needle in "PaymentCaptured" "PaymentAuthorizationExpired" "PaymentFailed" "OrderConfirmed" "OrderPaymentFailed" "OrderCancelled"; do
   if ! grep -q "$needle" "$HTML_FILE"; then
     echo "FAIL: generated HTML missing expected content: ${needle}" >&2
     FAILED=1
@@ -99,7 +99,7 @@ echo "   OK: order-service ready on :8080"
 
 echo
 echo "6. Checking the live raw-spec route (/docs/asyncapi.json) for the same content..."
-for needle in "OrderStatusChanged" "PaymentCaptured"; do
+for needle in "OrderConfirmed" "OrderPaymentFailed" "OrderCancelled" "PaymentCaptured"; do
   if ! curl -s "${ORDER_SERVICE_URL}/docs/asyncapi.json" | grep -q "$needle"; then
     echo "FAIL: live raw-spec route missing expected content: ${needle}" >&2
     FAILED=1
