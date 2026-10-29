@@ -16,9 +16,9 @@
 
 ## Phase 3 — Config: `Uri` base URLs and `asyncApiHtmlDir`
 
-- [ ] Write failing tests: `OrderServiceConfigSuite` parses valid/invalid `Uri` and `asyncApiHtmlDir`; `AppRoutesSuite` passes the configured docs dir; confirm failure.
-- [ ] Implement config fields, client constructors taking `Uri`, `AppRoutes` parameter, `Main` wiring, `application.conf` entries (incl. `${?ASYNCAPI_HTML_DIR}`).
-- [ ] Refactor: remove `sys.env` and `Uri.unsafeFromString`.
+- [x] Write failing tests: `OrderServiceConfigSuite` parses valid/invalid `Uri` and `asyncApiHtmlDir`; `AppRoutesSuite` passes the configured docs dir; confirm failure. — b9c0d4e
+- [x] Implement config fields, client constructors taking `Uri`, `AppRoutes` parameter, `Main` wiring, `application.conf` entries (incl. `${?ASYNCAPI_HTML_DIR}`). — b9c0d4e
+- [x] Refactor: remove `sys.env` and `Uri.unsafeFromString`. — b9c0d4e
 - [ ] Task: Conductor - User Manual Verification 'Phase 3 — Config' (Protocol in workflow.md)
 
 ## Phase 4 — Observability, ScalaCheck, narrower constraints
