@@ -12,5 +12,7 @@ folder), so `/conductor:implement` cannot pick these up by accident. Reorder fre
 priorities change. When ready to work on one, run `/conductor:newTrack <title>` to go
 through the spec/plan questions and promote it into a real track above.
 
+- Pure order domain core: OrderTransitions state machine (single source for consumers, stores, PATCH), OrderId opaque type parsed at edge, typed Either results instead of Option/wildcards
+- Purity refactor: split domain/ vs store/ packages (pure Order.create/total), narrow F[_]: Async to Monad/Clock/Temporal where sufficient
 
 ---
