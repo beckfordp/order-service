@@ -9,9 +9,9 @@
 
 ## Phase 2 — Typed `OrderId` at the boundary
 
-- [ ] Write failing tests: `OrderIdSuite` (valid/invalid parse round-trip), route malformed-id → 400, store tests using `OrderId`; confirm failure.
-- [ ] Implement `domain/OrderId` (opaque UUID, `Either.catchOnly` parse, tapir codec/schema); routes `path[OrderId]`; store trait/interp take `OrderId`; consumers parse `orderId` once.
-- [ ] Refactor: delete all `Try(UUID.fromString).toOption` / bare `UUID.fromString`; update fixtures and suites.
+- [x] Write failing tests: `OrderIdSuite` (valid/invalid parse round-trip), route malformed-id → 400, store tests using `OrderId`; confirm failure. — 62e722f
+- [x] Implement `domain/OrderId` (opaque UUID, `Either.catchOnly` parse, tapir codec/schema); routes `path[OrderId]`; store trait/interp take `OrderId`; consumers parse `orderId` once. — 62e722f
+- [x] Refactor: delete all `Try(UUID.fromString).toOption` / bare `UUID.fromString`; update fixtures and suites. — 62e722f
 - [ ] Task: Conductor - User Manual Verification 'Phase 2 — Typed OrderId' (Protocol in workflow.md)
 
 ## Phase 3 — Config: `Uri` base URLs and `asyncApiHtmlDir`
