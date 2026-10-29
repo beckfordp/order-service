@@ -18,8 +18,10 @@ import purekafka.docs.{
   * order-service *does* publish — via its own `outbox_events` table and the
   * Debezium CDC connector's `route.topic.replacement` config
   * (`infra/k8s/local-infra/debezium-connectors-register.yaml`, gluon repo), not
-  * a direct producer call. `OrderStatusChanged` is registered as
-  * `Publish(Cdc)`; `OrderReserved` was retired with ADR 0018.
+  * a direct producer call. `OrderConfirmed`, `OrderPaymentFailed` and
+  * `OrderCancelled` are registered as `Publish(Cdc)`; `OrderReserved` was
+  * retired with ADR 0018 and `OrderStatusChanged` was split into those three
+  * per-outcome events in TD-15.
   *
   * Implements `AsyncApiChannelsProvider` (not just a plain `List`) so the
   * sbt-purekafka-docs plugin's `AsyncApiSpecWriter` can load this singleton
@@ -51,9 +53,19 @@ object AsyncApiChannels extends AsyncApiChannelsProvider {
       eventType = "PaymentFailed",
       direction = ChannelDirection.Subscribe
     ),
-    AsyncApiChannel[OrderStatusChangedEvent](
+    AsyncApiChannel[OrderConfirmedEvent](
       topic = orderEventsTopic,
-      eventType = "OrderStatusChanged",
+      eventType = "OrderConfirmed",
+      direction = ChannelDirection.Publish(PublisherKind.Cdc)
+    ),
+    AsyncApiChannel[OrderPaymentFailedEvent](
+      topic = orderEventsTopic,
+      eventType = "OrderPaymentFailed",
+      direction = ChannelDirection.Publish(PublisherKind.Cdc)
+    ),
+    AsyncApiChannel[OrderCancelledEvent](
+      topic = orderEventsTopic,
+      eventType = "OrderCancelled",
       direction = ChannelDirection.Publish(PublisherKind.Cdc)
     ),
     AsyncApiChannel[DispatchConfirmedEvent](

@@ -15,58 +15,52 @@ import java.nio.file.Files
 class AsyncApiChannelsSuite extends FunSuite {
 
   test(
-    "AsyncApiChannel constructs for each of order-service's 4 registered event types"
+    "AsyncApiChannel constructs for each of order-service's 3 order-events publish event types"
   ) {
-    val paymentCaptured =
-      AsyncApiChannel[PaymentCapturedEvent](
-        topic = PaymentEventConsumer.topic,
-        eventType = "PaymentCaptured",
-        direction = ChannelDirection.Subscribe
-      )
-    val paymentAuthorizationExpired =
-      AsyncApiChannel[PaymentAuthorizationExpiredEvent](
-        topic = PaymentEventConsumer.topic,
-        eventType = "PaymentAuthorizationExpired",
-        direction = ChannelDirection.Subscribe
-      )
-    val paymentFailed =
-      AsyncApiChannel[PaymentFailedEvent](
-        topic = PaymentEventConsumer.topic,
-        eventType = "PaymentFailed",
-        direction = ChannelDirection.Subscribe
-      )
-    val orderStatusChanged =
-      AsyncApiChannel[OrderStatusChangedEvent](
+    val orderConfirmed =
+      AsyncApiChannel[OrderConfirmedEvent](
         topic = "order-events",
-        eventType = "OrderStatusChanged",
+        eventType = "OrderConfirmed",
+        direction = ChannelDirection.Publish(PublisherKind.Cdc)
+      )
+    val orderPaymentFailed =
+      AsyncApiChannel[OrderPaymentFailedEvent](
+        topic = "order-events",
+        eventType = "OrderPaymentFailed",
+        direction = ChannelDirection.Publish(PublisherKind.Cdc)
+      )
+    val orderCancelled =
+      AsyncApiChannel[OrderCancelledEvent](
+        topic = "order-events",
+        eventType = "OrderCancelled",
         direction = ChannelDirection.Publish(PublisherKind.Cdc)
       )
 
-    assertEquals(paymentCaptured.topic, "payment-events")
-    assertEquals(paymentAuthorizationExpired.topic, "payment-events")
-    assertEquals(paymentFailed.topic, "payment-events")
-    assertEquals(orderStatusChanged.topic, "order-events")
+    assertEquals(orderConfirmed.topic, "order-events")
+    assertEquals(orderPaymentFailed.topic, "order-events")
+    assertEquals(orderCancelled.topic, "order-events")
   }
 
   test(
-    "AsyncApiChannels.channels no longer registers the retired stock/OrderReserved events"
+    "AsyncApiChannels.channels no longer registers the retired stock/OrderReserved/OrderStatusChanged events"
   ) {
     val eventTypes = AsyncApiChannels.channels.map(_.eventType).toSet
     for (
       retired <- List(
         "StockReserved",
         "StockReservationFailed",
-        "OrderReserved"
+        "OrderReserved",
+        "OrderStatusChanged"
       )
     )
       assert(
         !eventTypes.contains(retired),
-        s"$retired should be retired (ADR 0018, TD-7.3)"
+        s"$retired should be retired (ADR 0018, TD-7.3, TD-15)"
       )
   }
 
   test(
-    "AsyncApiChannels.channels registers all 6 event types with correct topic/eventType pairs"
+    "AsyncApiChannels.channels registers all 8 event types with correct topic/eventType pairs"
   ) {
     val topicsAndEventTypes =
       AsyncApiChannels.channels.map(c => c.topic -> c.eventType).toSet
@@ -77,7 +71,9 @@ class AsyncApiChannelsSuite extends FunSuite {
         "payment-events" -> "PaymentCaptured",
         "payment-events" -> "PaymentAuthorizationExpired",
         "payment-events" -> "PaymentFailed",
-        "order-events" -> "OrderStatusChanged",
+        "order-events" -> "OrderConfirmed",
+        "order-events" -> "OrderPaymentFailed",
+        "order-events" -> "OrderCancelled",
         "fulfilment-events" -> "DispatchConfirmed",
         "fulfilment-events" -> "DispatchFailed"
       )
@@ -85,7 +81,7 @@ class AsyncApiChannelsSuite extends FunSuite {
   }
 
   test(
-    "the 5 consumed event types are Subscribe-only; the CDC-published OrderStatusChanged is Publish(Cdc)"
+    "the 5 consumed event types are Subscribe-only; all 3 order-events events are Publish(Cdc)"
   ) {
     val directionsByEventType =
       AsyncApiChannels.channels.map(c => c.eventType -> c.direction).toMap
@@ -105,7 +101,9 @@ class AsyncApiChannelsSuite extends FunSuite {
         s"expected $consumed to be Subscribe-only - order-service only consumes it"
       )
 
-    for (published <- List("OrderStatusChanged"))
+    for (
+      published <- List("OrderConfirmed", "OrderPaymentFailed", "OrderCancelled")
+    )
       assertEquals(
         directionsByEventType(published),
         ChannelDirection.Publish(PublisherKind.Cdc): ChannelDirection,

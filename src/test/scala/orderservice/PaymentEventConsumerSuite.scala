@@ -478,7 +478,7 @@ class PaymentEventConsumerSuite
   }
 
   test(
-    "a synthetic PaymentCaptured envelope also writes an OrderStatusChanged outbox row with status=confirmed"
+    "a synthetic PaymentCaptured envelope also writes an OrderConfirmed outbox row"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -504,27 +504,26 @@ class PaymentEventConsumerSuite
             .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
-          pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
+          pollForOutboxEvent(outboxRef, order.id, "OrderConfirmed")
         )
       } yield outboxed match {
         case Left(()) =>
           fail(
-            "consumer finished before the OrderStatusChanged outbox row appeared"
+            "consumer finished before the OrderConfirmed outbox row appeared"
           )
         case Right(envelope) =>
-          envelope.payload.as[OrderStatusChangedEvent] match {
+          envelope.payload.as[OrderConfirmedEvent] match {
             case Left(error)  => fail(s"failed to decode: $error")
             case Right(event) =>
               assertEquals(event.orderId, order.id)
               assertEquals(event.customerId, "cust-123")
-              assertEquals(event.status, "confirmed")
           }
       }
     }
   }
 
   test(
-    "a synthetic PaymentAuthorizationExpired envelope also writes an OrderStatusChanged outbox row with status=cancelled"
+    "a synthetic PaymentAuthorizationExpired envelope also writes an OrderCancelled outbox row"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -553,27 +552,26 @@ class PaymentEventConsumerSuite
             .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
-          pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
+          pollForOutboxEvent(outboxRef, order.id, "OrderCancelled")
         )
       } yield outboxed match {
         case Left(()) =>
           fail(
-            "consumer finished before the OrderStatusChanged outbox row appeared"
+            "consumer finished before the OrderCancelled outbox row appeared"
           )
         case Right(envelope) =>
-          envelope.payload.as[OrderStatusChangedEvent] match {
+          envelope.payload.as[OrderCancelledEvent] match {
             case Left(error)  => fail(s"failed to decode: $error")
             case Right(event) =>
               assertEquals(event.orderId, order.id)
               assertEquals(event.customerId, "cust-123")
-              assertEquals(event.status, "cancelled")
           }
       }
     }
   }
 
   test(
-    "a synthetic PaymentFailed envelope also writes an OrderStatusChanged outbox row with status=payment_failed"
+    "a synthetic PaymentFailed envelope also writes an OrderPaymentFailed outbox row with its reason"
   ) {
     withContainers { kafka =>
       val config = configFor(kafka)
@@ -601,20 +599,20 @@ class PaymentEventConsumerSuite
             .run[IO](config, store, NoOpLogger[IO], deadLetter)
             .compile
             .drain,
-          pollForOutboxEvent(outboxRef, order.id, "OrderStatusChanged")
+          pollForOutboxEvent(outboxRef, order.id, "OrderPaymentFailed")
         )
       } yield outboxed match {
         case Left(()) =>
           fail(
-            "consumer finished before the OrderStatusChanged outbox row appeared"
+            "consumer finished before the OrderPaymentFailed outbox row appeared"
           )
         case Right(envelope) =>
-          envelope.payload.as[OrderStatusChangedEvent] match {
+          envelope.payload.as[OrderPaymentFailedEvent] match {
             case Left(error)  => fail(s"failed to decode: $error")
             case Right(event) =>
               assertEquals(event.orderId, order.id)
               assertEquals(event.customerId, "cust-123")
-              assertEquals(event.status, "payment_failed")
+              assertEquals(event.reason, "capture_failed")
           }
       }
     }
@@ -752,7 +750,7 @@ class PaymentEventConsumerSuite
         assertEquals(status, OrderStatus.Confirmed)
         assertEquals(
           events.count { case (id, envelope) =>
-            id == order.id && envelope.eventType == "OrderStatusChanged"
+            id == order.id && envelope.eventType == "OrderConfirmed"
           },
           1
         )

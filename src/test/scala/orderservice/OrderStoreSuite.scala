@@ -201,16 +201,33 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
   private val captureInstant = Instant.parse("2026-01-01T00:00:00Z")
 
   private def statusOutboxEvent(status: OrderStatus): PendingOutboxEvent =
-    PendingOutboxEvent(
-      "OrderStatusChanged",
-      ref =>
-        OrderStatusChangedEvent(
-          ref.orderId,
-          ref.customerId,
-          status.asString,
-          captureInstant
-        ).asJson
-    )
+    status match {
+      case OrderStatus.Confirmed =>
+        PendingOutboxEvent(
+          "OrderConfirmed",
+          ref =>
+            OrderConfirmedEvent(
+              ref.orderId,
+              ref.customerId,
+              captureInstant
+            ).asJson
+        )
+      case OrderStatus.PaymentFailed =>
+        PendingOutboxEvent(
+          "OrderPaymentFailed",
+          ref =>
+            OrderPaymentFailedEvent(
+              ref.orderId,
+              ref.customerId,
+              "capture_failed",
+              captureInstant
+            ).asJson
+        )
+      case other =>
+        throw new IllegalArgumentException(
+          s"test helper doesn't model a per-outcome event for $other"
+        )
+    }
 
   private def seedOrder(
       store: OrderStore[IO],
@@ -244,9 +261,10 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
       assertEquals(events.size, 1)
       val (aggregateId, envelope) = events.head
       assertEquals(aggregateId, order.id)
-      assertEquals(envelope.eventType, "OrderStatusChanged")
-      val payload = envelope.payload.as[OrderStatusChangedEvent].toOption.get
-      assertEquals(payload.status, "confirmed")
+      assertEquals(envelope.eventType, "OrderConfirmed")
+      val payload = envelope.payload.as[OrderConfirmedEvent].toOption.get
+      assertEquals(payload.orderId, order.id)
+      assertEquals(payload.customerId, "cust-123")
     }
   }
 
@@ -325,10 +343,10 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
       assertEquals(reason, Some("capture_failed"))
       assertEquals(events.size, 1)
       val payload = events.head._2.payload
-        .as[OrderStatusChangedEvent]
+        .as[OrderPaymentFailedEvent]
         .toOption
         .get
-      assertEquals(payload.status, "payment_failed")
+      assertEquals(payload.reason, "capture_failed")
     }
   }
 

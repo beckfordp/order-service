@@ -12,7 +12,7 @@ import purerest.docs.Docs
 class OrderAsyncApiDocsSuite extends CatsEffectSuite {
 
   test(
-    "GET /docs/asyncapi.json serves a document containing all 4 registered event types"
+    "GET /docs/asyncapi.json serves a document containing all 8 registered event types"
   ) {
     val routes =
       AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
@@ -29,7 +29,10 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       assert(clue(body).contains("PaymentAuthorizationExpired"))
       assert(clue(body).contains("PaymentFailed"))
       assert(!clue(body).contains("OrderReserved"))
-      assert(clue(body).contains("OrderStatusChanged"))
+      assert(!clue(body).contains("OrderStatusChanged"))
+      assert(clue(body).contains("OrderConfirmed"))
+      assert(clue(body).contains("OrderPaymentFailed"))
+      assert(clue(body).contains("OrderCancelled"))
       assert(
         clue(body).contains("Debezium"),
         "expected the CDC description note on order-events' publish-side messages"
@@ -65,7 +68,7 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
   }
 
   test(
-    "GET /docs/asyncapi.json: OrderStatusChanged's status field documents its fixed set of values as a JSON Schema enum"
+    "GET /docs/asyncapi.json: order-events publishes the 3 per-outcome messages as oneOf, with no status field"
   ) {
     val routes =
       AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
@@ -75,33 +78,39 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       )
       json <- response.as[io.circe.Json]
     } yield {
-      // order-events carries one message now, so it isn't wrapped in `oneOf`.
       val message = json.hcursor
         .downField("channels")
         .downField("order-events")
         .downField("publish")
         .downField("message")
+
+      val messages = message.downField("oneOf").values.toList.flatten
+      val byName = messages.map { m =>
+        m.hcursor.downField("name").as[String].toOption.get -> m
+      }.toMap
+
       assertEquals(
-        message.downField("name").as[String],
-        Right("OrderStatusChanged")
+        byName.keySet,
+        Set("OrderConfirmed", "OrderPaymentFailed", "OrderCancelled")
       )
-      val orderStatusChangedPayload = message
+
+      val failedProperties = byName("OrderPaymentFailed").hcursor
         .downField("payload")
         .downField("properties")
-        .downField("status")
-
-      val enumValues = orderStatusChangedPayload
-        .downField("enum")
-        .values
-        .toList
-        .flatten
-        .flatMap(_.asString)
-
-      assertEquals(
-        enumValues.toSet,
-        Set("reservation_failed", "confirmed", "payment_failed", "cancelled"),
-        "reservation_failed is no longer published (ADR 0018) but stays for BACKWARD compatibility"
+      assert(
+        failedProperties.downField("reason").succeeded,
+        "OrderPaymentFailed must document its reason field"
       )
+
+      for ((name, payload) <- byName)
+        assert(
+          payload.hcursor
+            .downField("payload")
+            .downField("properties")
+            .downField("status")
+            .failed,
+          s"$name must not carry a status field - the split is per outcome"
+        )
     }
   }
 

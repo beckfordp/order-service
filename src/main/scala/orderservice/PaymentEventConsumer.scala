@@ -72,7 +72,8 @@ object PaymentFailedEvent {
   *
   * A redelivered/out-of-order event for an order no longer awaiting capture (or
   * an unknown `orderId`) is an idempotent no-op, logged at info - never an
-  * error, per spec.md's "Out of Scope". Publishes `OrderStatusChanged` on a
+  * error, per spec.md's "Out of Scope". Publishes the matching per-outcome
+  * order event (`OrderConfirmed`/`OrderPaymentFailed`/`OrderCancelled`) on a
   * successful transition. `payment-events` may carry other event types this
   * consumer doesn't care about - those are silently skipped by `eventType`, not
   * logged as malformed.
@@ -136,12 +137,11 @@ object PaymentEventConsumer {
               event.orderId,
               OrderStatus.Confirmed,
               PendingOutboxEvent(
-                "OrderStatusChanged",
+                "OrderConfirmed",
                 ref =>
-                  OrderStatusChangedEvent(
+                  OrderConfirmedEvent(
                     ref.orderId,
                     ref.customerId,
-                    OrderStatus.Confirmed.asString,
                     now
                   ).asJson
               )
@@ -172,12 +172,11 @@ object PaymentEventConsumer {
               OrderStatus.Cancelled,
               Some(
                 PendingOutboxEvent(
-                  "OrderStatusChanged",
+                  "OrderCancelled",
                   ref =>
-                    OrderStatusChangedEvent(
+                    OrderCancelledEvent(
                       ref.orderId,
                       ref.customerId,
-                      OrderStatus.Cancelled.asString,
                       now
                     ).asJson
                 )
@@ -207,12 +206,12 @@ object PaymentEventConsumer {
               event.orderId,
               OrderStatus.PaymentFailed,
               PendingOutboxEvent(
-                "OrderStatusChanged",
+                "OrderPaymentFailed",
                 ref =>
-                  OrderStatusChangedEvent(
+                  OrderPaymentFailedEvent(
                     ref.orderId,
                     ref.customerId,
-                    OrderStatus.PaymentFailed.asString,
+                    event.reason,
                     now
                   ).asJson
               ),

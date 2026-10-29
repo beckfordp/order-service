@@ -599,12 +599,11 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       val outboxEvent = PendingOutboxEvent(
-        "OrderStatusChanged",
+        "OrderConfirmed",
         ref =>
-          OrderStatusChangedEvent(
+          OrderConfirmedEvent(
             ref.orderId,
             ref.customerId,
-            OrderStatus.ReservationFailed.asString,
             java.time.Instant.EPOCH
           ).asJson
       )
@@ -626,14 +625,11 @@ class OrderStorePostgresSuite
             assertEquals(aggregateId, created.id)
             assertEquals(correlationId, created.id)
             val envelope = decode[EventEnvelope](payloadJson)
-            assertEquals(envelope.map(_.eventType), Right("OrderStatusChanged"))
+            assertEquals(envelope.map(_.eventType), Right("OrderConfirmed"))
             assertEquals(envelope.map(_.correlationId), Right(created.id))
             val payload =
-              envelope.flatMap(_.payload.as[OrderStatusChangedEvent])
-            assertEquals(
-              payload.map(_.status),
-              Right(OrderStatus.ReservationFailed.asString)
-            )
+              envelope.flatMap(_.payload.as[OrderConfirmedEvent])
+            assertEquals(payload.map(_.orderId), Right(created.id))
           }
         }
     }
@@ -644,12 +640,11 @@ class OrderStorePostgresSuite
       val config = configFor(postgres)
       val unknownId = java.util.UUID.randomUUID().toString
       val outboxEvent = PendingOutboxEvent(
-        "OrderStatusChanged",
+        "OrderConfirmed",
         ref =>
-          OrderStatusChangedEvent(
+          OrderConfirmedEvent(
             ref.orderId,
             ref.customerId,
-            "reservation_failed",
             java.time.Instant.EPOCH
           ).asJson
       )
@@ -677,12 +672,11 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       val outboxEvent = PendingOutboxEvent(
-        "OrderStatusChanged",
+        "OrderConfirmed",
         ref =>
-          OrderStatusChangedEvent(
+          OrderConfirmedEvent(
             ref.orderId,
             ref.customerId,
-            "confirmed",
             java.time.Instant.EPOCH
           ).asJson
       )
@@ -703,10 +697,10 @@ class OrderStorePostgresSuite
             assert(updated.isDefined)
             assertEquals(rows.size, 1)
             val envelope = decode[EventEnvelope](rows.head._3)
-            assertEquals(envelope.map(_.eventType), Right("OrderStatusChanged"))
+            assertEquals(envelope.map(_.eventType), Right("OrderConfirmed"))
             val payload =
-              envelope.flatMap(_.payload.as[OrderStatusChangedEvent])
-            assertEquals(payload.map(_.status), Right("confirmed"))
+              envelope.flatMap(_.payload.as[OrderConfirmedEvent])
+            assertEquals(payload.map(_.orderId), Right(created.id))
           }
         }
     }
@@ -718,12 +712,11 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       val outboxEvent = PendingOutboxEvent(
-        "OrderStatusChanged",
+        "OrderConfirmed",
         ref =>
-          OrderStatusChangedEvent(
+          OrderConfirmedEvent(
             ref.orderId,
             ref.customerId,
-            "confirmed",
             java.time.Instant.EPOCH
           ).asJson
       )
@@ -773,16 +766,33 @@ class OrderStorePostgresSuite
     }
 
   private def captureOutboxEvent(status: OrderStatus): PendingOutboxEvent =
-    PendingOutboxEvent(
-      "OrderStatusChanged",
-      ref =>
-        OrderStatusChangedEvent(
-          ref.orderId,
-          ref.customerId,
-          status.asString,
-          java.time.Instant.EPOCH
-        ).asJson
-    )
+    status match {
+      case OrderStatus.Confirmed =>
+        PendingOutboxEvent(
+          "OrderConfirmed",
+          ref =>
+            OrderConfirmedEvent(
+              ref.orderId,
+              ref.customerId,
+              java.time.Instant.EPOCH
+            ).asJson
+        )
+      case OrderStatus.PaymentFailed =>
+        PendingOutboxEvent(
+          "OrderPaymentFailed",
+          ref =>
+            OrderPaymentFailedEvent(
+              ref.orderId,
+              ref.customerId,
+              "capture_failed",
+              java.time.Instant.EPOCH
+            ).asJson
+        )
+      case other =>
+        throw new IllegalArgumentException(
+          s"test helper doesn't model a per-outcome event for $other"
+        )
+    }
 
   test(
     "recordCaptureOutcome moves a dispatched order to confirmed and writes its outbox row"
@@ -807,10 +817,10 @@ class OrderStorePostgresSuite
             assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
             assertEquals(rows.size, 1)
             val envelope = decode[EventEnvelope](rows.head._3)
-            assertEquals(envelope.map(_.eventType), Right("OrderStatusChanged"))
+            assertEquals(envelope.map(_.eventType), Right("OrderConfirmed"))
             val payload =
-              envelope.flatMap(_.payload.as[OrderStatusChangedEvent])
-            assertEquals(payload.map(_.status), Right("confirmed"))
+              envelope.flatMap(_.payload.as[OrderConfirmedEvent])
+            assertEquals(payload.map(_.orderId), Right(created.id))
           }
         }
     }
@@ -897,9 +907,10 @@ class OrderStorePostgresSuite
             assertEquals(reason, Some("capture_failed"))
             assertEquals(flags, List("capture_failed"))
             val envelope = decode[EventEnvelope](rows.head._3)
+            assertEquals(envelope.map(_.eventType), Right("OrderPaymentFailed"))
             val payload =
-              envelope.flatMap(_.payload.as[OrderStatusChangedEvent])
-            assertEquals(payload.map(_.status), Right("payment_failed"))
+              envelope.flatMap(_.payload.as[OrderPaymentFailedEvent])
+            assertEquals(payload.map(_.reason), Right("capture_failed"))
           }
         }
     }

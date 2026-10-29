@@ -2,51 +2,59 @@ package orderservice
 
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
-import sttp.tapir.{Schema, Validator}
+import sttp.tapir.Schema
 
 import java.time.Instant
 
-/** Payload shape pinned in `gluon/docs/system-design.md`'s "Payload contracts"
-  * section - that cross-repo doc, not this case class, is the source of truth
-  * notification-service's consumer (US-7.1) should read. `status` is one of
-  * `confirmed` (`PaymentCaptured`) / `payment_failed` (`PaymentFailed`) /
-  * `cancelled` (`PaymentAuthorizationExpired`). Checkout itself publishes
-  * nothing (ADR 0018): a failed checkout leaves no order, and `authorized` is
-  * announced by payment-service's `PaymentAuthorized`. `reservation_failed`
-  * stays in the enum only for events already on the topic: dropping it would
-  * fail the registry's BACKWARD rule.
+/** Per-outcome order lifecycle events published on `order-events` via the
+  * outbox/Debezium CDC connector (ADR 0008). Payload shapes are pinned in
+  * `gluon/docs/system-design.md`'s "Payload contracts" section - that
+  * cross-repo doc, not these case classes, is the source of truth.
+  *
+  * Split from a single `OrderStatusChanged {status}` event in TD-15, matching
+  * the per-outcome style payment-service and fulfilment-service already use.
+  * Dispatch outcomes stay authoritative on `fulfilment-events`
+  * (`DispatchConfirmed`/`DispatchFailed`) and are deliberately not mirrored
+  * here. Checkout publishes nothing: a failed checkout leaves no order
+  * (ADR 0018).
   */
-final case class OrderStatusChangedEvent(
+final case class OrderConfirmedEvent(
     orderId: String,
     customerId: String,
-    status: String,
     timestamp: Instant
 )
 
-object OrderStatusChangedEvent {
-  implicit val codec: Codec[OrderStatusChangedEvent] = deriveCodec
+object OrderConfirmedEvent {
+  implicit val codec: Codec[OrderConfirmedEvent] = deriveCodec
+  implicit val schema: Schema[OrderConfirmedEvent] = Schema.derived
+}
 
-  // status is a plain String on the wire (matching OrderStatus.asString, the
-  // existing serialization - see PaymentEventConsumer), but only these 4 of
-  // OrderStatus's values are ever published via
-  // this event (see this class's own doc comment) - Validator.enumeration
-  // documents that fixed set in the generated AsyncAPI JSON Schema
-  // ("enum": [...]) without changing the wire format. The `.encode(identity)`
-  // step is required: tapir-apispec-docs silently drops an enumeration
-  // validator with no encode function rather than rendering it.
-  private val statusValidator: Validator[String] = Validator
-    .enumeration(
-      List(
-        OrderStatus.ReservationFailed.asString,
-        OrderStatus.Confirmed.asString,
-        OrderStatus.PaymentFailed.asString,
-        OrderStatus.Cancelled.asString
-      )
-    )
-    .encode(identity)
+/** Emitted when order-service consumes the capture-failure `PaymentFailed`
+  * and moves the order to `payment_failed`. `reason` carries payment-service's
+  * capture-failure reason (e.g. `capture_failed`) for manual reconciliation.
+  */
+final case class OrderPaymentFailedEvent(
+    orderId: String,
+    customerId: String,
+    reason: String,
+    timestamp: Instant
+)
 
-  implicit val schema: Schema[OrderStatusChangedEvent] =
-    Schema
-      .derived[OrderStatusChangedEvent]
-      .modify(_.status)(_.validate(statusValidator))
+object OrderPaymentFailedEvent {
+  implicit val codec: Codec[OrderPaymentFailedEvent] = deriveCodec
+  implicit val schema: Schema[OrderPaymentFailedEvent] = Schema.derived
+}
+
+/** Emitted when order-service consumes `PaymentAuthorizationExpired` and moves
+  * the order to `cancelled` (Journey 5).
+  */
+final case class OrderCancelledEvent(
+    orderId: String,
+    customerId: String,
+    timestamp: Instant
+)
+
+object OrderCancelledEvent {
+  implicit val codec: Codec[OrderCancelledEvent] = deriveCodec
+  implicit val schema: Schema[OrderCancelledEvent] = Schema.derived
 }
