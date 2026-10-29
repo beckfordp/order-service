@@ -14,5 +14,6 @@ through the spec/plan questions and promote it into a real track above.
 
 - Pure order domain core: OrderTransitions state machine (single source for consumers, stores, PATCH), OrderId opaque type parsed at edge, typed Either results instead of Option/wildcards
 - Purity refactor: split domain/ vs store/ packages (pure Order.create/total), narrow F[_]: Async to Monad/Clock/Temporal where sufficient
+- TD-15.1 — cross-repo consistency hardening: order-event split (OrderConfirmed/OrderPaymentFailed/OrderCancelled), typed OrderId, Uri/asyncApiHtmlDir config, unknown-event logging, raw-log redaction, ScalaCheck, narrower constraints (see `gluon/TECHNICAL_DEBT.md` TD-15)
 
 ---
