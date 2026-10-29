@@ -2,9 +2,9 @@
 
 ## Phase 1 — Order-event split
 
-- [ ] Write failing tests: `PaymentEventConsumerSuite` asserts `OrderConfirmed` / `OrderPaymentFailed {reason}` / `OrderCancelled` outbox payloads and rejects `OrderStatusChanged`; `AsyncApiChannelsSuite` / `OrderAsyncApiDocsSuite` expect 3 publish channels; run and confirm failure.
-- [ ] Implement `OrderEvents.scala` (3 events, schemas), `PaymentEventConsumer` outbox writes, `AsyncApiChannels` (3 `Publish(Cdc)`).
-- [ ] Refactor: remove old event/status enum code; grep repo for remaining `OrderStatusChanged`.
+- [x] Write failing tests: `PaymentEventConsumerSuite` asserts `OrderConfirmed` / `OrderPaymentFailed {reason}` / `OrderCancelled` outbox payloads and rejects `OrderStatusChanged`; `AsyncApiChannelsSuite` / `OrderAsyncApiDocsSuite` expect 3 publish channels; run and confirm failure. — bc1c62a
+- [x] Implement `OrderEvents.scala` (3 events, schemas), `PaymentEventConsumer` outbox writes, `AsyncApiChannels` (3 `Publish(Cdc)`). — bc1c62a
+- [x] Refactor: remove old event/status enum code; grep repo for remaining `OrderStatusChanged`. — bc1c62a (only script references remain, deferred to Phase 5)
 - [ ] Task: Conductor - User Manual Verification 'Phase 1 — Order-event split' (Protocol in workflow.md)
 
 ## Phase 2 — Typed `OrderId` at the boundary
