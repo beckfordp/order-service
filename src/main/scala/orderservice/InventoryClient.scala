@@ -1,6 +1,6 @@
 package orderservice
 
-import cats.effect.Async
+import cats.effect.{Async, Concurrent}
 import cats.syntax.all._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
@@ -80,8 +80,8 @@ object InventoryClient {
     implicit val codec: Codec[RejectedBody] = deriveCodec
   }
 
-  private def unexpected[F[_]: Async, A](status: Status): F[A] =
-    Async[F].raiseError(
+  private def unexpected[F[_]: Concurrent, A](status: Status): F[A] =
+    Concurrent[F].raiseError(
       new RuntimeException(
         s"Unexpected response from inventory-service: $status"
       )
@@ -110,7 +110,10 @@ object InventoryClient {
       config.baseUrl
     )
 
-  def apply[F[_]: Async](client: Client[F], baseUri: Uri): InventoryClient[F] =
+  def apply[F[_]: Concurrent](
+      client: Client[F],
+      baseUri: Uri
+  ): InventoryClient[F] =
     new InventoryClient[F] {
       def reserveOrder(
           orderId: String,
@@ -123,14 +126,16 @@ object InventoryClient {
         client.run(request).use { response =>
           response.status match {
             case Status.Created =>
-              Async[F].pure(OrderReservationResult.Reserved)
+              Concurrent[F].pure(OrderReservationResult.Reserved)
             case Status.Conflict =>
               response.as[RejectedBody].flatMap { body =>
                 body.failures.filter(_.nonEmpty) match {
                   case Some(failures) =>
-                    Async[F].pure(OrderReservationResult.Rejected(failures))
+                    Concurrent[F].pure(
+                      OrderReservationResult.Rejected(failures)
+                    )
                   case None =>
-                    Async[F].raiseError[OrderReservationResult](
+                    Concurrent[F].raiseError[OrderReservationResult](
                       new RuntimeException(
                         s"inventory-service rejected order $orderId: ${body.error}"
                       )
@@ -152,7 +157,7 @@ object InventoryClient {
           )
           .use { response =>
             response.status match {
-              case Status.NoContent => Async[F].unit
+              case Status.NoContent => Concurrent[F].unit
               case other            => unexpected[F, Unit](other)
             }
           }

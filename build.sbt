@@ -5,6 +5,7 @@ val http4sVersion = "0.23.37"
 val circeVersion = "0.14.16"
 val munitVersion = "1.3.6"
 val munitCatsEffectVersion = "2.2.1"
+val munitScalacheckVersion = "1.3.1"
 val log4catsVersion = "2.8.0"
 val tapirVersion = "1.11.25"
 val skunkVersion = "1.0.0"
@@ -139,6 +140,9 @@ lazy val root = project
       "org.scalameta" %% "munit" % munitVersion % Test,
       // munit-cats-effect: lets test bodies return IO[Unit] and run under munit directly.
       "org.typelevel" %% "munit-cats-effect" % munitCatsEffectVersion % Test,
+      // munit-scalacheck: property-based tests for pure domain rules
+      // (scala-fp.md law 8), e.g. OrderId parse round-trips and pricing.
+      "org.scalameta" %% "munit-scalacheck" % munitScalacheckVersion % Test,
       // testcontainers-scala: spins up a real, ephemeral Postgres container for
       // integration tests (not used by main code).
       "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersScalaVersion % Test,

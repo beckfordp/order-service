@@ -1,10 +1,11 @@
 package orderservice
 
+import cats.Monad
 import cats.effect.Async
 import cats.syntax.all._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
-import orderservice.domain.{OrderId, OrderItemId}
+import orderservice.domain.{OrderId, OrderItemId, Pricing}
 import org.http4s.HttpRoutes
 import org.typelevel.log4cats.StructuredLogger
 import sttp.model.StatusCode
@@ -390,6 +391,18 @@ object OrderRoutes {
 
       def place(
           items: List[NewOrderItem]
+      ): F[Either[OrderError, OrderResponse]] = {
+        val lines =
+          items.map(i => Pricing.Line(i.unitPriceCents, i.quantity))
+        Pricing.totalCents(lines) match {
+          case Left(error)       => Async[F].pure(Left(InvalidCheckout(error)))
+          case Right(totalCents) => placeWithTotal(items, totalCents)
+        }
+      }
+
+      def placeWithTotal(
+          items: List[NewOrderItem],
+          totalCents: Int
       ): F[Either[OrderError, OrderResponse]] =
         for {
           orderId <- Async[F].delay(
@@ -413,7 +426,7 @@ object OrderRoutes {
           order = Order(
             orderId,
             req.customerId,
-            orderItems.map(i => i.unitPriceCents * i.quantity).sum,
+            totalCents,
             OrderStatus.Authorized,
             now,
             now,
@@ -522,7 +535,7 @@ object OrderRoutes {
     * store, populates the cache (TTL-only freshness - see spec.md's "Out of
     * Scope"), and returns the freshly-queried result.
     */
-  def listOrdersServerEndpoint[F[_]: Async](
+  def listOrdersServerEndpoint[F[_]: Monad](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       historyCache: OrderHistoryCache[F]
@@ -559,7 +572,7 @@ object OrderRoutes {
       } yield result
     }
 
-  def getOrderServerEndpoint[F[_]: Async](
+  def getOrderServerEndpoint[F[_]: Monad](
       store: OrderStore[F],
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =
@@ -592,7 +605,7 @@ object OrderRoutes {
     * both call `OrderStore.update` with the same required update body; only the
     * logged HTTP method differs.
     */
-  private def updateLogic[F[_]: Async](
+  private def updateLogic[F[_]: Monad](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       httpMethod: String
@@ -631,7 +644,7 @@ object OrderRoutes {
     } yield result
   }
 
-  def updateOrderServerEndpoint[F[_]: Async](
+  def updateOrderServerEndpoint[F[_]: Monad](
       store: OrderStore[F],
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =
@@ -639,7 +652,7 @@ object OrderRoutes {
       updateLogic(store, logger, "PATCH")(id, req)
     }
 
-  def replaceOrderServerEndpoint[F[_]: Async](
+  def replaceOrderServerEndpoint[F[_]: Monad](
       store: OrderStore[F],
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =
@@ -647,7 +660,7 @@ object OrderRoutes {
       updateLogic(store, logger, "PUT")(id, req)
     }
 
-  def deleteOrderServerEndpoint[F[_]: Async](
+  def deleteOrderServerEndpoint[F[_]: Monad](
       store: OrderStore[F],
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =

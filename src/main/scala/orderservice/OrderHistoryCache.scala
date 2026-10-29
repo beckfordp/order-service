@@ -1,5 +1,6 @@
 package orderservice
 
+import cats.Functor
 import cats.effect.{Async, Ref, Resource, Sync}
 import cats.syntax.all._
 import dev.profunktor.redis4cats.Redis
@@ -40,7 +41,7 @@ object OrderHistoryCache {
 
   private def keyFor(customerId: String): String = s"order-history:$customerId"
 
-  def fromRedisCommands[F[_]: Async](
+  def fromRedisCommands[F[_]: Functor](
       commands: RedisCommands[F, String, String],
       ttl: FiniteDuration
   ): OrderHistoryCache[F] =

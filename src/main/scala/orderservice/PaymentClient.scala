@@ -1,6 +1,6 @@
 package orderservice
 
-import cats.effect.Async
+import cats.effect.{Async, Concurrent}
 import cats.syntax.all._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
@@ -75,7 +75,10 @@ object PaymentClient {
       config.baseUrl
     )
 
-  def apply[F[_]: Async](client: Client[F], baseUri: Uri): PaymentClient[F] =
+  def apply[F[_]: Concurrent](
+      client: Client[F],
+      baseUri: Uri
+  ): PaymentClient[F] =
     new PaymentClient[F] {
       def authorize(
           orderId: String,
@@ -96,9 +99,9 @@ object PaymentClient {
                 .as[DeclinedBody]
                 .map(b => AuthorizationResult.Declined(b.reason))
             case Status.NotFound =>
-              Async[F].pure(AuthorizationResult.UnknownPaymentMethod)
+              Concurrent[F].pure(AuthorizationResult.UnknownPaymentMethod)
             case other =>
-              Async[F].raiseError(
+              Concurrent[F].raiseError(
                 new RuntimeException(
                   s"Unexpected response from payment-service: $other"
                 )

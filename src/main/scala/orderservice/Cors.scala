@@ -1,6 +1,6 @@
 package orderservice
 
-import cats.effect.Async
+import cats.Monad
 import org.http4s.{HttpRoutes, Method}
 import org.http4s.server.middleware.CORS
 import org.typelevel.ci._
@@ -13,7 +13,7 @@ import org.typelevel.ci._
   */
 object Cors {
 
-  def middleware[F[_]: Async](routes: HttpRoutes[F]): HttpRoutes[F] =
+  def middleware[F[_]: Monad](routes: HttpRoutes[F]): HttpRoutes[F] =
     CORS.policy.withAllowOriginAll
       .withAllowMethodsIn(
         Set(Method.GET, Method.POST, Method.PATCH, Method.PUT, Method.DELETE)

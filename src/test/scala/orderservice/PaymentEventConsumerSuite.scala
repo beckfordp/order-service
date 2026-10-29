@@ -10,6 +10,8 @@ import io.circe.syntax._
 import munit.CatsEffectSuite
 import orderservice.domain.OrderId
 import org.typelevel.log4cats.noop.NoOpLogger
+import org.typelevel.log4cats.testing.StructuredTestingLogger
+import org.typelevel.log4cats.testing.StructuredTestingLogger.{ERROR, INFO}
 import org.typelevel.otel4s.metrics.Meter
 import purekafka.consumer.DeadLetter
 import purekafka.resilience.{
@@ -263,6 +265,7 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
+        testLogger = StructuredTestingLogger.impl[IO]()
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         realEvent = PaymentCapturedEvent(
@@ -292,12 +295,24 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, testLogger, deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
         )
-      } yield assertEquals(finalStatus, Right(OrderStatus.Confirmed))
+        logged <- testLogger.logged
+      } yield {
+        assertEquals(finalStatus, Right(OrderStatus.Confirmed))
+        val infos = logged.collect { case m: INFO => m }
+        assert(
+          infos.exists(_.ctx.get("event_type").contains("PaymentRefunded")),
+          s"expected an info line naming the ignored event type, got: $infos"
+        )
+        assert(
+          logged.forall(m => !m.ctx.contains("raw")),
+          s"raw payloads must never be logged, got: $logged"
+        )
+      }
     }
   }
 
@@ -416,6 +431,7 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
+        testLogger = StructuredTestingLogger.impl[IO]()
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         realEvent = PaymentCapturedEvent(
@@ -441,12 +457,27 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, testLogger, deadLetter)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
         )
-      } yield assertEquals(finalStatus, Right(OrderStatus.Confirmed))
+        logged <- testLogger.logged
+      } yield {
+        assertEquals(finalStatus, Right(OrderStatus.Confirmed))
+        val errors = logged.collect { case m: ERROR => m }
+        assert(
+          errors.exists(m =>
+            m.ctx.get("topic").contains(PaymentEventConsumer.topic) &&
+              m.ctx.contains("bytes")
+          ),
+          s"expected a decode error with topic/bytes context, got: $errors"
+        )
+        assert(
+          logged.forall(m => !m.ctx.contains("raw")),
+          s"raw payloads must never be logged, got: $logged"
+        )
+      }
     }
   }
 
