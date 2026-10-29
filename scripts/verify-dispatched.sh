@@ -79,14 +79,18 @@ for _ in 1 2 3; do
   [ "$STATUS" = "200" ] || { echo "FAIL: simulate -> $STATUS" >&2; exit 1; }
 done
 for _ in $(seq 1 20); do
-  [ "$(order_status "$ORDER1")" = "dispatched" ] && break
+  { [ "$(order_status "$ORDER1")" = "dispatched" ] ||
+    [ "$(order_status "$ORDER1")" = "confirmed" ]; } && break
   sleep 1
 done
 STATE="$(order_status "$ORDER1")"
-[ "$STATE" = "dispatched" ] || { echo "FAIL: expected dispatched, got $STATE" >&2; exit 1; }
-echo "   order $ORDER1 -> dispatched"
+{ [ "$STATE" = "dispatched" ] || [ "$STATE" = "confirmed" ]; } || {
+  echo "FAIL: expected dispatched/confirmed, got $STATE" >&2
+  exit 1
+}
+echo "   order $ORDER1 -> $STATE (confirmed is capture-on-dispatch)"
 
-echo "-- order 2 forced failure leaves it authorized --"
+echo "-- order 2 forced failure lands in dispatch_failed --"
 ORDER2="$(make_order "$TMP_DIR/order2.json")"
 wait_task "$ORDER2" PENDING
 STATUS="$(post_json "$FULFILMENT_URL/fulfilment-tasks/$ORDER2/simulate-next" \
@@ -94,8 +98,8 @@ STATUS="$(post_json "$FULFILMENT_URL/fulfilment-tasks/$ORDER2/simulate-next" \
 [ "$STATUS" = "200" ] || { echo "FAIL: forced failure -> $STATUS" >&2; exit 1; }
 sleep 4
 STATE="$(order_status "$ORDER2")"
-[ "$STATE" = "authorized" ] || { echo "FAIL: expected authorized (US-18.3 not built), got $STATE" >&2; exit 1; }
-echo "   order $ORDER2 still authorized"
+[ "$STATE" = "dispatch_failed" ] || { echo "FAIL: expected dispatch_failed (US-18.3), got $STATE" >&2; exit 1; }
+echo "   order $ORDER2 -> $STATE"
 
 echo "-- cleaning up --"
 for id in "$ORDER1" "$ORDER2"; do

@@ -102,10 +102,15 @@ for _ in 1 2 3; do
   post_json "$FULFILMENT_URL/fulfilment-tasks/$ORDER2/simulate-next" '{}' "$TMP_DIR/sim.json" >/dev/null
 done
 for _ in $(seq 1 20); do
-  [ "$(order_status "$ORDER2")" = "dispatched" ] && break
+  { [ "$(order_status "$ORDER2")" = "dispatched" ] ||
+    [ "$(order_status "$ORDER2")" = "confirmed" ]; } && break
   sleep 1
 done
-[ "$(order_status "$ORDER2")" = "dispatched" ] || { echo "FAIL: order2 not dispatched" >&2; exit 1; }
+{ [ "$(order_status "$ORDER2")" = "dispatched" ] ||
+  [ "$(order_status "$ORDER2")" = "confirmed" ]; } || {
+  echo "FAIL: order2 not dispatched/confirmed" >&2
+  exit 1
+}
 EVENT="$(python3 -c "
 import json,uuid
 print(json.dumps({'eventId':str(uuid.uuid4()),'eventType':'DispatchFailed','timestamp':'2026-10-28T12:00:00Z','source':'verify-script','correlationId':'$ORDER2','payload':{'orderId':'$ORDER2','reason':'late failure'}}))")"
@@ -114,8 +119,11 @@ printf '%s\n' "$EVENT" | kubectl exec -i -n "$NAMESPACE" deploy/kafka -- \
   --topic fulfilment-events >/dev/null
 sleep 4
 STATE="$(order_status "$ORDER2")"
-[ "$STATE" = "dispatched" ] || { echo "FAIL: dispatched order moved to $STATE" >&2; exit 1; }
-echo "   order $ORDER2 stayed dispatched"
+{ [ "$STATE" = "dispatched" ] || [ "$STATE" = "confirmed" ]; } || {
+  echo "FAIL: dispatched order moved to $STATE" >&2
+  exit 1
+}
+echo "   order $ORDER2 stayed $STATE (confirmed is capture-on-dispatch)"
 
 echo "-- cleaning up --"
 for id in "$ORDER1" "$ORDER2"; do
