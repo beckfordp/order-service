@@ -22,3 +22,7 @@
       — 197 tests, 87.2%/87.1% coverage; all four live scripts passed, including
       PATCH `cancelled` -> 200 and illegal transition -> 409.
 - [x] Task: Conductor - User Manual Verification 'Phase 4 — Verification' (Protocol in workflow.md) — covered by the four live scripts
+
+## Phase: Review Fixes
+
+- [x] Task: Apply review suggestions 45de25c
