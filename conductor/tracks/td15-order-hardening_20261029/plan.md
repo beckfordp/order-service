@@ -35,3 +35,7 @@
 - [x] Run `sbt schemaRegistryCheck`; delete `order-events-OrderStatusChanged` from the local Apicurio registry; confirm 3 new artifacts registered. — registry group `gluon` holds only the 3 new `order-events-*` artifacts; no `OrderStatusChanged` artifact
 - [x] Run the live `scripts/verify-kafka-asyncapi-docs.sh` (and the order-status script) against a running instance. — both scripts passed
 - [x] Task: Conductor - User Manual Verification 'Phase 5 — Verification & registry' (Protocol in workflow.md) — covered by the two live scripts above
+
+## Phase: Review Fixes
+
+- [x] Task: Apply review suggestions 7f285d7
