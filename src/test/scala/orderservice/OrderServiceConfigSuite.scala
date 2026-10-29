@@ -2,6 +2,7 @@ package orderservice
 
 import cats.effect.IO
 import munit.CatsEffectSuite
+import org.http4s.Uri
 import pureconfig.ConfigSource
 import purerest.resilience.{CircuitBreakerConfig, ResilienceConfig, RetryConfig}
 
@@ -14,6 +15,7 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       |port = 8080
       |metrics-port = 9090
       |service-name = "order-service"
+      |async-api-html-dir = "target/asyncapi-docs"
       |postgres {
       |  host = "localhost"
       |  port = 5432
@@ -84,6 +86,7 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
           port = 8080,
           metricsPort = 9090,
           serviceName = "order-service",
+          asyncApiHtmlDir = "target/asyncapi-docs",
           postgres = PostgresConfig(
             host = "localhost",
             port = 5432,
@@ -92,7 +95,7 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
             password = "order"
           ),
           inventoryClient = InventoryClientConfig(
-            baseUrl = "http://localhost:8081",
+            baseUrl = Uri.unsafeFromString("http://localhost:8081"),
             resilience = ResilienceConfig(
               retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
               circuitBreaker = CircuitBreakerConfig(
@@ -102,7 +105,7 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
             )
           ),
           paymentClient = PaymentClientConfig(
-            baseUrl = "http://localhost:8082",
+            baseUrl = Uri.unsafeFromString("http://localhost:8082"),
             resilience = ResilienceConfig(
               retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
               circuitBreaker = CircuitBreakerConfig(
@@ -155,11 +158,22 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
     )
   }
 
+  test("fails to load an invalid client base URL") {
+    val invalid = validHocon.replace(
+      "http://localhost:8081",
+      "http://[invalid"
+    )
+    assert(
+      ConfigSource.string(invalid).load[OrderServiceConfig].isLeft
+    )
+  }
+
   test("load[F] reads the shipped application.conf defaults") {
     OrderServiceConfig.load[IO].map { config =>
       assertEquals(config.port, 8080)
       assertEquals(config.metricsPort, 9090)
       assertEquals(config.serviceName, "order-service")
+      assertEquals(config.asyncApiHtmlDir, "target/asyncapi-docs")
       assertEquals(
         config.postgres,
         PostgresConfig(
@@ -173,7 +187,7 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       assertEquals(
         config.inventoryClient,
         InventoryClientConfig(
-          baseUrl = "http://localhost:8081",
+          baseUrl = Uri.unsafeFromString("http://localhost:8081"),
           resilience = ResilienceConfig(
             retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
             circuitBreaker = CircuitBreakerConfig(
@@ -186,7 +200,7 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       assertEquals(
         config.paymentClient,
         PaymentClientConfig(
-          baseUrl = "http://localhost:8082",
+          baseUrl = Uri.unsafeFromString("http://localhost:8082"),
           resilience = ResilienceConfig(
             retry = RetryConfig(maxRetries = 3, baseDelay = 100.millis),
             circuitBreaker = CircuitBreakerConfig(

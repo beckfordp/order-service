@@ -62,7 +62,8 @@ object Main extends IOApp.Simple {
       paymentClient,
       historyCache,
       telemetry,
-      AsyncApiChannels.channels
+      AsyncApiChannels.channels,
+      config.asyncApiHtmlDir
     )
     _ <- EmberServerBuilder
       .default[IO]

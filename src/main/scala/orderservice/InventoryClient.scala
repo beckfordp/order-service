@@ -107,7 +107,7 @@ object InventoryClient {
       Resilience.middleware[F](config.resilience)(telemetry.logger)(
         telemetry.meter
       )(httpClient),
-      Uri.unsafeFromString(config.baseUrl)
+      config.baseUrl
     )
 
   def apply[F[_]: Async](client: Client[F], baseUri: Uri): InventoryClient[F] =

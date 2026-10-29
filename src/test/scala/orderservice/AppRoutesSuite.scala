@@ -48,7 +48,8 @@ class AppRoutesSuite extends CatsEffectSuite {
       CheckoutFixtures.alwaysAuthorizes,
       noOpHistoryCache,
       Telemetry(testTracer.tracer, testMeter.meter, NoOpLogger[IO]),
-      demoChannels
+      demoChannels,
+      "target/asyncapi-docs"
     )).use(f)
 
   test("GET /docs (Swagger UI) resolves, not a 404") {

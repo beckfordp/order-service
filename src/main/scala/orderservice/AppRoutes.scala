@@ -27,7 +27,8 @@ object AppRoutes {
       paymentClient: PaymentClient[F],
       historyCache: OrderHistoryCache[F],
       telemetry: Telemetry[F],
-      channels: List[AsyncApiChannel[?]]
+      channels: List[AsyncApiChannel[?]],
+      staticAsyncApiDocsDir: String
   ): HttpRoutes[F] = {
     // Explicit, non-deprecated Files[F] - without it, fileService[F] below
     // falls back to fs2's deprecated Files.implicitForAsync conversion
@@ -65,8 +66,6 @@ object AppRoutes {
     // split as Swagger's /docs vs /docs/docs.yaml. order-service runs as a
     // plain `sbt run` JVM process (no docker bind mount, unlike
     // kafka-harness), so this reads straight from the local filesystem.
-    val staticAsyncApiDocsDir =
-      sys.env.getOrElse("ASYNCAPI_HTML_DIR", "target/asyncapi-docs")
     val staticAsyncApiRoutes = fileService[F](
       FileService.Config(
         systemPath = staticAsyncApiDocsDir,

@@ -223,7 +223,7 @@ class InventoryClientSuite extends CatsEffectSuite {
           )
         }
         config = InventoryClientConfig(
-          baseUrl = "http://inventory-service",
+          baseUrl = Uri.unsafeFromString("http://inventory-service"),
           resilience = fastConfig
         )
         client = InventoryClient.resilient[IO](stub, config, telemetry)
@@ -254,7 +254,7 @@ class InventoryClientSuite extends CatsEffectSuite {
           )
         }
         config = InventoryClientConfig(
-          baseUrl = "http://inventory-service",
+          baseUrl = Uri.unsafeFromString("http://inventory-service"),
           resilience = fastConfig
         )
         client = InventoryClient.resilient[IO](stub, config, telemetry)

@@ -4,15 +4,28 @@ import cats.effect.Sync
 import cats.syntax.all._
 import com.comcast.ip4s.Port
 import pureconfig.{ConfigReader, ConfigSource}
+import pureconfig.error.CannotConvert
 import purekafka.consumer.StreamSupervisorConfig
 import purekafka.resilience.{
   CircuitBreakerConfig => KafkaCircuitBreakerConfig,
   ResilienceConfig => KafkaResilienceConfig,
   RetryConfig => KafkaRetryConfig
 }
+import org.http4s.Uri
 import purerest.resilience.{CircuitBreakerConfig, ResilienceConfig, RetryConfig}
 
 import scala.concurrent.duration._
+
+// Client base URLs are parsed/validated as `Uri` at config-load time, so no
+// `Uri.unsafeFromString` can throw later during wiring (TD-15.1).
+given ConfigReader[Uri] =
+  ConfigReader[String].emap { raw =>
+    Uri.fromString(raw) match {
+      case Right(uri)    => Right(uri)
+      case Left(failure) =>
+        Left(CannotConvert(raw, "Uri", failure.message))
+    }
+  }
 
 final case class PostgresConfig(
     host: String,
@@ -38,12 +51,12 @@ given ConfigReader[KafkaResilienceConfig] = ConfigReader.derived
 given ConfigReader[StreamSupervisorConfig] = ConfigReader.derived
 
 final case class InventoryClientConfig(
-    baseUrl: String,
+    baseUrl: Uri,
     resilience: ResilienceConfig
 ) derives ConfigReader
 
 final case class PaymentClientConfig(
-    baseUrl: String,
+    baseUrl: Uri,
     resilience: ResilienceConfig
 ) derives ConfigReader
 
@@ -83,6 +96,7 @@ final case class OrderServiceConfig(
     port: Int,
     metricsPort: Int,
     serviceName: String,
+    asyncApiHtmlDir: String,
     postgres: PostgresConfig,
     inventoryClient: InventoryClientConfig,
     paymentClient: PaymentClientConfig,
