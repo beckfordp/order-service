@@ -1,7 +1,7 @@
 {
   "track_id": "order-review-fixes_20261029",
   "type": "refactor",
-  "status": "new",
+  "status": "completed",
   "created_at": "2026-10-29T00:00:00Z",
   "updated_at": "2026-10-29T00:00:00Z",
   "description": "Apply the remaining 15 findings from the order-service full-codebase review after TD-15.1"

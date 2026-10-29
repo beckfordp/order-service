@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: Order-service full review fixes (15 findings)**
+- [x] **Track: Order-service full review fixes (15 findings)**
   *Link: [./tracks/order-review-fixes_20261029/](./tracks/order-review-fixes_20261029/)*
 
 ## Backlog
