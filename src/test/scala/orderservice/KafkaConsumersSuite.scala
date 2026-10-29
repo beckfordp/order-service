@@ -7,6 +7,7 @@ import fs2.kafka._
 import io.circe.Json
 import io.circe.syntax._
 import munit.CatsEffectSuite
+import orderservice.domain.OrderId
 import org.typelevel.log4cats.noop.NoOpLogger
 import purerest.metrics.Metrics
 
@@ -65,13 +66,13 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
 
   private def statusOf(
       store: OrderStore[IO],
-      orderId: String
+      orderId: OrderId
   ): IO[OrderStatus] =
     store.get(orderId).map(_.map(_._1.status).get)
 
   private def pollForStatus(
       store: OrderStore[IO],
-      orderId: String,
+      orderId: OrderId,
       expected: OrderStatus
   ): IO[OrderStatus] =
     pollUntil(
@@ -193,14 +194,14 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
           _ <- produce(
             config,
             PaymentEventConsumer.topic,
-            poisonOrder.id,
-            captured(poisonOrder.id)
+            OrderId.render(poisonOrder.id),
+            captured(OrderId.render(poisonOrder.id))
           )
           _ <- produce(
             config,
             PaymentEventConsumer.topic,
-            healthyOrder.id,
-            captured(healthyOrder.id)
+            OrderId.render(healthyOrder.id),
+            captured(OrderId.render(healthyOrder.id))
           )
           healthyFinal <-
             KafkaConsumers
@@ -241,8 +242,8 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
         } yield {
           assertEquals(healthyFinal, OrderStatus.Confirmed)
           assert(
-            dlqMessages.exists(_.contains(poisonOrder.id)),
-            s"expected a DLQ message mentioning ${poisonOrder.id}, got $dlqMessages"
+            dlqMessages.exists(_.contains(OrderId.render(poisonOrder.id))),
+            s"expected a DLQ message mentioning ${OrderId.render(poisonOrder.id)}, got $dlqMessages"
           )
           assert(
             dlqPublished >= 1L,
@@ -259,21 +260,21 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
     */
   private def alwaysFailOn(
       base: OrderStore[IO],
-      failOnOrderId: String
+      failOnOrderId: OrderId
   ): OrderStore[IO] = new OrderStore[IO] {
     def create(customerId: String, items: List[NewOrderItem]) =
       base.create(customerId, items)
     def createAuthorized(order: Order, items: List[OrderItem]) =
       base.createAuthorized(order, items)
-    def get(id: String) = base.get(id)
+    def get(id: OrderId) = base.get(id)
     def listByCustomer(customerId: String) = base.listByCustomer(customerId)
     def update(
-        id: String,
+        id: OrderId,
         status: OrderStatus,
         outboxEvent: Option[PendingOutboxEvent] = None
     ) = base.update(id, status, outboxEvent)
     def updateStatusIfCurrent(
-        id: String,
+        id: OrderId,
         expected: OrderStatus,
         newStatus: OrderStatus,
         outboxEvent: Option[PendingOutboxEvent] = None
@@ -284,7 +285,7 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
         )
       else base.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
     def recordCaptureOutcome(
-        id: String,
+        id: OrderId,
         newStatus: OrderStatus,
         outboxEvent: PendingOutboxEvent,
         reconciliationReason: Option[String]
@@ -300,8 +301,8 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
           outboxEvent,
           reconciliationReason
         )
-    def reconciliationReason(id: String) = base.reconciliationReason(id)
-    def delete(id: String) = base.delete(id)
+    def reconciliationReason(id: OrderId) = base.reconciliationReason(id)
+    def delete(id: OrderId) = base.delete(id)
     def ping = base.ping
   }
 

@@ -4,6 +4,7 @@ import cats.effect.Async
 import cats.syntax.all._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
+import orderservice.domain.{OrderId, OrderItemId}
 import org.http4s.HttpRoutes
 import org.typelevel.log4cats.StructuredLogger
 import sttp.model.StatusCode
@@ -54,7 +55,7 @@ object OrderItemResponse {
 
   def apply(item: OrderItem): OrderItemResponse =
     OrderItemResponse(
-      item.id,
+      OrderItemId.render(item.id),
       item.sku,
       item.productName,
       item.unitPriceCents,
@@ -78,7 +79,7 @@ object OrderResponse {
 
   def apply(entity: Order, items: List[OrderItem]): OrderResponse =
     OrderResponse(
-      entity.id,
+      OrderId.render(entity.id),
       entity.customerId,
       entity.totalCents,
       entity.status.asString,
@@ -268,44 +269,44 @@ object OrderRoutes {
       .out(jsonBody[List[OrderResponse]])
 
   private val getOrderEndpoint: PublicEndpoint[
-    String,
+    OrderId,
     OrderError,
     OrderResponse,
     Any
   ] =
     endpoint.get
-      .in("orders" / path[String]("id"))
+      .in("orders" / path[OrderId]("id"))
       .out(jsonBody[OrderResponse])
       .errorOut(orderErrorOutput)
 
   private val updateOrderEndpoint: PublicEndpoint[
-    (String, UpdateOrderRequest),
+    (OrderId, UpdateOrderRequest),
     OrderError,
     OrderResponse,
     Any
   ] =
     endpoint.patch
-      .in("orders" / path[String]("id"))
+      .in("orders" / path[OrderId]("id"))
       .in(jsonBody[UpdateOrderRequest])
       .out(jsonBody[OrderResponse])
       .errorOut(orderErrorOutput)
 
   private val replaceOrderEndpoint: PublicEndpoint[
-    (String, UpdateOrderRequest),
+    (OrderId, UpdateOrderRequest),
     OrderError,
     OrderResponse,
     Any
   ] =
     endpoint.put
-      .in("orders" / path[String]("id"))
+      .in("orders" / path[OrderId]("id"))
       .in(jsonBody[UpdateOrderRequest])
       .out(jsonBody[OrderResponse])
       .errorOut(orderErrorOutput)
 
   private val deleteOrderEndpoint
-      : PublicEndpoint[String, OrderError, Unit, Any] =
+      : PublicEndpoint[OrderId, OrderError, Unit, Any] =
     endpoint.delete
-      .in("orders" / path[String]("id"))
+      .in("orders" / path[OrderId]("id"))
       .out(statusCode(StatusCode.NoContent))
       .errorOut(orderErrorOutput)
 
@@ -352,9 +353,10 @@ object OrderRoutes {
     for {
       items <- validateItems(req.items)
       _ <- Address.validate(req.shippingAddress).leftMap(InvalidCheckout(_))
-      _ <- scala.util
-        .Try(java.util.UUID.fromString(req.paymentMethodId))
-        .toEither
+      _ <- Either
+        .catchOnly[IllegalArgumentException](
+          java.util.UUID.fromString(req.paymentMethodId)
+        )
         .leftMap(_ => InvalidCheckout("paymentMethodId must be a UUID"))
     } yield items
 
@@ -372,14 +374,16 @@ object OrderRoutes {
       paymentClient: PaymentClient[F]
   ): ServerEndpoint[Any, F] =
     createOrderEndpoint.serverLogic[F] { req =>
-      def release(orderId: String): F[Unit] =
-        inventoryClient.release(orderId).handleErrorWith { error =>
-          logger.warn(Map("order_id" -> orderId), error)(
+      def release(orderId: OrderId): F[Unit] = {
+        val renderedId = OrderId.render(orderId)
+        inventoryClient.release(renderedId).handleErrorWith { error =>
+          logger.warn(Map("order_id" -> renderedId), error)(
             "Releasing the reservation failed"
           )
         }
+      }
 
-      def fail(orderId: String, error: OrderError, releaseFirst: Boolean)(
+      def fail(orderId: OrderId, error: OrderError, releaseFirst: Boolean)(
           log: F[Unit]
       ): F[Either[OrderError, OrderResponse]] =
         log *> release(orderId).whenA(releaseFirst).as(Left(error))
@@ -388,19 +392,23 @@ object OrderRoutes {
           items: List[NewOrderItem]
       ): F[Either[OrderError, OrderResponse]] =
         for {
-          orderId <- Async[F].delay(java.util.UUID.randomUUID().toString)
+          orderId <- Async[F].delay(
+            OrderId.fromUuid(java.util.UUID.randomUUID())
+          )
           now <- Async[F].realTimeInstant
           orderItems <- items.traverse { item =>
-            Async[F].delay(java.util.UUID.randomUUID().toString).map { id =>
-              OrderItem(
-                id,
-                orderId,
-                item.sku,
-                item.productName,
-                item.unitPriceCents,
-                item.quantity
-              )
-            }
+            Async[F]
+              .delay(OrderItemId.fromUuid(java.util.UUID.randomUUID()))
+              .map { id =>
+                OrderItem(
+                  id,
+                  orderId,
+                  item.sku,
+                  item.productName,
+                  item.unitPriceCents,
+                  item.quantity
+                )
+              }
           }
           order = Order(
             orderId,
@@ -411,11 +419,21 @@ object OrderRoutes {
             now,
             Some(req.shippingAddress)
           )
-          context = Map("order_id" -> orderId, "customer_id" -> req.customerId)
+          renderedOrderId = OrderId.render(orderId)
+          context = Map(
+            "order_id" -> renderedOrderId,
+            "customer_id" -> req.customerId
+          )
           reserved <- inventoryClient
             .reserveOrder(
-              orderId,
-              orderItems.map(i => OrderReservationLine(i.id, i.sku, i.quantity))
+              renderedOrderId,
+              orderItems.map(i =>
+                OrderReservationLine(
+                  OrderItemId.render(i.id),
+                  i.sku,
+                  i.quantity
+                )
+              )
             )
             .attempt
           result <- reserved match {
@@ -442,7 +460,11 @@ object OrderRoutes {
           context: Map[String, String]
       ): F[Either[OrderError, OrderResponse]] =
         paymentClient
-          .authorize(order.id, order.totalCents, req.paymentMethodId)
+          .authorize(
+            OrderId.render(order.id),
+            order.totalCents,
+            req.paymentMethodId
+          )
           .attempt
           .flatMap {
             case Left(error) =>
@@ -542,20 +564,25 @@ object OrderRoutes {
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =
     getOrderEndpoint.serverLogic[F] { id =>
+      val renderedId = OrderId.render(id)
       for {
         _ <- logger.info(
-          Map("method" -> "GET", "path" -> s"/orders/$id", "order_id" -> id)
+          Map(
+            "method" -> "GET",
+            "path" -> s"/orders/$renderedId",
+            "order_id" -> renderedId
+          )
         )(
           "Received request"
         )
         result <- store.get(id).flatMap {
           case Some((order, items)) =>
             logger
-              .info(Map("order_id" -> id))("Request completed")
+              .info(Map("order_id" -> renderedId))("Request completed")
               .as(Right(OrderResponse(order, items)))
           case None =>
             logger
-              .warn(Map("order_id" -> id))("Order not found")
+              .warn(Map("order_id" -> renderedId))("Order not found")
               .as(Left(OrderNotFound))
         }
       } yield result
@@ -570,21 +597,22 @@ object OrderRoutes {
       logger: StructuredLogger[F],
       httpMethod: String
   )(
-      id: String,
+      id: OrderId,
       req: UpdateOrderRequest
-  ): F[Either[OrderError, OrderResponse]] =
+  ): F[Either[OrderError, OrderResponse]] = {
+    val renderedId = OrderId.render(id)
     for {
       _ <- logger.info(
         Map(
           "method" -> httpMethod,
-          "path" -> s"/orders/$id",
-          "order_id" -> id
+          "path" -> s"/orders/$renderedId",
+          "order_id" -> renderedId
         )
       )("Received request")
       result <- OrderStatus.fromString(req.status) match {
         case Left(_) =>
           logger
-            .warn(Map("order_id" -> id, "status" -> req.status))(
+            .warn(Map("order_id" -> renderedId, "status" -> req.status))(
               "Invalid status"
             )
             .as(Left(InvalidStatus(req.status)))
@@ -592,15 +620,16 @@ object OrderRoutes {
           store.update(id, status).flatMap {
             case Some((order, items)) =>
               logger
-                .info(Map("order_id" -> id))("Request completed")
+                .info(Map("order_id" -> renderedId))("Request completed")
                 .as(Right(OrderResponse(order, items)))
             case None =>
               logger
-                .warn(Map("order_id" -> id))("Order not found")
+                .warn(Map("order_id" -> renderedId))("Order not found")
                 .as(Left(OrderNotFound))
           }
       }
     } yield result
+  }
 
   def updateOrderServerEndpoint[F[_]: Async](
       store: OrderStore[F],
@@ -623,18 +652,23 @@ object OrderRoutes {
       logger: StructuredLogger[F]
   ): ServerEndpoint[Any, F] =
     deleteOrderEndpoint.serverLogic[F] { id =>
+      val renderedId = OrderId.render(id)
       for {
         _ <- logger.info(
-          Map("method" -> "DELETE", "path" -> s"/orders/$id", "order_id" -> id)
+          Map(
+            "method" -> "DELETE",
+            "path" -> s"/orders/$renderedId",
+            "order_id" -> renderedId
+          )
         )("Received request")
         result <- store.delete(id).flatMap {
           case true =>
             logger
-              .info(Map("order_id" -> id))("Request completed")
+              .info(Map("order_id" -> renderedId))("Request completed")
               .as(Right(()))
           case false =>
             logger
-              .warn(Map("order_id" -> id))("Order not found")
+              .warn(Map("order_id" -> renderedId))("Order not found")
               .as(Left(OrderNotFound))
         }
       } yield result

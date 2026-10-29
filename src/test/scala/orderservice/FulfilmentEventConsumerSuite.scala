@@ -7,6 +7,7 @@ import fs2.kafka._
 import io.circe.Json
 import io.circe.syntax._
 import munit.CatsEffectSuite
+import orderservice.domain.OrderId
 import org.typelevel.log4cats.noop.NoOpLogger
 import org.typelevel.otel4s.metrics.Meter
 import purekafka.consumer.DeadLetter
@@ -85,13 +86,13 @@ class FulfilmentEventConsumerSuite
 
   private def statusOf(
       store: OrderStore[IO],
-      orderId: String
+      orderId: OrderId
   ): IO[OrderStatus] =
     store.get(orderId).map(_.map(_._1.status).get)
 
   private def pollForStatus(
       store: OrderStore[IO],
-      orderId: String,
+      orderId: OrderId,
       expected: OrderStatus
   ): IO[OrderStatus] =
     statusOf(store, orderId)
@@ -112,14 +113,14 @@ class FulfilmentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         event = DispatchConfirmedEvent(
-          order.id,
+          OrderId.render(order.id),
           "GLN-1",
           List(FulfilmentItem("sku-1", "Widget", 2, 999))
         )
         released <- Ref.of[IO, List[String]](Nil)
         _ <- produce(
           config,
-          order.id,
+          OrderId.render(order.id),
           envelopeJson("DispatchConfirmed", event.asJson)
         )
         finalStatus <- IO.race(
@@ -148,14 +149,14 @@ class FulfilmentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Cancelled)
         event = DispatchConfirmedEvent(
-          order.id,
+          OrderId.render(order.id),
           "GLN-2",
           List(FulfilmentItem("sku-1", "Widget", 2, 999))
         )
         released <- Ref.of[IO, List[String]](Nil)
         _ <- produce(
           config,
-          order.id,
+          OrderId.render(order.id),
           envelopeJson("DispatchConfirmed", event.asJson)
         )
         _ <- FulfilmentEventConsumer
@@ -186,10 +187,10 @@ class FulfilmentEventConsumerSuite
         released <- Ref.of[IO, List[String]](Nil)
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
-        event = DispatchFailedEvent(order.id, "damaged")
+        event = DispatchFailedEvent(OrderId.render(order.id), "damaged")
         _ <- produce(
           config,
-          order.id,
+          OrderId.render(order.id),
           envelopeJson("DispatchFailed", event.asJson)
         )
         finalStatus <- IO.race(
@@ -208,7 +209,7 @@ class FulfilmentEventConsumerSuite
         releases <- released.get
       } yield {
         assertEquals(finalStatus, Right(OrderStatus.DispatchFailed))
-        assertEquals(releases, List(order.id))
+        assertEquals(releases, List(OrderId.render(order.id)))
       }
     }
   }
@@ -224,10 +225,10 @@ class FulfilmentEventConsumerSuite
         released <- Ref.of[IO, List[String]](Nil)
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Dispatched)
-        event = DispatchFailedEvent(order.id, "damaged")
+        event = DispatchFailedEvent(OrderId.render(order.id), "damaged")
         _ <- produce(
           config,
-          order.id,
+          OrderId.render(order.id),
           envelopeJson("DispatchFailed", event.asJson)
         )
         _ <- FulfilmentEventConsumer

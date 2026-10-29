@@ -15,8 +15,8 @@ import java.time.Instant
   * the per-outcome style payment-service and fulfilment-service already use.
   * Dispatch outcomes stay authoritative on `fulfilment-events`
   * (`DispatchConfirmed`/`DispatchFailed`) and are deliberately not mirrored
-  * here. Checkout publishes nothing: a failed checkout leaves no order
-  * (ADR 0018).
+  * here. Checkout publishes nothing: a failed checkout leaves no order (ADR
+  * 0018).
   */
 final case class OrderConfirmedEvent(
     orderId: String,
@@ -29,8 +29,8 @@ object OrderConfirmedEvent {
   implicit val schema: Schema[OrderConfirmedEvent] = Schema.derived
 }
 
-/** Emitted when order-service consumes the capture-failure `PaymentFailed`
-  * and moves the order to `payment_failed`. `reason` carries payment-service's
+/** Emitted when order-service consumes the capture-failure `PaymentFailed` and
+  * moves the order to `payment_failed`. `reason` carries payment-service's
   * capture-failure reason (e.g. `capture_failed`) for manual reconciliation.
   */
 final case class OrderPaymentFailedEvent(

@@ -4,6 +4,7 @@ import cats.effect.{IO, Ref}
 import io.circe.Json
 import io.circe.syntax._
 import munit.CatsEffectSuite
+import orderservice.domain.OrderId
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.implicits._
 import org.http4s.{Method, Request, Response, Status}
@@ -85,7 +86,10 @@ class CheckoutRoutesSuite extends CatsEffectSuite {
             Authorize(entity.id, 2498, paymentMethodId)
           )
         )
-        assertEquals(o.rows.map(_._1.id), List(entity.id))
+        assertEquals(
+          o.rows.map(row => OrderId.render(row._1.id)),
+          List(entity.id)
+        )
         assertEquals(o.rows.map(_._1.status), List(OrderStatus.Authorized))
       }
     }

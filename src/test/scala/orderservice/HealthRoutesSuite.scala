@@ -2,6 +2,7 @@ package orderservice
 
 import cats.effect.IO
 import munit.CatsEffectSuite
+import orderservice.domain.OrderId
 import org.http4s.implicits._
 import org.http4s.{Method, Request, Status}
 
@@ -19,29 +20,29 @@ class HealthRoutesSuite extends CatsEffectSuite {
           items: List[OrderItem]
       ): IO[(Order, List[OrderItem])] =
         IO.raiseError(new NotImplementedError())
-      def get(id: String): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
+      def get(id: OrderId): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def listByCustomer(
           customerId: String
       ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
       def update(
-          id: String,
+          id: OrderId,
           status: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def updateStatusIfCurrent(
-          id: String,
+          id: OrderId,
           expected: OrderStatus,
           newStatus: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def recordCaptureOutcome(
-          id: String,
+          id: OrderId,
           newStatus: OrderStatus,
           outboxEvent: PendingOutboxEvent,
           reconciliationReason: Option[String]
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
-      def reconciliationReason(id: String): IO[Option[String]] = IO.pure(None)
-      def delete(id: String): IO[Boolean] = IO.pure(false)
+      def reconciliationReason(id: OrderId): IO[Option[String]] = IO.pure(None)
+      def delete(id: OrderId): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(true)
     }
 
@@ -57,29 +58,29 @@ class HealthRoutesSuite extends CatsEffectSuite {
           items: List[OrderItem]
       ): IO[(Order, List[OrderItem])] =
         IO.raiseError(new NotImplementedError())
-      def get(id: String): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
+      def get(id: OrderId): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def listByCustomer(
           customerId: String
       ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
       def update(
-          id: String,
+          id: OrderId,
           status: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] = IO.pure(None)
       def updateStatusIfCurrent(
-          id: String,
+          id: OrderId,
           expected: OrderStatus,
           newStatus: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
       def recordCaptureOutcome(
-          id: String,
+          id: OrderId,
           newStatus: OrderStatus,
           outboxEvent: PendingOutboxEvent,
           reconciliationReason: Option[String]
       ): IO[Option[UpdatedOrderRef]] = IO.pure(None)
-      def reconciliationReason(id: String): IO[Option[String]] = IO.pure(None)
-      def delete(id: String): IO[Boolean] = IO.pure(false)
+      def reconciliationReason(id: OrderId): IO[Option[String]] = IO.pure(None)
+      def delete(id: OrderId): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(false)
     }
 

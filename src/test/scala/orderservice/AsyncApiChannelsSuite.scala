@@ -102,7 +102,11 @@ class AsyncApiChannelsSuite extends FunSuite {
       )
 
     for (
-      published <- List("OrderConfirmed", "OrderPaymentFailed", "OrderCancelled")
+      published <- List(
+        "OrderConfirmed",
+        "OrderPaymentFailed",
+        "OrderCancelled"
+      )
     )
       assertEquals(
         directionsByEventType(published),

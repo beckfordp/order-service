@@ -7,6 +7,7 @@ import com.dimafeng.testcontainers.munit.TestContainerForAll
 import io.circe.parser.decode
 import io.circe.syntax._
 import munit.CatsEffectSuite
+import orderservice.domain.{OrderId, OrderItemId}
 import org.testcontainers.utility.DockerImageName
 import org.typelevel.otel4s.metrics.Meter
 import purerest.metrics.Metrics
@@ -101,7 +102,7 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           store.create("cust-123", oneItem).map { case (order, _) =>
-            assert(order.id.nonEmpty)
+            assert(OrderId.render(order.id).nonEmpty)
           }
         }
     }
@@ -128,7 +129,7 @@ class OrderStorePostgresSuite
         .use { store =>
           store.create("cust-123", twoItems).map { case (order, items) =>
             assertEquals(items.map(_.sku), List("sku-1", "sku-2"))
-            assert(items.forall(_.id.nonEmpty))
+            assert(items.forall(item => OrderItemId.render(item.id).nonEmpty))
             assert(items.forall(_.orderId == order.id))
           }
         }
@@ -208,19 +209,8 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           store
-            .get(java.util.UUID.randomUUID().toString)
+            .get(OrderId.fromUuid(java.util.UUID.randomUUID()))
             .map(assertEquals(_, None))
-        }
-    }
-  }
-
-  test("get returns None for a malformed (non-UUID) id") {
-    withContainers { postgres =>
-      val config = configFor(postgres)
-      Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
-        .use { store =>
-          store.get("not-a-uuid").map(assertEquals(_, None))
         }
     }
   }
@@ -253,20 +243,10 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           store
-            .update(java.util.UUID.randomUUID().toString, OrderStatus.Pending)
-            .map(assertEquals(_, None))
-        }
-    }
-  }
-
-  test("update returns None for a malformed (non-UUID) id") {
-    withContainers { postgres =>
-      val config = configFor(postgres)
-      Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
-        .use { store =>
-          store
-            .update("not-a-uuid", OrderStatus.Pending)
+            .update(
+              OrderId.fromUuid(java.util.UUID.randomUUID()),
+              OrderStatus.Pending
+            )
             .map(assertEquals(_, None))
         }
     }
@@ -332,26 +312,7 @@ class OrderStorePostgresSuite
         .use { store =>
           store
             .updateStatusIfCurrent(
-              java.util.UUID.randomUUID().toString,
-              OrderStatus.Reserved,
-              OrderStatus.Confirmed
-            )
-            .map(updated => assertEquals(updated, None))
-        }
-    }
-  }
-
-  test(
-    "updateStatusIfCurrent returns None for a malformed (non-UUID) order id"
-  ) {
-    withContainers { postgres =>
-      val config = configFor(postgres)
-      Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
-        .use { store =>
-          store
-            .updateStatusIfCurrent(
-              "not-a-uuid",
+              OrderId.fromUuid(java.util.UUID.randomUUID()),
               OrderStatus.Reserved,
               OrderStatus.Confirmed
             )
@@ -440,19 +401,8 @@ class OrderStorePostgresSuite
         .postgres[IO](config, Meter.noop[IO])
         .use { store =>
           store
-            .delete(java.util.UUID.randomUUID().toString)
+            .delete(OrderId.fromUuid(java.util.UUID.randomUUID()))
             .map(deleted => assert(!deleted))
-        }
-    }
-  }
-
-  test("delete returns false for a malformed (non-UUID) id") {
-    withContainers { postgres =>
-      val config = configFor(postgres)
-      Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
-        .use { store =>
-          store.delete("not-a-uuid").map(deleted => assert(!deleted))
         }
     }
   }
@@ -602,7 +552,7 @@ class OrderStorePostgresSuite
         "OrderConfirmed",
         ref =>
           OrderConfirmedEvent(
-            ref.orderId,
+            OrderId.render(ref.orderId),
             ref.customerId,
             java.time.Instant.EPOCH
           ).asJson
@@ -617,19 +567,25 @@ class OrderStorePostgresSuite
               OrderStatus.ReservationFailed,
               Some(outboxEvent)
             )
-            rows <- outboxRowsFor(postgres, created.id)
+            rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
             assert(updated.isDefined)
             assertEquals(rows.size, 1)
             val (aggregateId, correlationId, payloadJson) = rows.head
-            assertEquals(aggregateId, created.id)
-            assertEquals(correlationId, created.id)
+            assertEquals(aggregateId, OrderId.render(created.id))
+            assertEquals(correlationId, OrderId.render(created.id))
             val envelope = decode[EventEnvelope](payloadJson)
             assertEquals(envelope.map(_.eventType), Right("OrderConfirmed"))
-            assertEquals(envelope.map(_.correlationId), Right(created.id))
+            assertEquals(
+              envelope.map(_.correlationId),
+              Right(OrderId.render(created.id))
+            )
             val payload =
               envelope.flatMap(_.payload.as[OrderConfirmedEvent])
-            assertEquals(payload.map(_.orderId), Right(created.id))
+            assertEquals(
+              payload.map(_.orderId),
+              Right(OrderId.render(created.id))
+            )
           }
         }
     }
@@ -638,12 +594,12 @@ class OrderStorePostgresSuite
   test("update writes no outbox row when it returns None (unknown id)") {
     withContainers { postgres =>
       val config = configFor(postgres)
-      val unknownId = java.util.UUID.randomUUID().toString
+      val unknownId = OrderId.fromUuid(java.util.UUID.randomUUID())
       val outboxEvent = PendingOutboxEvent(
         "OrderConfirmed",
         ref =>
           OrderConfirmedEvent(
-            ref.orderId,
+            OrderId.render(ref.orderId),
             ref.customerId,
             java.time.Instant.EPOCH
           ).asJson
@@ -657,7 +613,7 @@ class OrderStorePostgresSuite
               OrderStatus.ReservationFailed,
               Some(outboxEvent)
             )
-            rows <- outboxRowsFor(postgres, unknownId)
+            rows <- outboxRowsFor(postgres, OrderId.render(unknownId))
           } yield {
             assertEquals(updated, None)
             assertEquals(rows, Nil)
@@ -675,7 +631,7 @@ class OrderStorePostgresSuite
         "OrderConfirmed",
         ref =>
           OrderConfirmedEvent(
-            ref.orderId,
+            OrderId.render(ref.orderId),
             ref.customerId,
             java.time.Instant.EPOCH
           ).asJson
@@ -692,7 +648,7 @@ class OrderStorePostgresSuite
               OrderStatus.Confirmed,
               Some(outboxEvent)
             )
-            rows <- outboxRowsFor(postgres, created.id)
+            rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
             assert(updated.isDefined)
             assertEquals(rows.size, 1)
@@ -700,7 +656,10 @@ class OrderStorePostgresSuite
             assertEquals(envelope.map(_.eventType), Right("OrderConfirmed"))
             val payload =
               envelope.flatMap(_.payload.as[OrderConfirmedEvent])
-            assertEquals(payload.map(_.orderId), Right(created.id))
+            assertEquals(
+              payload.map(_.orderId),
+              Right(OrderId.render(created.id))
+            )
           }
         }
     }
@@ -715,7 +674,7 @@ class OrderStorePostgresSuite
         "OrderConfirmed",
         ref =>
           OrderConfirmedEvent(
-            ref.orderId,
+            OrderId.render(ref.orderId),
             ref.customerId,
             java.time.Instant.EPOCH
           ).asJson
@@ -732,7 +691,7 @@ class OrderStorePostgresSuite
               OrderStatus.Confirmed,
               Some(outboxEvent)
             )
-            rows <- outboxRowsFor(postgres, created.id)
+            rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
             assertEquals(updated, None)
             assertEquals(rows, Nil)
@@ -772,7 +731,7 @@ class OrderStorePostgresSuite
           "OrderConfirmed",
           ref =>
             OrderConfirmedEvent(
-              ref.orderId,
+              OrderId.render(ref.orderId),
               ref.customerId,
               java.time.Instant.EPOCH
             ).asJson
@@ -782,7 +741,7 @@ class OrderStorePostgresSuite
           "OrderPaymentFailed",
           ref =>
             OrderPaymentFailedEvent(
-              ref.orderId,
+              OrderId.render(ref.orderId),
               ref.customerId,
               "capture_failed",
               java.time.Instant.EPOCH
@@ -811,7 +770,7 @@ class OrderStorePostgresSuite
               captureOutboxEvent(OrderStatus.Confirmed)
             )
             found <- store.get(created.id)
-            rows <- outboxRowsFor(postgres, created.id)
+            rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
             assert(updated.isDefined)
             assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
@@ -820,7 +779,10 @@ class OrderStorePostgresSuite
             assertEquals(envelope.map(_.eventType), Right("OrderConfirmed"))
             val payload =
               envelope.flatMap(_.payload.as[OrderConfirmedEvent])
-            assertEquals(payload.map(_.orderId), Right(created.id))
+            assertEquals(
+              payload.map(_.orderId),
+              Right(OrderId.render(created.id))
+            )
           }
         }
     }
@@ -867,7 +829,7 @@ class OrderStorePostgresSuite
               captureOutboxEvent(OrderStatus.Confirmed)
             )
             found <- store.get(created.id)
-            rows <- outboxRowsFor(postgres, created.id)
+            rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
             assertEquals(updated, None)
             assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
@@ -896,8 +858,8 @@ class OrderStorePostgresSuite
             )
             found <- store.get(created.id)
             reason <- store.reconciliationReason(created.id)
-            rows <- outboxRowsFor(postgres, created.id)
-            flags <- reconciliationRowsFor(postgres, created.id)
+            rows <- outboxRowsFor(postgres, OrderId.render(created.id))
+            flags <- reconciliationRowsFor(postgres, OrderId.render(created.id))
           } yield {
             assert(updated.isDefined)
             assertEquals(
@@ -964,8 +926,8 @@ class OrderStorePostgresSuite
               finally conn.close()
             }
             found <- store.get(created.id)
-            flags <- reconciliationRowsFor(postgres, created.id)
-            rows <- outboxRowsFor(postgres, created.id)
+            flags <- reconciliationRowsFor(postgres, OrderId.render(created.id))
+            rows <- outboxRowsFor(postgres, OrderId.render(created.id))
           } yield {
             assert(result.isLeft)
             assertEquals(found.map(_._1.status), Some(OrderStatus.Dispatched))

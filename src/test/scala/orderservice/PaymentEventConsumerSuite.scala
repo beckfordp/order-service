@@ -8,6 +8,7 @@ import io.circe.Json
 import io.circe.parser.decode
 import io.circe.syntax._
 import munit.CatsEffectSuite
+import orderservice.domain.OrderId
 import org.typelevel.log4cats.noop.NoOpLogger
 import org.typelevel.otel4s.metrics.Meter
 import purekafka.consumer.DeadLetter
@@ -107,13 +108,13 @@ class PaymentEventConsumerSuite
 
   private def statusOf(
       store: OrderStore[IO],
-      orderId: String
+      orderId: OrderId
   ): IO[OrderStatus] =
     store.get(orderId).map(_.map(_._1.status).get)
 
   private def pollForStatus(
       store: OrderStore[IO],
-      orderId: String,
+      orderId: OrderId,
       expected: OrderStatus
   ): IO[OrderStatus] =
     pollUntil(
@@ -128,14 +129,15 @@ class PaymentEventConsumerSuite
     */
   private def pollForOutboxEvent(
       outboxRef: cats.effect.Ref[IO, List[(String, EventEnvelope)]],
-      orderId: String,
+      orderId: OrderId,
       eventType: String
   ): IO[EventEnvelope] =
     pollUntil(
       outboxRef.get.map(
         _.collectFirst {
           case (id, envelope)
-              if id == orderId && envelope.eventType == eventType =>
+              if id == OrderId.render(orderId) &&
+                envelope.eventType == eventType =>
             envelope
         }
       )
@@ -155,15 +157,19 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Dispatched)
         event = PaymentCapturedEvent(
-          order.id,
+          OrderId.render(order.id),
           order.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentCaptured", order.id, event.asJson)
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(order.id),
+            event.asJson
+          )
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -187,14 +193,18 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentAuthorizationExpiredEvent(
-          order.id,
+          OrderId.render(order.id),
           Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentAuthorizationExpired", order.id, event.asJson)
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentAuthorizationExpired",
+            OrderId.render(order.id),
+            event.asJson
+          )
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -218,7 +228,7 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Dispatched)
         event = PaymentFailedEvent(
-          order.id,
+          OrderId.render(order.id),
           "payment-1",
           order.totalCents,
           "capture_failed",
@@ -227,8 +237,8 @@ class PaymentEventConsumerSuite
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentFailed", order.id, event.asJson)
+          OrderId.render(order.id),
+          envelopeJson("PaymentFailed", OrderId.render(order.id), event.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -256,7 +266,7 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         realEvent = PaymentCapturedEvent(
-          order.id,
+          OrderId.render(order.id),
           order.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
@@ -273,8 +283,12 @@ class PaymentEventConsumerSuite
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentCaptured", order.id, realEvent.asJson)
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(order.id),
+            realEvent.asJson
+          )
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -299,30 +313,34 @@ class PaymentEventConsumerSuite
         (liveOrder, _) <- store.create("cust-456", oneItem)
         _ <- store.update(liveOrder.id, OrderStatus.Authorized)
         staleEvent = PaymentCapturedEvent(
-          stalePendingOrder.id,
+          OrderId.render(stalePendingOrder.id),
           stalePendingOrder.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
         liveEvent = PaymentCapturedEvent(
-          liveOrder.id,
+          OrderId.render(liveOrder.id),
           liveOrder.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          stalePendingOrder.id,
+          OrderId.render(stalePendingOrder.id),
           envelopeJson(
             "PaymentCaptured",
-            stalePendingOrder.id,
+            OrderId.render(stalePendingOrder.id),
             staleEvent.asJson
           )
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          liveOrder.id,
-          envelopeJson("PaymentCaptured", liveOrder.id, liveEvent.asJson)
+          OrderId.render(liveOrder.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(liveOrder.id),
+            liveEvent.asJson
+          )
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -355,7 +373,7 @@ class PaymentEventConsumerSuite
           Instant.parse("2026-01-01T00:00:00Z")
         )
         realEvent = PaymentCapturedEvent(
-          order.id,
+          OrderId.render(order.id),
           order.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
@@ -372,8 +390,12 @@ class PaymentEventConsumerSuite
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentCaptured", order.id, realEvent.asJson)
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(order.id),
+            realEvent.asJson
+          )
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -397,7 +419,7 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         realEvent = PaymentCapturedEvent(
-          order.id,
+          OrderId.render(order.id),
           order.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
@@ -410,8 +432,12 @@ class PaymentEventConsumerSuite
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentCaptured", order.id, realEvent.asJson)
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(order.id),
+            realEvent.asJson
+          )
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -437,12 +463,12 @@ class PaymentEventConsumerSuite
         (failedOrder, _) <- store.create("cust-456", oneItem)
         _ <- store.update(failedOrder.id, OrderStatus.Dispatched)
         settledEvent = PaymentCapturedEvent(
-          settledOrder.id,
+          OrderId.render(settledOrder.id),
           settledOrder.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
         failedEvent = PaymentFailedEvent(
-          failedOrder.id,
+          OrderId.render(failedOrder.id),
           "payment-failed",
           failedOrder.totalCents,
           "capture_failed",
@@ -451,14 +477,22 @@ class PaymentEventConsumerSuite
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          settledOrder.id,
-          envelopeJson("PaymentCaptured", settledOrder.id, settledEvent.asJson)
+          OrderId.render(settledOrder.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(settledOrder.id),
+            settledEvent.asJson
+          )
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          failedOrder.id,
-          envelopeJson("PaymentFailed", failedOrder.id, failedEvent.asJson)
+          OrderId.render(failedOrder.id),
+          envelopeJson(
+            "PaymentFailed",
+            OrderId.render(failedOrder.id),
+            failedEvent.asJson
+          )
         )
         result <- IO.race(
           PaymentEventConsumer
@@ -489,15 +523,19 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Dispatched)
         event = PaymentCapturedEvent(
-          order.id,
+          OrderId.render(order.id),
           order.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentCaptured", order.id, event.asJson)
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(order.id),
+            event.asJson
+          )
         )
         outboxed <- IO.race(
           PaymentEventConsumer
@@ -515,7 +553,7 @@ class PaymentEventConsumerSuite
           envelope.payload.as[OrderConfirmedEvent] match {
             case Left(error)  => fail(s"failed to decode: $error")
             case Right(event) =>
-              assertEquals(event.orderId, order.id)
+              assertEquals(event.orderId, OrderId.render(order.id))
               assertEquals(event.customerId, "cust-123")
           }
       }
@@ -534,16 +572,16 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentAuthorizationExpiredEvent(
-          order.id,
+          OrderId.render(order.id),
           Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
+          OrderId.render(order.id),
           envelopeJson(
             "PaymentAuthorizationExpired",
-            order.id,
+            OrderId.render(order.id),
             event.asJson
           )
         )
@@ -563,7 +601,7 @@ class PaymentEventConsumerSuite
           envelope.payload.as[OrderCancelledEvent] match {
             case Left(error)  => fail(s"failed to decode: $error")
             case Right(event) =>
-              assertEquals(event.orderId, order.id)
+              assertEquals(event.orderId, OrderId.render(order.id))
               assertEquals(event.customerId, "cust-123")
           }
       }
@@ -582,7 +620,7 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Dispatched)
         event = PaymentFailedEvent(
-          order.id,
+          OrderId.render(order.id),
           "payment-1",
           order.totalCents,
           "capture_failed",
@@ -591,8 +629,8 @@ class PaymentEventConsumerSuite
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentFailed", order.id, event.asJson)
+          OrderId.render(order.id),
+          envelopeJson("PaymentFailed", OrderId.render(order.id), event.asJson)
         )
         outboxed <- IO.race(
           PaymentEventConsumer
@@ -610,7 +648,7 @@ class PaymentEventConsumerSuite
           envelope.payload.as[OrderPaymentFailedEvent] match {
             case Left(error)  => fail(s"failed to decode: $error")
             case Right(event) =>
-              assertEquals(event.orderId, order.id)
+              assertEquals(event.orderId, OrderId.render(order.id))
               assertEquals(event.customerId, "cust-123")
               assertEquals(event.reason, "capture_failed")
           }
@@ -629,16 +667,24 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentCapturedEvent(
-          order.id,
+          OrderId.render(order.id),
           order.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
-        _ <- produceNullValue(config, PaymentEventConsumer.topic, order.id)
+        _ <- produceNullValue(
+          config,
+          PaymentEventConsumer.topic,
+          OrderId.render(order.id)
+        )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentCaptured", order.id, event.asJson)
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(order.id),
+            event.asJson
+          )
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -662,15 +708,19 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentCapturedEvent(
-          order.id,
+          OrderId.render(order.id),
           order.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentCaptured", order.id, event.asJson)
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentCaptured",
+            OrderId.render(order.id),
+            event.asJson
+          )
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -694,7 +744,7 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Authorized)
         event = PaymentFailedEvent(
-          order.id,
+          OrderId.render(order.id),
           "payment-1",
           order.totalCents,
           "capture_failed",
@@ -703,8 +753,8 @@ class PaymentEventConsumerSuite
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          order.id,
-          envelopeJson("PaymentFailed", order.id, event.asJson)
+          OrderId.render(order.id),
+          envelopeJson("PaymentFailed", OrderId.render(order.id), event.asJson)
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
@@ -731,13 +781,27 @@ class PaymentEventConsumerSuite
         (order, _) <- store.create("cust-123", oneItem)
         _ <- store.update(order.id, OrderStatus.Dispatched)
         event = PaymentCapturedEvent(
-          order.id,
+          OrderId.render(order.id),
           order.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
-        json = envelopeJson("PaymentCaptured", order.id, event.asJson)
-        _ <- produce(config, PaymentEventConsumer.topic, order.id, json)
-        _ <- produce(config, PaymentEventConsumer.topic, order.id, json)
+        json = envelopeJson(
+          "PaymentCaptured",
+          OrderId.render(order.id),
+          event.asJson
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          OrderId.render(order.id),
+          json
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          OrderId.render(order.id),
+          json
+        )
         _ <- PaymentEventConsumer
           .run[IO](config, store, NoOpLogger[IO], deadLetter)
           .compile
@@ -750,7 +814,9 @@ class PaymentEventConsumerSuite
         assertEquals(status, OrderStatus.Confirmed)
         assertEquals(
           events.count { case (id, envelope) =>
-            id == order.id && envelope.eventType == "OrderConfirmed"
+            id == OrderId.render(
+              order.id
+            ) && envelope.eventType == "OrderConfirmed"
           },
           1
         )

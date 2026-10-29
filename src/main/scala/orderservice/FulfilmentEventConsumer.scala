@@ -7,6 +7,7 @@ import fs2.kafka._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
+import orderservice.domain.OrderId
 import org.typelevel.log4cats.StructuredLogger
 import purekafka.consumer.DeadLetter
 import sttp.tapir.Schema
@@ -77,51 +78,69 @@ object FulfilmentEventConsumer {
       .records
       .evalMap { committable =>
         def handleConfirmed(event: DispatchConfirmedEvent): F[Unit] =
-          store
-            .updateStatusIfCurrent(
-              event.orderId,
-              OrderStatus.Authorized,
-              OrderStatus.Dispatched
-            )
-            .flatMap {
-              case Some(_) =>
-                logger.info(
-                  Map(
-                    "order_id" -> event.orderId,
-                    "tracking_no" -> event.trackingNo
-                  )
-                )("Order dispatched")
-              case None =>
-                logger.warn(Map("order_id" -> event.orderId))(
-                  "DispatchConfirmed for an unknown or non-authorized order - skipping"
+          OrderId.parse(event.orderId) match {
+            case Left(error) =>
+              logger.error(
+                Map("order_id" -> event.orderId, "error" -> error)
+              )("Invalid orderId in DispatchConfirmed payload")
+            case Right(orderId) =>
+              store
+                .updateStatusIfCurrent(
+                  orderId,
+                  OrderStatus.Authorized,
+                  OrderStatus.Dispatched
                 )
-            }
+                .flatMap {
+                  case Some(_) =>
+                    logger.info(
+                      Map(
+                        "order_id" -> event.orderId,
+                        "tracking_no" -> event.trackingNo
+                      )
+                    )("Order dispatched")
+                  case None =>
+                    logger.warn(Map("order_id" -> event.orderId))(
+                      "DispatchConfirmed for an unknown or non-authorized order - skipping"
+                    )
+                }
+          }
 
         def handleFailed(event: DispatchFailedEvent): F[Unit] =
-          store
-            .updateStatusIfCurrent(
-              event.orderId,
-              OrderStatus.Authorized,
-              OrderStatus.DispatchFailed
-            )
-            .flatMap {
-              case Some(_) =>
-                inventoryClient.release(event.orderId).handleErrorWith {
-                  error =>
-                    logger.warn(
-                      Map("order_id" -> event.orderId),
-                      error
-                    )(
-                      "Releasing reservations for a dispatch failure failed - reconciliation needed"
-                    )
-                } *> logger.warn(
-                  Map("order_id" -> event.orderId, "reason" -> event.reason)
-                )("Order dispatch failed")
-              case None =>
-                logger.warn(Map("order_id" -> event.orderId))(
-                  "DispatchFailed for an unknown or non-authorized order - skipping"
+          OrderId.parse(event.orderId) match {
+            case Left(error) =>
+              logger.error(
+                Map("order_id" -> event.orderId, "error" -> error)
+              )("Invalid orderId in DispatchFailed payload")
+            case Right(orderId) =>
+              store
+                .updateStatusIfCurrent(
+                  orderId,
+                  OrderStatus.Authorized,
+                  OrderStatus.DispatchFailed
                 )
-            }
+                .flatMap {
+                  case Some(_) =>
+                    inventoryClient
+                      .release(OrderId.render(orderId))
+                      .handleErrorWith { error =>
+                        logger.warn(
+                          Map("order_id" -> event.orderId),
+                          error
+                        )(
+                          "Releasing reservations for a dispatch failure failed - reconciliation needed"
+                        )
+                      } *> logger.warn(
+                      Map(
+                        "order_id" -> event.orderId,
+                        "reason" -> event.reason
+                      )
+                    )("Order dispatch failed")
+                  case None =>
+                    logger.warn(Map("order_id" -> event.orderId))(
+                      "DispatchFailed for an unknown or non-authorized order - skipping"
+                    )
+                }
+          }
 
         val key = committable.record.key.getOrElse("")
 

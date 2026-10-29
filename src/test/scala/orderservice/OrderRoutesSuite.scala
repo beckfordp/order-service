@@ -3,6 +3,7 @@ package orderservice
 import cats.effect.IO
 import io.circe.syntax._
 import munit.CatsEffectSuite
+import orderservice.domain.OrderId
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.implicits._
 import org.http4s.{Method, Request, Status}
@@ -20,6 +21,11 @@ import scala.concurrent.duration._
 class OrderRoutesSuite extends CatsEffectSuite {
 
   private val createRequest = CheckoutFixtures.createRequest()
+
+  /** A well-formed UUID that matches no stored order - the 404 cases. Using a
+    * malformed string here would now be a 400 at the path codec (TD-15.1).
+    */
+  private val unknownOrderId = java.util.UUID.randomUUID().toString
 
   /** Used by every test that isn't specifically exercising reservation outcomes -
     * always reserves successfully so those tests' assertions (about logging,
@@ -54,32 +60,32 @@ class OrderRoutesSuite extends CatsEffectSuite {
           items: List[OrderItem]
       ): IO[(Order, List[OrderItem])] =
         IO.raiseError(error)
-      def get(id: String): IO[Option[(Order, List[OrderItem])]] =
+      def get(id: OrderId): IO[Option[(Order, List[OrderItem])]] =
         IO.pure(None)
       def listByCustomer(
           customerId: String
       ): IO[List[(Order, List[OrderItem])]] = IO.raiseError(error)
       def update(
-          id: String,
+          id: OrderId,
           status: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[(Order, List[OrderItem])]] =
         IO.raiseError(error)
       def updateStatusIfCurrent(
-          id: String,
+          id: OrderId,
           expected: OrderStatus,
           newStatus: OrderStatus,
           outboxEvent: Option[PendingOutboxEvent] = None
       ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
       def recordCaptureOutcome(
-          id: String,
+          id: OrderId,
           newStatus: OrderStatus,
           outboxEvent: PendingOutboxEvent,
           reconciliationReason: Option[String]
       ): IO[Option[UpdatedOrderRef]] = IO.raiseError(error)
-      def reconciliationReason(id: String): IO[Option[String]] =
+      def reconciliationReason(id: OrderId): IO[Option[String]] =
         IO.raiseError(error)
-      def delete(id: String): IO[Boolean] = IO.raiseError(error)
+      def delete(id: OrderId): IO[Boolean] = IO.raiseError(error)
       def ping: IO[Boolean] = IO.raiseError(error)
     }
 
@@ -149,7 +155,10 @@ class OrderRoutesSuite extends CatsEffectSuite {
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
-        Request[IO](Method.GET, uri"/orders" / "unknown-id")
+        Request[IO](
+          Method.GET,
+          uri"/orders" / java.util.UUID.randomUUID().toString
+        )
       )
       body <- response.as[io.circe.Json]
     } yield {
@@ -159,6 +168,24 @@ class OrderRoutesSuite extends CatsEffectSuite {
         s"expected a JSON error body, got: $body"
       )
     }
+  }
+
+  test(
+    "GET /orders/{id} returns 400 for a malformed (non-UUID) id"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
+        noOpHistoryCache
+      )
+      response <- routes.orNotFound.run(
+        Request[IO](Method.GET, uri"/orders" / "not-a-uuid")
+      )
+    } yield assertEquals(response.status, Status.BadRequest)
   }
 
   test(
@@ -284,7 +311,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
-        Request[IO](Method.GET, uri"/orders" / "unknown-id")
+        Request[IO](Method.GET, uri"/orders" / unknownOrderId)
       )
       logged <- testLogger.logged
     } yield {
@@ -293,7 +320,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       assert(
         warns.exists(m =>
           m.message.toLowerCase.contains("not found") &&
-            m.ctx.get("order_id").contains("unknown-id")
+            m.ctx.get("order_id").contains(unknownOrderId)
         ),
         s"expected a 'not found' WARN line with id context, got: $warns"
       )
@@ -339,7 +366,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
-        Request[IO](Method.PATCH, uri"/orders" / "unknown-id")
+        Request[IO](Method.PATCH, uri"/orders" / unknownOrderId)
           .withEntity(UpdateOrderRequest("pending"))
       )
       body <- response.as[io.circe.Json]
@@ -511,7 +538,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
-        Request[IO](Method.PATCH, uri"/orders" / "unknown-id")
+        Request[IO](Method.PATCH, uri"/orders" / unknownOrderId)
           .withEntity(UpdateOrderRequest("pending"))
       )
       logged <- testLogger.logged
@@ -521,7 +548,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       assert(
         warns.exists(m =>
           m.message.toLowerCase.contains("not found") &&
-            m.ctx.get("order_id").contains("unknown-id")
+            m.ctx.get("order_id").contains(unknownOrderId)
         ),
         s"expected a 'not found' WARN line with id context, got: $warns"
       )
@@ -569,7 +596,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
-        Request[IO](Method.DELETE, uri"/orders" / "unknown-id")
+        Request[IO](Method.DELETE, uri"/orders" / unknownOrderId)
       )
       body <- response.as[io.circe.Json]
     } yield {
@@ -636,7 +663,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
-        Request[IO](Method.DELETE, uri"/orders" / "unknown-id")
+        Request[IO](Method.DELETE, uri"/orders" / unknownOrderId)
       )
       logged <- testLogger.logged
     } yield {
@@ -645,7 +672,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
       assert(
         warns.exists(m =>
           m.message.toLowerCase.contains("not found") &&
-            m.ctx.get("order_id").contains("unknown-id")
+            m.ctx.get("order_id").contains(unknownOrderId)
         ),
         s"expected a 'not found' WARN line with id context, got: $warns"
       )
@@ -691,7 +718,7 @@ class OrderRoutesSuite extends CatsEffectSuite {
         noOpHistoryCache
       )
       response <- routes.orNotFound.run(
-        Request[IO](Method.PUT, uri"/orders" / "unknown-id")
+        Request[IO](Method.PUT, uri"/orders" / unknownOrderId)
           .withEntity(UpdateOrderRequest("pending"))
       )
       body <- response.as[io.circe.Json]
@@ -802,27 +829,27 @@ class OrderRoutesSuite extends CatsEffectSuite {
             items: List[OrderItem]
         ): IO[(Order, List[OrderItem])] =
           baseStore.createAuthorized(order, items)
-        def get(id: String): IO[Option[(Order, List[OrderItem])]] =
+        def get(id: OrderId): IO[Option[(Order, List[OrderItem])]] =
           baseStore.get(id)
         def listByCustomer(
             customerId: String
         ): IO[List[(Order, List[OrderItem])]] =
           callCount.update(_ + 1) *> baseStore.listByCustomer(customerId)
         def update(
-            id: String,
+            id: OrderId,
             status: OrderStatus,
             outboxEvent: Option[PendingOutboxEvent] = None
         ): IO[Option[(Order, List[OrderItem])]] =
           baseStore.update(id, status, outboxEvent)
         def updateStatusIfCurrent(
-            id: String,
+            id: OrderId,
             expected: OrderStatus,
             newStatus: OrderStatus,
             outboxEvent: Option[PendingOutboxEvent] = None
         ): IO[Option[UpdatedOrderRef]] =
           baseStore.updateStatusIfCurrent(id, expected, newStatus, outboxEvent)
         def recordCaptureOutcome(
-            id: String,
+            id: OrderId,
             newStatus: OrderStatus,
             outboxEvent: PendingOutboxEvent,
             reconciliationReason: Option[String]
@@ -833,9 +860,9 @@ class OrderRoutesSuite extends CatsEffectSuite {
             outboxEvent,
             reconciliationReason
           )
-        def reconciliationReason(id: String): IO[Option[String]] =
+        def reconciliationReason(id: OrderId): IO[Option[String]] =
           baseStore.reconciliationReason(id)
-        def delete(id: String): IO[Boolean] = baseStore.delete(id)
+        def delete(id: OrderId): IO[Boolean] = baseStore.delete(id)
         def ping: IO[Boolean] = baseStore.ping
       }
       cache <- OrderHistoryCache.inMemory[IO]

@@ -8,6 +8,7 @@ import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
 import io.circe.syntax._
+import orderservice.domain.OrderId
 import org.typelevel.log4cats.StructuredLogger
 import purekafka.consumer.DeadLetter
 import sttp.tapir.Schema
@@ -131,24 +132,31 @@ object PaymentEventConsumer {
           "Failed to decode PaymentCaptured payload"
         )
       case Right(event) =>
-        Async[F].realTimeInstant.flatMap { now =>
-          store
-            .recordCaptureOutcome(
-              event.orderId,
-              OrderStatus.Confirmed,
-              PendingOutboxEvent(
-                "OrderConfirmed",
-                ref =>
-                  OrderConfirmedEvent(
-                    ref.orderId,
-                    ref.customerId,
-                    now
-                  ).asJson
-              )
-            )
-            .flatMap(
-              logOutcome(logger, event.orderId, OrderStatus.Confirmed, _)
-            )
+        OrderId.parse(event.orderId) match {
+          case Left(error) =>
+            logger.error(
+              Map("order_id" -> event.orderId, "error" -> error)
+            )("Invalid orderId in PaymentCaptured payload")
+          case Right(orderId) =>
+            Async[F].realTimeInstant.flatMap { now =>
+              store
+                .recordCaptureOutcome(
+                  orderId,
+                  OrderStatus.Confirmed,
+                  PendingOutboxEvent(
+                    "OrderConfirmed",
+                    ref =>
+                      OrderConfirmedEvent(
+                        OrderId.render(ref.orderId),
+                        ref.customerId,
+                        now
+                      ).asJson
+                  )
+                )
+                .flatMap(
+                  logOutcome(logger, event.orderId, OrderStatus.Confirmed, _)
+                )
+            }
         }
     }
 
@@ -164,27 +172,34 @@ object PaymentEventConsumer {
           "Failed to decode PaymentAuthorizationExpired payload"
         )
       case Right(event) =>
-        Async[F].realTimeInstant.flatMap { now =>
-          store
-            .updateStatusIfCurrent(
-              event.orderId,
-              OrderStatus.Authorized,
-              OrderStatus.Cancelled,
-              Some(
-                PendingOutboxEvent(
-                  "OrderCancelled",
-                  ref =>
-                    OrderCancelledEvent(
-                      ref.orderId,
-                      ref.customerId,
-                      now
-                    ).asJson
+        OrderId.parse(event.orderId) match {
+          case Left(error) =>
+            logger.error(
+              Map("order_id" -> event.orderId, "error" -> error)
+            )("Invalid orderId in PaymentAuthorizationExpired payload")
+          case Right(orderId) =>
+            Async[F].realTimeInstant.flatMap { now =>
+              store
+                .updateStatusIfCurrent(
+                  orderId,
+                  OrderStatus.Authorized,
+                  OrderStatus.Cancelled,
+                  Some(
+                    PendingOutboxEvent(
+                      "OrderCancelled",
+                      ref =>
+                        OrderCancelledEvent(
+                          OrderId.render(ref.orderId),
+                          ref.customerId,
+                          now
+                        ).asJson
+                    )
+                  )
                 )
-              )
-            )
-            .flatMap(
-              logOutcome(logger, event.orderId, OrderStatus.Cancelled, _)
-            )
+                .flatMap(
+                  logOutcome(logger, event.orderId, OrderStatus.Cancelled, _)
+                )
+            }
         }
     }
 
@@ -200,28 +215,40 @@ object PaymentEventConsumer {
           "Failed to decode PaymentFailed payload"
         )
       case Right(event) =>
-        Async[F].realTimeInstant.flatMap { now =>
-          store
-            .recordCaptureOutcome(
-              event.orderId,
-              OrderStatus.PaymentFailed,
-              PendingOutboxEvent(
-                "OrderPaymentFailed",
-                ref =>
-                  OrderPaymentFailedEvent(
-                    ref.orderId,
-                    ref.customerId,
-                    event.reason,
-                    now
-                  ).asJson
-              ),
-              // US-19.3: flag for manual reconciliation, never auto-release
-              // inventory (the order may already be physically shipped).
-              reconciliationReason = Some(event.reason)
-            )
-            .flatMap(
-              logOutcome(logger, event.orderId, OrderStatus.PaymentFailed, _)
-            )
+        OrderId.parse(event.orderId) match {
+          case Left(error) =>
+            logger.error(
+              Map("order_id" -> event.orderId, "error" -> error)
+            )("Invalid orderId in PaymentFailed payload")
+          case Right(orderId) =>
+            Async[F].realTimeInstant.flatMap { now =>
+              store
+                .recordCaptureOutcome(
+                  orderId,
+                  OrderStatus.PaymentFailed,
+                  PendingOutboxEvent(
+                    "OrderPaymentFailed",
+                    ref =>
+                      OrderPaymentFailedEvent(
+                        OrderId.render(ref.orderId),
+                        ref.customerId,
+                        event.reason,
+                        now
+                      ).asJson
+                  ),
+                  // US-19.3: flag for manual reconciliation, never auto-release
+                  // inventory (the order may already be physically shipped).
+                  reconciliationReason = Some(event.reason)
+                )
+                .flatMap(
+                  logOutcome(
+                    logger,
+                    event.orderId,
+                    OrderStatus.PaymentFailed,
+                    _
+                  )
+                )
+            }
         }
     }
 

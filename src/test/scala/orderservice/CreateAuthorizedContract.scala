@@ -2,6 +2,7 @@ package orderservice
 
 import cats.effect.IO
 import munit.CatsEffectSuite
+import orderservice.domain.{OrderId, OrderItemId}
 
 import java.time.Instant
 import java.util.UUID
@@ -17,11 +18,25 @@ trait CreateAuthorizedContract { self: CatsEffectSuite =>
     Address("1 High St", Some("Flat 2"), "London", "SW1A 1AA", "GB")
 
   private def authorizedOrder(customerId: String) = {
-    val orderId = UUID.randomUUID().toString
+    val orderId = OrderId.fromUuid(UUID.randomUUID())
     val now = Instant.now()
     val items = List(
-      OrderItem(UUID.randomUUID().toString, orderId, "sku-1", "Widget", 999, 2),
-      OrderItem(UUID.randomUUID().toString, orderId, "sku-2", "Gadget", 500, 1)
+      OrderItem(
+        OrderItemId.fromUuid(UUID.randomUUID()),
+        orderId,
+        "sku-1",
+        "Widget",
+        999,
+        2
+      ),
+      OrderItem(
+        OrderItemId.fromUuid(UUID.randomUUID()),
+        orderId,
+        "sku-2",
+        "Gadget",
+        500,
+        1
+      )
     )
     (
       Order(

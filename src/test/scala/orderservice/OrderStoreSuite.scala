@@ -3,6 +3,7 @@ package orderservice
 import cats.effect.IO
 import io.circe.syntax._
 import munit.CatsEffectSuite
+import orderservice.domain.{OrderId, OrderItemId}
 
 import java.time.Instant
 import scala.concurrent.duration._
@@ -11,6 +12,9 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
 
   def withStore(name: String)(body: OrderStore[IO] => IO[Unit]): Unit =
     test(name)(OrderStore.inMemory[IO].flatMap(body))
+
+  private def unknownOrderId: OrderId =
+    OrderId.fromUuid(java.util.UUID.randomUUID())
 
   private val oneItem =
     List(NewOrderItem("sku-1", "Widget", 999, 2))
@@ -25,7 +29,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
     for {
       store <- OrderStore.inMemory[IO]
       (order, _) <- store.create("cust-123", oneItem)
-    } yield assert(order.id.nonEmpty)
+    } yield assert(OrderId.render(order.id).nonEmpty)
   }
 
   test("create computes totalCents from the items") {
@@ -41,7 +45,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
       (order, items) <- store.create("cust-123", twoItems)
     } yield {
       assertEquals(items.map(_.sku), List("sku-1", "sku-2"))
-      assert(items.forall(_.id.nonEmpty))
+      assert(items.forall(item => OrderItemId.render(item.id).nonEmpty))
       assert(items.forall(_.orderId == order.id))
     }
   }
@@ -57,7 +61,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
   test("get returns None for an unknown id") {
     for {
       store <- OrderStore.inMemory[IO]
-      found <- store.get("unknown-id")
+      found <- store.get(unknownOrderId)
     } yield assertEquals(found, None)
   }
 
@@ -96,7 +100,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
   test("update returns None for an unknown id") {
     for {
       store <- OrderStore.inMemory[IO]
-      result <- store.update("unknown-id", OrderStatus.Pending)
+      result <- store.update(unknownOrderId, OrderStatus.Pending)
     } yield assertEquals(result, None)
   }
 
@@ -117,7 +121,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
   test("delete returns false for an unknown id") {
     for {
       store <- OrderStore.inMemory[IO]
-      deleted <- store.delete("unknown-id")
+      deleted <- store.delete(unknownOrderId)
     } yield assert(!deleted)
   }
 
@@ -165,7 +169,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
     for {
       store <- OrderStore.inMemory[IO]
       updated <- store.updateStatusIfCurrent(
-        "unknown-order-id",
+        unknownOrderId,
         OrderStatus.Reserved,
         OrderStatus.Confirmed
       )
@@ -207,7 +211,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
           "OrderConfirmed",
           ref =>
             OrderConfirmedEvent(
-              ref.orderId,
+              OrderId.render(ref.orderId),
               ref.customerId,
               captureInstant
             ).asJson
@@ -217,7 +221,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
           "OrderPaymentFailed",
           ref =>
             OrderPaymentFailedEvent(
-              ref.orderId,
+              OrderId.render(ref.orderId),
               ref.customerId,
               "capture_failed",
               captureInstant
@@ -260,10 +264,10 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
       assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
       assertEquals(events.size, 1)
       val (aggregateId, envelope) = events.head
-      assertEquals(aggregateId, order.id)
+      assertEquals(aggregateId, OrderId.render(order.id))
       assertEquals(envelope.eventType, "OrderConfirmed")
       val payload = envelope.payload.as[OrderConfirmedEvent].toOption.get
-      assertEquals(payload.orderId, order.id)
+      assertEquals(payload.orderId, OrderId.render(order.id))
       assertEquals(payload.customerId, "cust-123")
     }
   }
@@ -355,7 +359,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
       store <- OrderStore.inMemory[IO]
       (order, _) <- store.create("cust-123", oneItem)
       normal <- store.reconciliationReason(order.id)
-      unknown <- store.reconciliationReason("unknown-order-id")
+      unknown <- store.reconciliationReason(unknownOrderId)
     } yield {
       assertEquals(normal, None)
       assertEquals(unknown, None)
@@ -366,11 +370,11 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
     for {
       store <- OrderStore.inMemory[IO]
       updated <- store.recordCaptureOutcome(
-        "unknown-order-id",
+        unknownOrderId,
         OrderStatus.Confirmed,
         statusOutboxEvent(OrderStatus.Confirmed)
       )
-      reason <- store.reconciliationReason("unknown-order-id")
+      reason <- store.reconciliationReason(unknownOrderId)
     } yield {
       assertEquals(updated, None)
       assertEquals(reason, None)
