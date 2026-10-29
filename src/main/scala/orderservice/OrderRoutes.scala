@@ -1,7 +1,7 @@
 package orderservice
 
 import cats.Monad
-import cats.effect.Async
+import cats.effect.{Async, Clock, Sync}
 import cats.syntax.all._
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
@@ -368,7 +368,7 @@ object OrderRoutes {
     * release is logged and otherwise ignored — it's idempotent, and a missed
     * one is TD-8's orphaned reservation.
     */
-  def serverEndpoint[F[_]: Async](
+  def serverEndpoint[F[_]: Sync: Clock](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       inventoryClient: InventoryClient[F],
@@ -395,7 +395,7 @@ object OrderRoutes {
         val lines =
           items.map(i => Pricing.Line(i.unitPriceCents, i.quantity))
         Pricing.totalCents(lines) match {
-          case Left(error)       => Async[F].pure(Left(InvalidCheckout(error)))
+          case Left(error)       => Sync[F].pure(Left(InvalidCheckout(error)))
           case Right(totalCents) => placeWithTotal(items, totalCents)
         }
       }
@@ -405,12 +405,12 @@ object OrderRoutes {
           totalCents: Int
       ): F[Either[OrderError, OrderResponse]] =
         for {
-          orderId <- Async[F].delay(
+          orderId <- Sync[F].delay(
             OrderId.fromUuid(java.util.UUID.randomUUID())
           )
-          now <- Async[F].realTimeInstant
+          now <- Clock[F].realTimeInstant
           orderItems <- items.traverse { item =>
-            Async[F]
+            Sync[F]
               .delay(OrderItemId.fromUuid(java.util.UUID.randomUUID()))
               .map { id =>
                 OrderItem(

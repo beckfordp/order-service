@@ -1,6 +1,7 @@
 package orderservice
 
 import cats.effect.Async
+import cats.effect.kernel.MonadCancelThrow
 import cats.syntax.all._
 import fs2.Stream
 import fs2.kafka._
@@ -77,7 +78,9 @@ object FulfilmentEventConsumer {
       .subscribeTo(topic)
       .records
       .evalMap { committable =>
-        def handleConfirmed(event: DispatchConfirmedEvent): F[Unit] =
+        def handleConfirmed(event: DispatchConfirmedEvent)(implicit
+            F: MonadCancelThrow[F]
+        ): F[Unit] =
           OrderId.parse(event.orderId) match {
             case Left(error) =>
               logger.error(
@@ -105,7 +108,9 @@ object FulfilmentEventConsumer {
                 }
           }
 
-        def handleFailed(event: DispatchFailedEvent): F[Unit] =
+        def handleFailed(event: DispatchFailedEvent)(implicit
+            F: MonadCancelThrow[F]
+        ): F[Unit] =
           OrderId.parse(event.orderId) match {
             case Left(error) =>
               logger.error(

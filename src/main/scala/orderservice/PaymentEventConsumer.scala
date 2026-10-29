@@ -1,6 +1,7 @@
 package orderservice
 
-import cats.effect.Async
+import cats.Monad
+import cats.effect.{Async, Clock}
 import cats.syntax.all._
 import fs2.Stream
 import fs2.kafka._
@@ -95,7 +96,7 @@ object PaymentEventConsumer {
       .withGroupId("order-service-payment-events")
       .withAutoOffsetReset(AutoOffsetReset.Earliest)
 
-  private def logOutcome[F[_]: Async](
+  private def logOutcome[F[_]: Monad](
       logger: StructuredLogger[F],
       orderId: String,
       newStatus: OrderStatus,
@@ -120,7 +121,7 @@ object PaymentEventConsumer {
         )
     }
 
-  private def handleCaptured[F[_]: Async](
+  private def handleCaptured[F[_]: Monad: Clock](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       raw: String,
@@ -141,7 +142,7 @@ object PaymentEventConsumer {
               Map("order_id" -> event.orderId, "error" -> error)
             )("Invalid orderId in PaymentCaptured payload")
           case Right(orderId) =>
-            Async[F].realTimeInstant.flatMap { now =>
+            Clock[F].realTimeInstant.flatMap { now =>
               store
                 .recordCaptureOutcome(
                   orderId,
@@ -163,7 +164,7 @@ object PaymentEventConsumer {
         }
     }
 
-  private def handleExpired[F[_]: Async](
+  private def handleExpired[F[_]: Monad: Clock](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       raw: String,
@@ -184,7 +185,7 @@ object PaymentEventConsumer {
               Map("order_id" -> event.orderId, "error" -> error)
             )("Invalid orderId in PaymentAuthorizationExpired payload")
           case Right(orderId) =>
-            Async[F].realTimeInstant.flatMap { now =>
+            Clock[F].realTimeInstant.flatMap { now =>
               store
                 .updateStatusIfCurrent(
                   orderId,
@@ -209,7 +210,7 @@ object PaymentEventConsumer {
         }
     }
 
-  private def handleFailed[F[_]: Async](
+  private def handleFailed[F[_]: Monad: Clock](
       store: OrderStore[F],
       logger: StructuredLogger[F],
       raw: String,
@@ -230,7 +231,7 @@ object PaymentEventConsumer {
               Map("order_id" -> event.orderId, "error" -> error)
             )("Invalid orderId in PaymentFailed payload")
           case Right(orderId) =>
-            Async[F].realTimeInstant.flatMap { now =>
+            Clock[F].realTimeInstant.flatMap { now =>
               store
                 .recordCaptureOutcome(
                   orderId,
