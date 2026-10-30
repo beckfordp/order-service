@@ -16,6 +16,7 @@ import orderservice.domain.{
 }
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.metrics.Meter
+import purerest.metrics.LatencyBuckets
 import skunk.{Codec, Session}
 import skunk.codec.all._
 import skunk.implicits._
@@ -451,6 +452,7 @@ object OrderStore {
         meter
           .histogram[Double]("db.client.operation.duration")
           .withUnit("s")
+          .withExplicitBucketBoundaries(LatencyBuckets.seconds)
           .create
           .map { histogram =>
             /** Times a Skunk query, recording a `db.client.operation.duration`

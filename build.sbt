@@ -17,7 +17,7 @@ val fs2KafkaVersion = "3.6.0"
 val redis4catsVersion = "2.0.6"
 // Pinned to match the purerestlib version this service is built against — see
 // README's "Consuming purerest as a dependency" section.
-val purerestlibVersion = "0.1.0"
+val purerestlibVersion = "0.4.0"
 // Real GitHub Packages release (v0.3.0 - adds purekafka.docs.SchemaRegistryWriter,
 // Rework 5 step 3/ADR 0003) — resolved via the same resolver/credentials as
 // purerestlib below.
