@@ -3,6 +3,7 @@ package orderservice
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import sttp.tapir.Schema
+import sttp.tapir.Schema.annotations.{description, encodedExample}
 
 import java.time.Instant
 
@@ -18,9 +19,18 @@ import java.time.Instant
   * here. Checkout publishes nothing: a failed checkout leaves no order (ADR
   * 0018).
   */
+@description(
+  "Order confirmed: order-service consumed PaymentCaptured and moved the order to confirmed."
+)
 final case class OrderConfirmedEvent(
+    @description("Order UUID (order-service's order id).")
+    @encodedExample("3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f")
     orderId: String,
+    @description("Customer who placed the order.")
+    @encodedExample("7c9e6679-7425-40de-944b-e07fc1f90ae7")
     customerId: String,
+    @description("When the order was confirmed (ISO-8601 instant).")
+    @encodedExample("2026-10-31T10:15:30Z")
     timestamp: Instant
 )
 
@@ -33,10 +43,21 @@ object OrderConfirmedEvent {
   * moves the order to `payment_failed`. `reason` carries payment-service's
   * capture-failure reason (e.g. `capture_failed`) for manual reconciliation.
   */
+@description(
+  "Payment capture failed: order-service consumed PaymentFailed and moved the order to payment_failed."
+)
 final case class OrderPaymentFailedEvent(
+    @description("Order UUID (order-service's order id).")
+    @encodedExample("3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f")
     orderId: String,
+    @description("Customer who placed the order.")
+    @encodedExample("7c9e6679-7425-40de-944b-e07fc1f90ae7")
     customerId: String,
+    @description("payment-service's capture-failure reason.")
+    @encodedExample("capture_failed")
     reason: String,
+    @description("When the order moved to payment_failed (ISO-8601 instant).")
+    @encodedExample("2026-10-31T10:15:30Z")
     timestamp: Instant
 )
 
@@ -48,9 +69,18 @@ object OrderPaymentFailedEvent {
 /** Emitted when order-service consumes `PaymentAuthorizationExpired` and moves
   * the order to `cancelled` (Journey 5).
   */
+@description(
+  "Order cancelled: order-service consumed PaymentAuthorizationExpired and moved the order to cancelled."
+)
 final case class OrderCancelledEvent(
+    @description("Order UUID (order-service's order id).")
+    @encodedExample("3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f")
     orderId: String,
+    @description("Customer who placed the order.")
+    @encodedExample("7c9e6679-7425-40de-944b-e07fc1f90ae7")
     customerId: String,
+    @description("When the order was cancelled (ISO-8601 instant).")
+    @encodedExample("2026-10-31T10:15:30Z")
     timestamp: Instant
 )
 
