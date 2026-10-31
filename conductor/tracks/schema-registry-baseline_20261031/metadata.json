@@ -1,7 +1,7 @@
 {
   "track_id": "schema-registry-baseline_20261031",
   "type": "chore",
-  "status": "in_progress",
+  "status": "completed",
   "created_at": "2026-10-31T22:30:00Z",
   "updated_at": "2026-10-31T22:30:00Z",
   "description": "Schema registry baseline from gluon's git store (gluon TD-18.5)"
