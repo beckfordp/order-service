@@ -57,6 +57,12 @@
   (`schemaRegistryUrl`'s default), in CI against a throwaway
   `docker run` Apicurio container (`SCHEMA_REGISTRY_URL` env override —
   see `ci.yml`). Build/CI-time only, zero runtime presence.
+- Schema registry baseline (gluon TD-18, purekafka 0.5.0 / sbt-purekafka-docs
+  0.5.0-dev): only producer channels register (draft-07, closed, labelled
+  `producer=<service>`, `BACKWARD_TRANSITIVE`); subscribe channels dry-run
+  their mirror. CI restores gluon's `registry/` git export into the throwaway
+  Apicurio first, so the check compares against the real baseline;
+  `scripts/verify-schema-registry-check.sh` does the same locally.
 
 ## Persistence
 - skunk 1.0.0 — pure-FP, non-blocking Postgres access (runtime queries)
