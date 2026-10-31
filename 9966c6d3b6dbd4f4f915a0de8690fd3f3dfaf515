@@ -1,0 +1,1 @@
+Phase 1 verification: sbt scalafmtCheck Test/scalafmtCheck test green; scripts/verify-schema-registry-check.sh green against local Apicurio restored from gluon registry/ (2026-10-31).
