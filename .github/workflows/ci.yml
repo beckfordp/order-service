@@ -19,6 +19,12 @@ jobs:
 
       - uses: sbt/setup-sbt@v1
 
+      # sbt compile runs sbt-purekafka-docs' asyncApiGenerate, which renders the
+      # AsyncAPI HTML with @asyncapi/cli 6.x: needs Node >= 24.11 (skips otherwise).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
       # GITHUB_TOKEN is the built-in, same-repo-scoped token GitHub Actions provides
       # automatically - it can't resolve GitHub Packages published from a *different*
       # repo (purerestlib is published from beckfordp/purerest), so this build's

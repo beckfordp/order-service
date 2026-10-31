@@ -20,4 +20,4 @@ credentials += Credentials(
 // 0.3.0-dev auto-wires asyncApiGenerate's HTML into Universal/mappings for
 // native-packager images (TD-6); 0.2.0-dev added schemaRegistryCheck
 // (Rework 5 step 3, ADR 0003). Real GitHub Packages release.
-addSbtPlugin("io.github.beckfordp" % "sbt-purekafka-docs" % "0.3.0-dev")
+addSbtPlugin("io.github.beckfordp" % "sbt-purekafka-docs" % "0.4.0-dev")
