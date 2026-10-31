@@ -18,10 +18,11 @@ val redis4catsVersion = "2.0.6"
 // Pinned to match the purerestlib version this service is built against — see
 // README's "Consuming purerest as a dependency" section.
 val purerestlibVersion = "0.4.0"
-// Real GitHub Packages release (v0.3.0 - adds purekafka.docs.SchemaRegistryWriter,
+// Real GitHub Packages release (v0.5.0 - producer-only, versionable schema
+// registration, gluon TD-18; v0.3.0 added purekafka.docs.SchemaRegistryWriter,
 // Rework 5 step 3/ADR 0003) — resolved via the same resolver/credentials as
 // purerestlib below.
-val purekafkaVersion = "0.3.0"
+val purekafkaVersion = "0.5.0"
 
 // Skunk 1.0.0 depends on otel4s-core/-core-common/-core-metrics 0.16.0 (its own
 // optional tracing integration), which conflicts with purerestlib's otel4s 1.1.0
