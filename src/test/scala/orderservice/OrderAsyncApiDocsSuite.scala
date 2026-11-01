@@ -35,13 +35,13 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       assert(clue(body).contains("OrderCancelled"))
       assert(
         clue(body).contains("Debezium"),
-        "expected the CDC description note on order-events' publish-side messages"
+        "expected the CDC description note on order-events' sent messages"
       )
     }
   }
 
   test(
-    "GET /docs/asyncapi.json: payment-events has no publish operation, order-events has no subscribe operation, inventory-events is gone"
+    "GET /docs/asyncapi.json: order-service receives payment-events and fulfilment-events and sends order-events; inventory-events is gone"
   ) {
     val routes =
       AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
@@ -51,24 +51,43 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       )
       json <- response.as[io.circe.Json]
     } yield {
-      val channels = json.hcursor.downField("channels")
+      val root = json.hcursor
+      assertEquals(
+        root.downField("asyncapi").as[String].toOption,
+        Some("3.0.0")
+      )
       assert(
-        channels.downField("inventory-events").failed,
+        root.downField("channels").downField("inventory-events").failed,
         "order-service no longer consumes inventory-events (ADR 0018)"
       )
-      assert(
-        channels.downField("payment-events").downField("publish").failed,
-        "order-service only consumes payment-events - no publish operation expected"
-      )
-      assert(
-        channels.downField("order-events").downField("subscribe").failed,
-        "order-service only publishes order-events (via CDC) - no subscribe operation expected"
+      val actions = root
+        .downField("operations")
+        .keys
+        .toList
+        .flatten
+        .map(key =>
+          key -> root
+            .downField("operations")
+            .downField(key)
+            .downField("action")
+            .as[String]
+            .toOption
+            .get
+        )
+        .toMap
+      assertEquals(
+        actions,
+        Map(
+          "payment-events" -> "receive",
+          "fulfilment-events" -> "receive",
+          "order-events" -> "send"
+        )
       )
     }
   }
 
   test(
-    "GET /docs/asyncapi.json: order-events publishes the 3 per-outcome messages as oneOf, with no status field"
+    "GET /docs/asyncapi.json: order-events sends the 3 per-outcome messages, with no status field"
   ) {
     val routes =
       AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
@@ -78,33 +97,29 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       )
       json <- response.as[io.circe.Json]
     } yield {
-      val message = json.hcursor
+      val messages = json.hcursor
         .downField("channels")
         .downField("order-events")
-        .downField("publish")
-        .downField("message")
-
-      val messages = message.downField("oneOf").values.toList.flatten
-      val byName = messages.map { m =>
-        m.hcursor.downField("name").as[String].toOption.get -> m
-      }.toMap
+        .downField("messages")
+      val names = messages.keys.toList.flatten
 
       assertEquals(
-        byName.keySet,
+        names.toSet,
         Set("OrderConfirmed", "OrderPaymentFailed", "OrderCancelled")
       )
-
-      val failedProperties = byName("OrderPaymentFailed").hcursor
-        .downField("payload")
-        .downField("properties")
       assert(
-        failedProperties.downField("reason").succeeded,
+        messages
+          .downField("OrderPaymentFailed")
+          .downField("payload")
+          .downField("properties")
+          .downField("reason")
+          .succeeded,
         "OrderPaymentFailed must document its reason field"
       )
-
-      for ((name, payload) <- byName)
+      for (name <- names)
         assert(
-          payload.hcursor
+          messages
+            .downField(name)
             .downField("payload")
             .downField("properties")
             .downField("status")
