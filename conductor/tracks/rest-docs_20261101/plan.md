@@ -8,9 +8,9 @@
 - [x] Task: tests first — route-level tests that each endpoint's documented error statuses match FR2 subsets (red) → split `orderErrorOutput` into per-endpoint `oneOf`s over shared variants; existing error-response tests stay green — OrderDocsSuite walks errorOutput statuses (tapir traversal is internal); 199/199 07c7702
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Per-endpoint error outputs' (Protocol in workflow.md) — covered by suite
 
-## Phase 3: Descriptions and examples
+## Phase 3: Descriptions and examples [checkpoint: 6e72aef]
 - [x] Task: coverage test first in `OrderDocsSuite` (`Docs.undocumented == Nil`, red) → approved summaries/descriptions/tags, param descriptions/examples, DTO/Address/error annotations + examples in `OrderRoutes`/`HealthRoutes`/`Address`; green — red 76 gaps → 0; body examples on every request/response, `errorBody` helper; 200/200 2c0528e
-- [ ] Task: Conductor - User Manual Verification 'Phase 3: Descriptions and examples' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 3: Descriptions and examples' (Protocol in workflow.md) — covered by Phase 4's verify script
 
 ## Phase 4: Smoke test
 - [ ] Task: `scripts/verify-rest-docs.sh` — run service, fetch `/docs/docs.yaml`, assert summaries/descriptions/examples + narrowed errors; scalafmtCheck; CI green
