@@ -1,8 +1,8 @@
 {
   "track_id": "asyncapi-ordering_20261101",
   "type": "chore",
-  "status": "in_progress",
+  "status": "completed",
   "created_at": "2026-11-01T12:30:00Z",
-  "updated_at": "2026-11-01T12:30:00Z",
+  "updated_at": "2026-11-01T14:00:00Z",
   "description": "purekafka 0.6.1 / sbt-purekafka-docs 0.6.1-dev: send operations listed before receive (gluon TD-19.6)"
 }
