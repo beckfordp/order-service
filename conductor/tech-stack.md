@@ -44,7 +44,10 @@
 
 ## API layer
 - tapir 1.11.25 — route definitions and generated Swagger/OpenAPI docs
-  (`purerest.docs.Docs`), served at `/docs`, kept in sync by construction
+  (`purerest.docs.Docs`), served at `/docs`, kept in sync by construction.
+  Every endpoint, parameter, DTO field and error is described with examples
+  (purerest README "Documenting endpoints", gluon TD-20); `OrderDocsSuite`
+  asserts `Docs.undocumented` is empty
 - purekafka.docs (`AsyncApiChannel`/`Docs`) — generates AsyncAPI documentation
   for this service's Kafka event contracts (`AsyncApiChannels`), served at
   `/docs/asyncapi.json` (raw spec) and `/docs/asyncapi` (rendered static HTML,
@@ -84,7 +87,7 @@
 - pureconfig 0.17.10 — typed config from `application.conf`
 
 ## Shared platform library
-- `purerestlib` 0.1.0 (`io.github.beckfordp`) — tracing, structured logging,
+- `purerestlib` 0.7.3 (`io.github.beckfordp`) — tracing, structured logging,
   metrics, resilience (retry + circuit breaker), tapir-based docs. Consumed
   as a published GitHub Packages artifact, never vendored/`.dependsOn`.
   ADR 0005 flags a possible future migration off GitHub Packages (JitPack or
