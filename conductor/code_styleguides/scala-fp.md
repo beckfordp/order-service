@@ -72,6 +72,10 @@ lives. These rules cover both.
 - Never call `unsafeRun*` outside `main`/test harnesses.
 - Dependencies are explicit constructor/method parameters wired at the composition
   root — no annotations, reflection or macro DI.
+- **Documentation-only exception:** tapir `@description`/`@encodedExample` on API and
+  event case classes are allowed. They are the only way to get descriptions and examples
+  into the generated OpenAPI/AsyncAPI docs and registry schemas, and change nothing at
+  runtime. No other annotations: never for wiring, validation, encoding or behaviour.
 
 ## 8. Tests
 - Pure core is tested with plain values (no `IO`), and lifecycle rules get a
@@ -88,4 +92,5 @@ Reviewers check each change against these; any "no" is a **High** finding.
 - [ ] Raw input parsed to domain types at the boundary, not re-parsed inside?
 - [ ] No partial functions, `null`, `var`, `asInstanceOf`; no `case _` over a sealed type?
 - [ ] Time/randomness/ids/IO only inside `F`?
+- [ ] Annotations only tapir `@description`/`@encodedExample` (documentation)?
 - [ ] Pure core covered by value-level tests (properties for state machines)?
