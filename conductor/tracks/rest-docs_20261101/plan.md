@@ -5,7 +5,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: purerestlib 0.7.3' (Protocol in workflow.md) — covered by suite
 
 ## Phase 2: Per-endpoint error outputs
-- [ ] Task: tests first — route-level tests that each endpoint's documented error statuses match FR2 subsets (red) → split `orderErrorOutput` into per-endpoint `oneOf`s over shared variants; existing error-response tests stay green
+- [x] Task: tests first — route-level tests that each endpoint's documented error statuses match FR2 subsets (red) → split `orderErrorOutput` into per-endpoint `oneOf`s over shared variants; existing error-response tests stay green — OrderDocsSuite walks errorOutput statuses (tapir traversal is internal); 199/199 07c7702
 - [ ] Task: Conductor - User Manual Verification 'Phase 2: Per-endpoint error outputs' (Protocol in workflow.md)
 
 ## Phase 3: Descriptions and examples
