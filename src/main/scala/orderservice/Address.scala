@@ -3,17 +3,25 @@ package orderservice
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import sttp.tapir.Schema
+import sttp.tapir.Schema.annotations.{description, encodedExample}
 
 /** Shared shipping/billing shape pinned in `gluon/docs/system-design.md`'s
   * "REST contracts" (`Address`). order-service uses it as the order's shipping
   * address (US-11.1); payment-service keeps its own copy for billing (no shared
   * library between services).
   */
+@description("A postal address.")
 final case class Address(
+    @description("First address line; required.")
+    @encodedExample("1 Example Street")
     line1: String,
+    @description("Second address line; optional.") @encodedExample("Flat 2")
     line2: Option[String],
+    @description("Town or city; required.") @encodedExample("London")
     city: String,
+    @description("Postal code; required.") @encodedExample("EC1A 1AA")
     postalCode: String,
+    @description("ISO 3166-1 alpha-2 country code.") @encodedExample("GB")
     country: String
 )
 

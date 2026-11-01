@@ -12,13 +12,24 @@ import sttp.tapir.server.http4s.Http4sServerInterpreter
 object HealthRoutes {
 
   private val healthEndpoint: PublicEndpoint[Unit, Unit, Unit, Any] =
-    endpoint.get.in("health").out(statusCode(StatusCode.Ok))
+    endpoint.get
+      .in("health")
+      .out(statusCode(StatusCode.Ok))
+      .summary("Liveness check")
+      .description("200 while the process is up. Checks no dependencies.")
+      .tag("health")
 
   private val readyEndpoint: PublicEndpoint[Unit, Unit, Unit, Any] =
     endpoint.get
       .in("health" / "ready")
       .out(statusCode(StatusCode.Ok))
-      .errorOut(statusCode(StatusCode.ServiceUnavailable))
+      .errorOut(
+        statusCode(StatusCode.ServiceUnavailable)
+          .description("Postgres didn't answer a ping.")
+      )
+      .summary("Readiness check")
+      .description("200 when Postgres answers a ping, 503 when it doesn't.")
+      .tag("health")
 
   def healthServerEndpoint[F[_]: Applicative]: ServerEndpoint[Any, F] =
     healthEndpoint.serverLogicSuccess[F](_ => Applicative[F].unit)

@@ -102,4 +102,32 @@ class OrderDocsSuite extends CatsEffectSuite {
       )
     }
   }
+
+  test("every endpoint is documented") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      cache <- OrderHistoryCache.inMemory[IO]
+    } yield {
+      val logger = NoOpLogger[IO]
+      val endpoints = List(
+        OrderRoutes.serverEndpoint[IO](
+          store,
+          logger,
+          CheckoutFixtures.alwaysReserves,
+          CheckoutFixtures.alwaysAuthorizes
+        ),
+        OrderRoutes.listOrdersServerEndpoint[IO](store, logger, cache),
+        OrderRoutes.getOrderServerEndpoint[IO](store, logger),
+        OrderRoutes.updateOrderServerEndpoint[IO](store, logger),
+        OrderRoutes.replaceOrderServerEndpoint[IO](store, logger),
+        OrderRoutes.deleteOrderServerEndpoint[IO](store, logger),
+        HealthRoutes.healthServerEndpoint[IO],
+        HealthRoutes.readyServerEndpoint[IO](store)
+      )
+      assertEquals(
+        Docs.undocumented(endpoints.map(_.endpoint)).map(_.render),
+        Nil
+      )
+    }
+  }
 }

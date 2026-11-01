@@ -17,15 +17,21 @@ import org.http4s.HttpRoutes
 import org.typelevel.log4cats.StructuredLogger
 import sttp.model.StatusCode
 import sttp.tapir._
+import sttp.tapir.Schema.annotations.{description, encodedExample}
 import sttp.tapir.generic.auto._
 import sttp.tapir.json.circe._
 import sttp.tapir.server.ServerEndpoint
 import sttp.tapir.server.http4s.Http4sServerInterpreter
 
+@description("One line to buy.")
 final case class CreateOrderItemRequest(
+    @description("Catalog SKU.") @encodedExample("SKU-MUG-001")
     sku: String,
+    @description("Name shown on the order.") @encodedExample("Gluon Mug")
     productName: String,
+    @description("Unit price in cents, at least 0.") @encodedExample(1299)
     unitPriceCents: Int,
+    @description("Units to buy, at least 1.") @encodedExample(2)
     quantity: Int
 )
 
@@ -33,10 +39,16 @@ object CreateOrderItemRequest {
   implicit val codec: Codec[CreateOrderItemRequest] = deriveCodec
 }
 
+@description("A checkout: what to buy, where to ship it and how to pay.")
 final case class CreateOrderRequest(
+    @description("Customer placing the order.") @encodedExample("cust-42")
     customerId: String,
+    @description("Lines to buy; at least one.")
     items: List[CreateOrderItemRequest],
+    @description("Where to ship the order.")
     shippingAddress: Address,
+    @description("Saved payment method (UUID) to authorize against.")
+    @encodedExample("9b2e4c7a-1f3d-4a6b-8c5e-2d7f0a1b3c4e")
     paymentMethodId: String
 )
 
@@ -44,17 +56,29 @@ object CreateOrderRequest {
   implicit val codec: Codec[CreateOrderRequest] = deriveCodec
 }
 
-final case class UpdateOrderRequest(status: String)
+@description("A status change.")
+final case class UpdateOrderRequest(
+    @description("Target status; only `cancelled` is accepted.")
+    @encodedExample("cancelled")
+    status: String
+)
 
 object UpdateOrderRequest {
   implicit val codec: Codec[UpdateOrderRequest] = deriveCodec
 }
 
+@description("One line of an order.")
 final case class OrderItemResponse(
+    @description("Line id (UUID).")
+    @encodedExample("5c8d2e1f-3a4b-4c6d-9e7f-0a1b2c3d4e5f")
     id: String,
+    @description("Catalog SKU.") @encodedExample("SKU-MUG-001")
     sku: String,
+    @description("Name shown on the order.") @encodedExample("Gluon Mug")
     productName: String,
+    @description("Unit price in cents.") @encodedExample(1299)
     unitPriceCents: Int,
+    @description("Units bought.") @encodedExample(2)
     quantity: Int
 )
 
@@ -71,14 +95,26 @@ object OrderItemResponse {
     )
 }
 
+@description("An order with its line items.")
 final case class OrderResponse(
+    @description("Order id (UUID).")
+    @encodedExample("3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b90")
     id: String,
+    @description("Customer who placed the order.") @encodedExample("cust-42")
     customerId: String,
+    @description("Sum of the line totals, in cents.") @encodedExample(2598)
     totalCents: Int,
+    @description("Lifecycle status.") @encodedExample("authorized")
     status: String,
+    @description("The order's lines, by SKU.")
     items: List[OrderItemResponse],
+    @description("When the order was placed (UTC).")
+    @encodedExample("2026-11-01T09:30:00Z")
     createdAt: java.time.Instant,
+    @description("When the order last changed (UTC).")
+    @encodedExample("2026-11-01T09:45:00Z")
     updatedAt: java.time.Instant,
+    @description("Where to ship; absent on orders placed before US-11.1.")
     shippingAddress: Option[Address]
 )
 
@@ -98,20 +134,32 @@ object OrderResponse {
     )
 }
 
-final case class ErrorResponse(error: String)
+@description("Error body.")
+final case class ErrorResponse(
+    @description("Human-readable reason.") @encodedExample("Order not found")
+    error: String
+)
 
 object ErrorResponse {
   implicit val codec: Codec[ErrorResponse] = deriveCodec
 }
 
-final case class PaymentFailure(reason: String)
+@description("Why the payment failed.")
+final case class PaymentFailure(
+    @description("Why the payment provider declined.")
+    @encodedExample("insufficient_funds")
+    reason: String
+)
 
 object PaymentFailure {
   implicit val codec: Codec[PaymentFailure] = deriveCodec
 }
 
+@description("Error body for a declined payment.")
 final case class PaymentDeclinedResponse(
+    @description("Human-readable reason.") @encodedExample("Payment declined")
     error: String,
+    @description("The provider's decline detail.")
     paymentFailure: PaymentFailure
 )
 
@@ -119,14 +167,24 @@ object PaymentDeclinedResponse {
   implicit val codec: Codec[PaymentDeclinedResponse] = deriveCodec
 }
 
-final case class ReservationFailureResponse(sku: String, reason: String)
+@description("A line that couldn't be reserved.")
+final case class ReservationFailureResponse(
+    @description("SKU of the line.") @encodedExample("SKU-MUG-001")
+    sku: String,
+    @description("Why it couldn't be reserved.") @encodedExample("out_of_stock")
+    reason: String
+)
 
 object ReservationFailureResponse {
   implicit val codec: Codec[ReservationFailureResponse] = deriveCodec
 }
 
+@description("Error body for lines that couldn't be reserved.")
 final case class InsufficientStockResponse(
+    @description("Human-readable reason.")
+    @encodedExample("Insufficient stock")
     error: String,
+    @description("Every line that couldn't be reserved.")
     reservationFailures: List[ReservationFailureResponse]
 )
 
@@ -136,19 +194,69 @@ object InsufficientStockResponse {
 
 object OrderRoutes {
 
+  // REST docs convention (purerest README "Documenting endpoints"): every
+  // endpoint, parameter, DTO field and error is described, and OrderDocsSuite
+  // asserts Docs.undocumented finds no gaps.
+  private val tag = "orders"
+
+  private val notFound = ErrorResponse("Order not found")
+
+  private val exampleAddress =
+    Address("1 Example Street", Some("Flat 2"), "London", "EC1A 1AA", "GB")
+
+  private val exampleItem =
+    CreateOrderItemRequest("SKU-MUG-001", "Gluon Mug", 1299, 2)
+
+  private val exampleOrder = OrderResponse(
+    "3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b90",
+    "cust-42",
+    2598,
+    "authorized",
+    List(
+      OrderItemResponse(
+        "5c8d2e1f-3a4b-4c6d-9e7f-0a1b2c3d4e5f",
+        exampleItem.sku,
+        exampleItem.productName,
+        exampleItem.unitPriceCents,
+        exampleItem.quantity
+      )
+    ),
+    java.time.Instant.parse("2026-11-01T09:30:00Z"),
+    java.time.Instant.parse("2026-11-01T09:45:00Z"),
+    Some(exampleAddress)
+  )
+
+  private val idPath: EndpointInput.PathCapture[OrderId] =
+    path[OrderId]("id")
+      .description("Order id (UUID). A malformed id returns 400.")
+      .example(
+        OrderId.fromUuid(
+          java.util.UUID.fromString("3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b90")
+        )
+      )
+
+  private def errorBody(
+      what: String,
+      example: ErrorResponse
+  ): EndpointIO.Body[String, ErrorResponse] =
+    jsonBody[ErrorResponse].description(what).example(example)
+
   private val notFoundVariant: EndpointOutput.OneOfVariant[OrderNotFound.type] =
     oneOfVariant(
       statusCode(StatusCode.NotFound)
-        .and(jsonBody[ErrorResponse])
-        .map[OrderNotFound.type](_ => OrderNotFound)(_ =>
-          ErrorResponse("Order not found")
-        )
+        .and(errorBody("No order with this id.", notFound))
+        .map[OrderNotFound.type](_ => OrderNotFound)(_ => notFound)
     )
 
   private val invalidStatusVariant: EndpointOutput.OneOfVariant[InvalidStatus] =
     oneOfVariant(
       statusCode(StatusCode.BadRequest)
-        .and(jsonBody[ErrorResponse])
+        .and(
+          errorBody(
+            "`status` isn't a known order status.",
+            ErrorResponse("Invalid order status: 'shipped!'")
+          )
+        )
         .map[InvalidStatus](e => InvalidStatus(e.error))(e =>
           ErrorResponse(s"Invalid order status: '${e.raw}'")
         )
@@ -158,7 +266,12 @@ object OrderRoutes {
       : EndpointOutput.OneOfVariant[EmptyOrderItems.type] =
     oneOfVariant(
       statusCode(StatusCode.BadRequest)
-        .and(jsonBody[ErrorResponse])
+        .and(
+          errorBody(
+            "`items` is empty.",
+            ErrorResponse("Order must have at least one item")
+          )
+        )
         .map[EmptyOrderItems.type](_ => EmptyOrderItems)(_ =>
           ErrorResponse("Order must have at least one item")
         )
@@ -168,7 +281,14 @@ object OrderRoutes {
       : EndpointOutput.OneOfVariant[InvalidOrderItem] =
     oneOfVariant(
       statusCode(StatusCode.BadRequest)
-        .and(jsonBody[ErrorResponse])
+        .and(
+          errorBody(
+            "A line's quantity is below 1 or its unit price below 0.",
+            ErrorResponse(
+              "quantity must be positive, got 0 for sku 'SKU-MUG-001'"
+            )
+          )
+        )
         .map[InvalidOrderItem](e => InvalidOrderItem(e.error))(e =>
           ErrorResponse(e.reason)
         )
@@ -178,7 +298,12 @@ object OrderRoutes {
       : EndpointOutput.OneOfVariant[InvalidCheckout] =
     oneOfVariant(
       statusCode(StatusCode.BadRequest)
-        .and(jsonBody[ErrorResponse])
+        .and(
+          errorBody(
+            "Invalid shipping address, a `paymentMethodId` that isn't a UUID or isn't known, or a total too large to represent.",
+            ErrorResponse("paymentMethodId must be a UUID")
+          )
+        )
         .map(e => InvalidCheckout(e.error))(e => ErrorResponse(e.message))
     )
 
@@ -186,7 +311,12 @@ object OrderRoutes {
       : EndpointOutput.OneOfVariant[IllegalTransition] =
     oneOfVariant(
       statusCode(StatusCode.Conflict)
-        .and(jsonBody[ErrorResponse])
+        .and(
+          errorBody(
+            "The order can't move to the requested status: it's past cancelling, or the target isn't `cancelled`.",
+            ErrorResponse("Illegal status transition to 'dispatched'")
+          )
+        )
         .map[IllegalTransition](e => IllegalTransition(e.error))(e =>
           ErrorResponse(s"Illegal status transition to '${e.to}'")
         )
@@ -196,7 +326,18 @@ object OrderRoutes {
       : EndpointOutput.OneOfVariant[PaymentDeclined] =
     oneOfVariant(
       statusCode(StatusCode.PaymentRequired)
-        .and(jsonBody[PaymentDeclinedResponse])
+        .and(
+          jsonBody[PaymentDeclinedResponse]
+            .description(
+              "The payment provider declined; any reserved stock was released."
+            )
+            .example(
+              PaymentDeclinedResponse(
+                "Payment declined",
+                PaymentFailure("insufficient_funds")
+              )
+            )
+        )
         .map(r => PaymentDeclined(r.paymentFailure.reason))(d =>
           PaymentDeclinedResponse("Payment declined", PaymentFailure(d.reason))
         )
@@ -208,7 +349,18 @@ object OrderRoutes {
       : EndpointOutput.OneOfVariant[InsufficientStock] =
     oneOfVariant(
       statusCode(StatusCode.Conflict)
-        .and(jsonBody[InsufficientStockResponse])
+        .and(
+          jsonBody[InsufficientStockResponse]
+            .description(
+              "One or more lines couldn't be reserved; nothing was reserved."
+            )
+            .example(
+              InsufficientStockResponse(
+                "Insufficient stock",
+                List(ReservationFailureResponse("SKU-MUG-001", "out_of_stock"))
+              )
+            )
+        )
         .map(r =>
           InsufficientStock(
             r.reservationFailures.map(f => StockFailure("", f.sku, f.reason))
@@ -224,13 +376,16 @@ object OrderRoutes {
   private def fixedVariant[E <: OrderError: scala.reflect.ClassTag](
       status: StatusCode,
       value: E,
-      message: String
-  ): EndpointOutput.OneOfVariant[E] =
+      message: String,
+      what: String
+  ): EndpointOutput.OneOfVariant[E] = {
+    val body = ErrorResponse(message)
     oneOfVariant(
       statusCode(status)
-        .and(jsonBody[ErrorResponse])
-        .map(_ => value)(_ => ErrorResponse(message))
+        .and(errorBody(what, body))
+        .map(_ => value)(_ => body)
     )
+  }
 
   // Each endpoint lists only the variants its logic can return, so `/docs`
   // doesn't advertise impossible errors. The variants themselves stay
@@ -246,17 +401,20 @@ object OrderRoutes {
       fixedVariant(
         StatusCode.ServiceUnavailable,
         PaymentServiceUnavailable,
-        "Payment service unavailable"
+        "Payment service unavailable",
+        "payment-service couldn't be reached; any reserved stock was released."
       ),
       fixedVariant(
         StatusCode.ServiceUnavailable,
         InventoryServiceUnavailable,
-        "Inventory service unavailable"
+        "Inventory service unavailable",
+        "inventory-service couldn't be reached; any reserved stock was released."
       ),
       fixedVariant(
         StatusCode.InternalServerError,
         OrderPersistFailed,
-        "Order could not be saved"
+        "Order could not be saved",
+        "Payment was authorized but the order couldn't be saved; stock was released and the authorization lapses."
       )
     )
 
@@ -270,6 +428,9 @@ object OrderRoutes {
       illegalTransitionVariant
     )
 
+  private val cancelBody: EndpointIO.Body[String, UpdateOrderRequest] =
+    jsonBody[UpdateOrderRequest].example(UpdateOrderRequest("cancelled"))
+
   private val createOrderEndpoint: PublicEndpoint[
     CreateOrderRequest,
     OrderError,
@@ -278,10 +439,24 @@ object OrderRoutes {
   ] =
     endpoint.post
       .in("orders")
-      .in(jsonBody[CreateOrderRequest])
+      .in(
+        jsonBody[CreateOrderRequest].example(
+          CreateOrderRequest(
+            "cust-42",
+            List(exampleItem),
+            exampleAddress,
+            "9b2e4c7a-1f3d-4a6b-8c5e-2d7f0a1b3c4e"
+          )
+        )
+      )
       .out(statusCode(StatusCode.Created))
-      .out(jsonBody[OrderResponse])
+      .out(jsonBody[OrderResponse].example(exampleOrder))
       .errorOut(createOrderErrorOutput)
+      .summary("Place an order")
+      .description(
+        "Checkout: validates the items, shipping address and payment method, reserves stock for every line, authorizes payment, then saves the order as `authorized`. Nothing is saved unless every step succeeds, and stock already reserved is released on failure. Not idempotent: each call places a new order."
+      )
+      .tag(tag)
 
   private val listOrdersEndpoint: PublicEndpoint[
     String,
@@ -291,8 +466,17 @@ object OrderRoutes {
   ] =
     endpoint.get
       .in("orders")
-      .in(query[String]("customerId"))
-      .out(jsonBody[List[OrderResponse]])
+      .in(
+        query[String]("customerId")
+          .description("Customer whose orders to list.")
+          .example("cust-42")
+      )
+      .out(jsonBody[List[OrderResponse]].example(List(exampleOrder)))
+      .summary("List a customer's orders")
+      .description(
+        "The customer's order history, newest first. Served from a short-TTL cache, so a just-placed order can take up to the TTL to appear."
+      )
+      .tag(tag)
 
   private val getOrderEndpoint: PublicEndpoint[
     OrderId,
@@ -301,9 +485,12 @@ object OrderRoutes {
     Any
   ] =
     endpoint.get
-      .in("orders" / path[OrderId]("id"))
-      .out(jsonBody[OrderResponse])
+      .in("orders" / idPath)
+      .out(jsonBody[OrderResponse].example(exampleOrder))
       .errorOut(notFoundOutput)
+      .summary("Get an order")
+      .description("One order with its line items.")
+      .tag(tag)
 
   private val updateOrderEndpoint: PublicEndpoint[
     (OrderId, UpdateOrderRequest),
@@ -312,10 +499,15 @@ object OrderRoutes {
     Any
   ] =
     endpoint.patch
-      .in("orders" / path[OrderId]("id"))
-      .in(jsonBody[UpdateOrderRequest])
-      .out(jsonBody[OrderResponse])
+      .in("orders" / idPath)
+      .in(cancelBody)
+      .out(jsonBody[OrderResponse].example(exampleOrder))
       .errorOut(updateOrderErrorOutput)
+      .summary("Cancel an order")
+      .description(
+        "Only `cancelled` is accepted; cancelling publishes `OrderCancelled`. Any other known status returns 409."
+      )
+      .tag(tag)
 
   private val replaceOrderEndpoint: PublicEndpoint[
     (OrderId, UpdateOrderRequest),
@@ -324,17 +516,25 @@ object OrderRoutes {
     Any
   ] =
     endpoint.put
-      .in("orders" / path[OrderId]("id"))
-      .in(jsonBody[UpdateOrderRequest])
-      .out(jsonBody[OrderResponse])
+      .in("orders" / idPath)
+      .in(cancelBody)
+      .out(jsonBody[OrderResponse].example(exampleOrder))
       .errorOut(updateOrderErrorOutput)
+      .summary("Cancel an order (replace)")
+      .description("Same as PATCH; kept for clients that use PUT.")
+      .tag(tag)
 
   private val deleteOrderEndpoint
       : PublicEndpoint[OrderId, OrderError, Unit, Any] =
     endpoint.delete
-      .in("orders" / path[OrderId]("id"))
+      .in("orders" / idPath)
       .out(statusCode(StatusCode.NoContent))
       .errorOut(notFoundOutput)
+      .summary("Delete an order")
+      .description(
+        "Hard-deletes the order and its lines. No event is published."
+      )
+      .tag(tag)
 
   /** Validates checkout's line items before anything is persisted: at least one
     * item is required, and each item's quantity/price must be sane.
