@@ -232,18 +232,15 @@ object OrderRoutes {
         .map(_ => value)(_ => ErrorResponse(message))
     )
 
-  // Shared by all error-returning endpoints below - most only ever produce a
-  // subset of these variants, but reusing one mapping keeps there from being
-  // multiple places to update if a shape ever changes. The two 503s share a
-  // status, so they're told apart on encode by type and on decode by order.
-  private val orderErrorOutput: EndpointOutput[OrderError] =
+  // Each endpoint lists only the variants its logic can return, so `/docs`
+  // doesn't advertise impossible errors. The variants themselves stay
+  // defined once above. Same-status variants are told apart on encode by
+  // type and on decode by order.
+  private val createOrderErrorOutput: EndpointOutput[OrderError] =
     oneOf[OrderError](
-      notFoundVariant,
-      invalidStatusVariant,
       emptyOrderItemsVariant,
       invalidOrderItemVariant,
       invalidCheckoutVariant,
-      illegalTransitionVariant,
       paymentDeclinedVariant,
       insufficientStockVariant,
       fixedVariant(
@@ -263,6 +260,16 @@ object OrderRoutes {
       )
     )
 
+  private val notFoundOutput: EndpointOutput[OrderError] =
+    oneOf[OrderError](notFoundVariant)
+
+  private val updateOrderErrorOutput: EndpointOutput[OrderError] =
+    oneOf[OrderError](
+      notFoundVariant,
+      invalidStatusVariant,
+      illegalTransitionVariant
+    )
+
   private val createOrderEndpoint: PublicEndpoint[
     CreateOrderRequest,
     OrderError,
@@ -274,7 +281,7 @@ object OrderRoutes {
       .in(jsonBody[CreateOrderRequest])
       .out(statusCode(StatusCode.Created))
       .out(jsonBody[OrderResponse])
-      .errorOut(orderErrorOutput)
+      .errorOut(createOrderErrorOutput)
 
   private val listOrdersEndpoint: PublicEndpoint[
     String,
@@ -296,7 +303,7 @@ object OrderRoutes {
     endpoint.get
       .in("orders" / path[OrderId]("id"))
       .out(jsonBody[OrderResponse])
-      .errorOut(orderErrorOutput)
+      .errorOut(notFoundOutput)
 
   private val updateOrderEndpoint: PublicEndpoint[
     (OrderId, UpdateOrderRequest),
@@ -308,7 +315,7 @@ object OrderRoutes {
       .in("orders" / path[OrderId]("id"))
       .in(jsonBody[UpdateOrderRequest])
       .out(jsonBody[OrderResponse])
-      .errorOut(orderErrorOutput)
+      .errorOut(updateOrderErrorOutput)
 
   private val replaceOrderEndpoint: PublicEndpoint[
     (OrderId, UpdateOrderRequest),
@@ -320,14 +327,14 @@ object OrderRoutes {
       .in("orders" / path[OrderId]("id"))
       .in(jsonBody[UpdateOrderRequest])
       .out(jsonBody[OrderResponse])
-      .errorOut(orderErrorOutput)
+      .errorOut(updateOrderErrorOutput)
 
   private val deleteOrderEndpoint
       : PublicEndpoint[OrderId, OrderError, Unit, Any] =
     endpoint.delete
       .in("orders" / path[OrderId]("id"))
       .out(statusCode(StatusCode.NoContent))
-      .errorOut(orderErrorOutput)
+      .errorOut(notFoundOutput)
 
   /** Validates checkout's line items before anything is persisted: at least one
     * item is required, and each item's quantity/price must be sane.
