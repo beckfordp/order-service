@@ -21,5 +21,6 @@ credentials += Credentials(
 // native-packager images (TD-6); 0.2.0-dev added schemaRegistryCheck
 // (Rework 5 step 3, ADR 0003). Real GitHub Packages release.
 // 0.5.0-dev passes schemaRegistryProducer (gluon TD-18); 0.6.0-dev pairs
-// with purekafka 0.6.0's AsyncAPI 3.0 docs (gluon TD-19).
-addSbtPlugin("io.github.beckfordp" % "sbt-purekafka-docs" % "0.6.0-dev")
+// with purekafka 0.6.0's AsyncAPI 3.0 docs (gluon TD-19); 0.6.1-dev with
+// 0.6.1's sends-first order (gluon TD-19.6).
+addSbtPlugin("io.github.beckfordp" % "sbt-purekafka-docs" % "0.6.1-dev")
