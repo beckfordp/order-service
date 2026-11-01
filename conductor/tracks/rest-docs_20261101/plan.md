@@ -12,6 +12,6 @@
 - [x] Task: coverage test first in `OrderDocsSuite` (`Docs.undocumented == Nil`, red) → approved summaries/descriptions/tags, param descriptions/examples, DTO/Address/error annotations + examples in `OrderRoutes`/`HealthRoutes`/`Address`; green — red 76 gaps → 0; body examples on every request/response, `errorBody` helper; 200/200 2c0528e
 - [x] Task: Conductor - User Manual Verification 'Phase 3: Descriptions and examples' (Protocol in workflow.md) — covered by Phase 4's verify script
 
-## Phase 4: Smoke test
+## Phase 4: Smoke test [checkpoint: 560c66b]
 - [x] Task: `scripts/verify-rest-docs.sh` — run service, fetch `/docs/docs.yaml`, assert summaries/descriptions/examples + narrowed errors; scalafmtCheck; CI green — PASS 53 checks; `$ref` fields count via their component (tapir folds single-use field descriptions into it) 23fb4f0
-- [ ] Task: Conductor - User Manual Verification 'Phase 4: Smoke test' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 4: Smoke test' (Protocol in workflow.md) — `scripts/verify-rest-docs.sh` PASS
