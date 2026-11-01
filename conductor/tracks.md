@@ -2,7 +2,7 @@
 
 This file tracks all major tracks for the project.
 
-- [~] **Track: AsyncAPI 3.0 docs and consumed-event descriptions (gluon TD-19.3/19.4)**
+- [x] **Track: AsyncAPI 3.0 docs and consumed-event descriptions (gluon TD-19.3/19.4)**
   *Link: [./tracks/asyncapi-v3_20261101/](./tracks/asyncapi-v3_20261101/)*
 
 ---
