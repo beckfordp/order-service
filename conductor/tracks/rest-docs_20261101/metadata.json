@@ -1,0 +1,8 @@
+{
+  "track_id": "rest-docs_20261101",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-11-01T00:00:00Z",
+  "updated_at": "2026-11-01T00:00:00Z",
+  "description": "TD-20.3 — REST docs: purerestlib 0.7.3, per-endpoint error outputs, endpoint/parameter/DTO/error descriptions and examples, coverage test (gluon/TECHNICAL_DEBT.md TD-20.3)"
+}
