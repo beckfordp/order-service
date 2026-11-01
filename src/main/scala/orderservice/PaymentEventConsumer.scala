@@ -22,6 +22,9 @@ import java.time.Instant
   * cross-repo doc, not payment-service's own case classes, is the source of
   * truth. No shared library between the two services; each side keeps its own
   * copy.
+  *
+  * Descriptions/examples are copied from the producer's artifact in gluon's
+  * `registry/` (TD-19); nothing checks they stay current.
   */
 @description(
   "Money moved: capture succeeded after DispatchConfirmed. Published once per order."

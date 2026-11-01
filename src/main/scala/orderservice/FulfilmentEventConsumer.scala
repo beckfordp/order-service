@@ -21,6 +21,9 @@ import sttp.tapir.Schema.annotations.{description, encodedExample}
   * Both outcomes apply through `OrderStore.transition` / `OrderEvent`, the same
   * pure lifecycle every other status change uses. A failed inventory release on
   * `DispatchFailed` records a reconciliation flag instead of only logging.
+  *
+  * Descriptions/examples are copied from the producer's artifact in gluon's
+  * `registry/` (TD-19); nothing checks they stay current.
   */
 final case class FulfilmentItem(
     @description("Product SKU.")
