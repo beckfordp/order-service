@@ -9,7 +9,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Per-endpoint error outputs' (Protocol in workflow.md) — covered by suite
 
 ## Phase 3: Descriptions and examples
-- [ ] Task: coverage test first in `OrderDocsSuite` (`Docs.undocumented == Nil`, red) → approved summaries/descriptions/tags, param descriptions/examples, DTO/Address/error annotations + examples in `OrderRoutes`/`HealthRoutes`/`Address`; green
+- [x] Task: coverage test first in `OrderDocsSuite` (`Docs.undocumented == Nil`, red) → approved summaries/descriptions/tags, param descriptions/examples, DTO/Address/error annotations + examples in `OrderRoutes`/`HealthRoutes`/`Address`; green — red 76 gaps → 0; body examples on every request/response, `errorBody` helper; 200/200 2c0528e
 - [ ] Task: Conductor - User Manual Verification 'Phase 3: Descriptions and examples' (Protocol in workflow.md)
 
 ## Phase 4: Smoke test
