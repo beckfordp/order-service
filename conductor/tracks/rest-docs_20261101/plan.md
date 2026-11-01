@@ -15,3 +15,6 @@
 ## Phase 4: Smoke test [checkpoint: 560c66b]
 - [x] Task: `scripts/verify-rest-docs.sh` — run service, fetch `/docs/docs.yaml`, assert summaries/descriptions/examples + narrowed errors; scalafmtCheck; CI green — PASS 53 checks; `$ref` fields count via their component (tapir folds single-use field descriptions into it) 23fb4f0
 - [x] Task: Conductor - User Manual Verification 'Phase 4: Smoke test' (Protocol in workflow.md) — `scripts/verify-rest-docs.sh` PASS
+
+## Phase: Review Fixes
+- [x] Task: Apply review suggestions 2f54e57
