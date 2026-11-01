@@ -41,7 +41,8 @@ object CreateOrderItemRequest {
 
 @description("A checkout: what to buy, where to ship it and how to pay.")
 final case class CreateOrderRequest(
-    @description("Customer placing the order.") @encodedExample("cust-42")
+    @description("Id (UUID) of the customer placing the order.")
+    @encodedExample("7d1e4b2a-9c3f-4e8a-b5d6-1f2a3b4c5d6e")
     customerId: String,
     @description("Lines to buy; at least one.")
     items: List[CreateOrderItemRequest],
@@ -100,7 +101,8 @@ final case class OrderResponse(
     @description("Order id (UUID).")
     @encodedExample("3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b90")
     id: String,
-    @description("Customer who placed the order.") @encodedExample("cust-42")
+    @description("Id (UUID) of the customer who placed the order.")
+    @encodedExample("7d1e4b2a-9c3f-4e8a-b5d6-1f2a3b4c5d6e")
     customerId: String,
     @description("Sum of the line totals, in cents.") @encodedExample(2598)
     totalCents: Int,
@@ -211,7 +213,7 @@ object OrderRoutes {
 
   private val exampleOrder = OrderResponse(
     "3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b90",
-    "cust-42",
+    "7d1e4b2a-9c3f-4e8a-b5d6-1f2a3b4c5d6e",
     2598,
     "authorized",
     List(
@@ -439,7 +441,7 @@ object OrderRoutes {
       .in(
         jsonBody[CreateOrderRequest].example(
           CreateOrderRequest(
-            "cust-42",
+            "7d1e4b2a-9c3f-4e8a-b5d6-1f2a3b4c5d6e",
             List(exampleItem),
             exampleAddress,
             "9b2e4c7a-1f3d-4a6b-8c5e-2d7f0a1b3c4e"
@@ -465,8 +467,8 @@ object OrderRoutes {
       .in("orders")
       .in(
         query[String]("customerId")
-          .description("Customer whose orders to list.")
-          .example("cust-42")
+          .description("Id (UUID) of the customer whose orders to list.")
+          .example("7d1e4b2a-9c3f-4e8a-b5d6-1f2a3b4c5d6e")
       )
       .out(jsonBody[List[OrderResponse]].example(List(exampleOrder)))
       .summary("List a customer's orders")
