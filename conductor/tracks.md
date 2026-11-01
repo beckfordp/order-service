@@ -11,5 +11,7 @@ folder), so `/conductor:implement` cannot pick these up by accident. Reorder fre
 priorities change. When ready to work on one, run `/conductor:newTrack <title>` to go
 through the spec/plan questions and promote it into a real track above.
 
+- TD-20.3 — REST docs: endpoint/parameter/DTO descriptions and examples, coverage test (see `gluon/TECHNICAL_DEBT.md` TD-20.3)
+
 
 ---
