@@ -1,8 +1,8 @@
 # Plan — order-service: REST docs convention (gluon TD-20.3)
 
-## Phase 1: purerestlib 0.7.3
+## Phase 1: purerestlib 0.7.3 [checkpoint: 295f591]
 - [x] Task: bump `purerestlibVersion` 0.4.0 → 0.7.3 (+ aligned tapir/purekafka pins); fix API drift until suite green — other pins already aligned, no drift, 198/198 9a42df6
-- [ ] Task: Conductor - User Manual Verification 'Phase 1: purerestlib 0.7.3' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 1: purerestlib 0.7.3' (Protocol in workflow.md) — covered by suite
 
 ## Phase 2: Per-endpoint error outputs
 - [ ] Task: tests first — route-level tests that each endpoint's documented error statuses match FR2 subsets (red) → split `orderErrorOutput` into per-endpoint `oneOf`s over shared variants; existing error-response tests stay green
