@@ -5,6 +5,8 @@
 # rendered HTML, consumed events carry descriptions copied from the
 # producer's registry artifact, and schemaRegistryCheck still passes against
 # gluon's restored registry (descriptions don't affect compatibility).
+# Since asyncapi-ordering_20261101 (gluon TD-19.6, purekafka 0.6.1): no
+# receive operation precedes a send.
 #   scripts/verify-asyncapi-v3.sh   (needs Node >= 24.11 and the local k8s Apicurio)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -45,6 +47,9 @@ for op in "${OPERATIONS[@]}"; do
   grep -q "$anchor" "$HTML" || { echo "FAIL: HTML missing $anchor"; exit 1; }
 done
 echo "ok   operations: ${OPERATIONS[*]}"
+actions="$(jq -r '[.operations[].action] | join(" ")' "$SPEC")"
+[[ "$actions" =~ ^(send ?)*(receive ?)*$ ]] || { echo "FAIL: receive before send: $actions"; exit 1; }
+echo "ok   sends before receives: ${actions:-none}"
 
 for c in ${CONSUMED[@]+"${CONSUMED[@]}"}; do
   desc="$(jq -r --arg t "${c%%/*}" --arg e "${c#*/}" '.channels[$t].messages[$e].payload.description // empty' "$SPEC")"
