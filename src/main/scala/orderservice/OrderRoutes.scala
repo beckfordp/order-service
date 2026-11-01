@@ -144,7 +144,7 @@ object ErrorResponse {
   implicit val codec: Codec[ErrorResponse] = deriveCodec
 }
 
-@description("Why the payment failed.")
+@description("The provider's decline detail.")
 final case class PaymentFailure(
     @description("Why the payment provider declined.")
     @encodedExample("insufficient_funds")
@@ -159,7 +159,6 @@ object PaymentFailure {
 final case class PaymentDeclinedResponse(
     @description("Human-readable reason.") @encodedExample("Payment declined")
     error: String,
-    @description("The provider's decline detail.")
     paymentFailure: PaymentFailure
 )
 
@@ -199,7 +198,10 @@ object OrderRoutes {
   // asserts Docs.undocumented finds no gaps.
   private val tag = "orders"
 
+  // Each fixed error's body, shared by its documented example and its real
+  // mapping.
   private val notFound = ErrorResponse("Order not found")
+  private val emptyItems = ErrorResponse("Order must have at least one item")
 
   private val exampleAddress =
     Address("1 Example Street", Some("Flat 2"), "London", "EC1A 1AA", "GB")
@@ -267,14 +269,9 @@ object OrderRoutes {
     oneOfVariant(
       statusCode(StatusCode.BadRequest)
         .and(
-          errorBody(
-            "`items` is empty.",
-            ErrorResponse("Order must have at least one item")
-          )
+          errorBody("`items` is empty.", emptyItems)
         )
-        .map[EmptyOrderItems.type](_ => EmptyOrderItems)(_ =>
-          ErrorResponse("Order must have at least one item")
-        )
+        .map[EmptyOrderItems.type](_ => EmptyOrderItems)(_ => emptyItems)
     )
 
   private val invalidOrderItemVariant
