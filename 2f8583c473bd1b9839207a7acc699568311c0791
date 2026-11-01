@@ -1,0 +1,1 @@
+Phase 1 verification: scripts/verify-asyncapi-v3.sh passed (198 tests, scalafmt, spec 3.0.0 validates, operations payment/fulfilment-events=receive order-events=send, 5 consumed events described, schemaRegistryCheck vs restored registry), 2026-11-01.
