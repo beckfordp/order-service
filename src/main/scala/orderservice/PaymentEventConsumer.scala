@@ -13,6 +13,7 @@ import orderservice.domain.{OrderEvent, OrderId, TransitionRejected}
 import org.typelevel.log4cats.StructuredLogger
 import purekafka.consumer.DeadLetter
 import sttp.tapir.Schema
+import sttp.tapir.Schema.annotations.{description, encodedExample}
 
 import java.time.Instant
 
@@ -22,9 +23,18 @@ import java.time.Instant
   * truth. No shared library between the two services; each side keeps its own
   * copy.
   */
+@description(
+  "Money moved: capture succeeded after DispatchConfirmed. Published once per order."
+)
 final case class PaymentCapturedEvent(
+    @description("Order UUID (order-service's order id).")
+    @encodedExample("3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f")
     orderId: String,
+    @description("Amount captured, in cents.")
+    @encodedExample(4999)
     amountCents: Int,
+    @description("When the capture happened (ISO-8601 instant).")
+    @encodedExample("2026-10-31T10:15:30Z")
     timestamp: Instant
 )
 
@@ -33,8 +43,15 @@ object PaymentCapturedEvent {
   implicit val schema: Schema[PaymentCapturedEvent] = Schema.derived
 }
 
+@description(
+  "Authorization lapsed uncaptured: found by the background expiry sweep."
+)
 final case class PaymentAuthorizationExpiredEvent(
+    @description("Order UUID (order-service's order id).")
+    @encodedExample("3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f")
     orderId: String,
+    @description("When the sweep expired the hold (ISO-8601 instant).")
+    @encodedExample("2026-10-31T10:15:30Z")
     timestamp: Instant
 )
 
@@ -44,11 +61,26 @@ object PaymentAuthorizationExpiredEvent {
     Schema.derived
 }
 
+@description(
+  "Capture declined after DispatchConfirmed. Authorize declines are synchronous and publish nothing."
+)
 final case class PaymentFailedEvent(
+    @description("Order UUID (order-service's order id).")
+    @encodedExample("3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f")
     orderId: String,
+    @description(
+      "payment-service's own Payment id, for log/trace correlation only."
+    )
+    @encodedExample("9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d")
     paymentId: String,
+    @description("Amount that failed to charge, in cents.")
+    @encodedExample(4999)
     amountCents: Int,
+    @description("Failure reason.")
+    @encodedExample("capture_failed")
     reason: String,
+    @description("When the capture was declined (ISO-8601 instant).")
+    @encodedExample("2026-10-31T10:15:30Z")
     timestamp: Instant
 )
 

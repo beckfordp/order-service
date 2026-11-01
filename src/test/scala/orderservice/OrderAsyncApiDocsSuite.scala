@@ -130,6 +130,47 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
   }
 
   test(
+    "GET /docs/asyncapi.json: every consumed event carries a description and field examples (copied from the producer's registry artifact)"
+  ) {
+    val routes =
+      AsyncApiDocs.routes[IO]("Order Service", "1.0", AsyncApiChannels.channels)
+    for {
+      response <- routes.orNotFound.run(
+        Request[IO](Method.GET, uri"/docs/asyncapi.json")
+      )
+      json <- response.as[io.circe.Json]
+    } yield {
+      val consumed = List(
+        "payment-events" -> "PaymentCaptured",
+        "payment-events" -> "PaymentAuthorizationExpired",
+        "payment-events" -> "PaymentFailed",
+        "fulfilment-events" -> "DispatchConfirmed",
+        "fulfilment-events" -> "DispatchFailed"
+      )
+      for ((topic, event) <- consumed) {
+        val payload = json.hcursor
+          .downField("channels")
+          .downField(topic)
+          .downField("messages")
+          .downField(event)
+          .downField("payload")
+        assert(
+          payload.downField("description").as[String].isRight,
+          s"$event has no description"
+        )
+        assert(
+          payload
+            .downField("properties")
+            .downField("orderId")
+            .downField("examples")
+            .succeeded,
+          s"$event.orderId has no example"
+        )
+      }
+    }
+  }
+
+  test(
     "GET /docs/asyncapi.json still resolves when combined with purerest's OpenAPI/Swagger routes, in Main.scala's own order"
   ) {
     // Regression test for a route-ordering bug found during this track's
