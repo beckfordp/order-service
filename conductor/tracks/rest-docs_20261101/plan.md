@@ -1,7 +1,7 @@
 # Plan — order-service: REST docs convention (gluon TD-20.3)
 
 ## Phase 1: purerestlib 0.7.3
-- [ ] Task: bump `purerestlibVersion` 0.4.0 → 0.7.3 (+ aligned tapir/purekafka pins); fix API drift until suite green
+- [x] Task: bump `purerestlibVersion` 0.4.0 → 0.7.3 (+ aligned tapir/purekafka pins); fix API drift until suite green — other pins already aligned, no drift, 198/198 9a42df6
 - [ ] Task: Conductor - User Manual Verification 'Phase 1: purerestlib 0.7.3' (Protocol in workflow.md)
 
 ## Phase 2: Per-endpoint error outputs
