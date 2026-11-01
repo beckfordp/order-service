@@ -64,8 +64,9 @@
   Apicurio first, so the check compares against the real baseline;
   `scripts/verify-schema-registry-check.sh` does the same locally.
 - AsyncAPI 3.0 (gluon TD-19/19.6, purekafka 0.6.1 / sbt-purekafka-docs 0.6.1-dev):
-  `send`/`receive` from this service's side, sends listed first. Consumed-event mirrors come from
-  gluon's `registry/` via `bin/registry-scala` (see gluon `registry/README.md`).
+  `send`/`receive` from this service's side, sends listed first. Consumed-event
+  mirrors come from gluon's `registry/` via `bin/registry-scala` (see gluon
+  `registry/README.md`).
 
 ## Persistence
 - skunk 1.0.0 — pure-FP, non-blocking Postgres access (runtime queries)
