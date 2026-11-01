@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: AsyncAPI docs: sends first (purekafka 0.6.1)**
-  *Link: [./tracks/asyncapi-ordering_20261101/](./tracks/asyncapi-ordering_20261101/)*
-
 ---
 
 ## Backlog
