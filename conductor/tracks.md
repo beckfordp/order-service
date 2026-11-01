@@ -4,9 +4,6 @@ This file tracks all major tracks for the project.
 
 ---
 
-- [x] **Track: TD-20.3 — REST docs: purerestlib 0.7.3, per-endpoint errors, descriptions/examples, coverage test**
-  *Link: [./tracks/rest-docs_20261101/](./tracks/rest-docs_20261101/)*
-
 ---
 
 ## Backlog
