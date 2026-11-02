@@ -7,6 +7,8 @@ import orderservice.domain.{
   OrderEvent,
   OrderId,
   OrderItemId,
+  ReconciliationStatus,
+  ResolveReconciliationOutcome,
   TransitionRejected
 }
 
@@ -382,6 +384,106 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
       )
       history <- store.listByCustomer("cust-456")
     } yield assertEquals(history.map(_._1.id), List(other.id))
+  }
+
+  test("listAll returns every order newest-first, with optional filters") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (older, _) <- seeded(
+        store,
+        OrderStatus.Authorized,
+        customerId = "cust-123",
+        createdAt = Instant.parse("2026-01-01T00:00:00Z")
+      )
+      (newer, _) <- seeded(
+        store,
+        OrderStatus.Cancelled,
+        customerId = "cust-456",
+        createdAt = Instant.parse("2026-01-02T00:00:00Z")
+      )
+      all <- store.listAll(None, None)
+      authorized <- store.listAll(Some(OrderStatus.Authorized), None)
+      byCustomer <- store.listAll(None, Some("cust-456"))
+      none <- store.listAll(Some(OrderStatus.Confirmed), None)
+    } yield {
+      assertEquals(all.map(_._1.id), List(newer.id, older.id))
+      assertEquals(authorized.map(_._1.id), List(older.id))
+      assertEquals(byCustomer.map(_._1.id), List(newer.id))
+      assertEquals(none, Nil)
+    }
+  }
+
+  test("listReconciliations filters by status and orderId") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (first, _) <- seeded(store, OrderStatus.PaymentFailed)
+      (second, _) <- seeded(store, OrderStatus.PaymentFailed)
+      _ <- store.flagReconciliation(first.id, "capture_after_void")
+      _ <- store.flagReconciliation(second.id, "dispatch_after_release")
+      _ <- store.resolveReconciliation(
+        first.id,
+        "op-1",
+        None,
+        Instant.parse("2026-11-02T10:00:00Z")
+      )
+      open <- store.listReconciliations(Some(ReconciliationStatus.Open), None)
+      resolved <- store.listReconciliations(
+        Some(ReconciliationStatus.Resolved),
+        None
+      )
+      byOrder <- store.listReconciliations(None, Some(second.id))
+    } yield {
+      assertEquals(open.map(_.orderId), List(second.id))
+      assertEquals(resolved.map(_.orderId), List(first.id))
+      assertEquals(byOrder.map(_.reason), List("dispatch_after_release"))
+    }
+  }
+
+  test("resolveReconciliation is idempotent and never overwrites") {
+    val at = Instant.parse("2026-11-02T10:00:00Z")
+    for {
+      store <- OrderStore.inMemory[IO]
+      (order, _) <- seeded(store, OrderStatus.PaymentFailed)
+      _ <- store.flagReconciliation(order.id, "capture_after_void")
+      first <- store.resolveReconciliation(
+        order.id,
+        "op-1",
+        Some("refunded"),
+        at
+      )
+      second <- store.resolveReconciliation(
+        order.id,
+        "op-2",
+        Some("later"),
+        at.plusSeconds(60)
+      )
+      stored <- store.listReconciliations(None, Some(order.id))
+    } yield {
+      first match {
+        case ResolveReconciliationOutcome.Resolved(row) =>
+          assertEquals(row.status, ReconciliationStatus.Resolved)
+          assertEquals(row.operatorId, Some("op-1"))
+          assertEquals(row.note, Some("refunded"))
+          assertEquals(row.resolvedAt, Some(at))
+        case other => fail(s"expected Resolved, got: $other")
+      }
+      assert(second.isInstanceOf[ResolveReconciliationOutcome.AlreadyResolved])
+      assertEquals(stored.map(_.operatorId), List(Some("op-1")))
+      assertEquals(stored.map(_.note), List(Some("refunded")))
+    }
+  }
+
+  test("resolveReconciliation reports NotFound for an un-flagged order") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (order, _) <- seeded(store, OrderStatus.Authorized)
+      result <- store.resolveReconciliation(
+        order.id,
+        "op-1",
+        None,
+        Instant.parse("2026-11-02T10:00:00Z")
+      )
+    } yield assertEquals(result, ResolveReconciliationOutcome.NotFound)
   }
 }
 

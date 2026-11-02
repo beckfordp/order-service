@@ -83,10 +83,13 @@ def check(label, ok):
 allowed = {
     ("/orders", "post"): {"201", "400", "402", "409", "500", "503"},
     ("/orders", "get"): {"200", "400"},
+    ("/admin/orders", "get"): {"200", "400"},
     ("/orders/{id}", "get"): {"200", "400", "404"},
     ("/orders/{id}", "patch"): {"200", "400", "404", "409"},
     ("/orders/{id}", "put"): {"200", "400", "404", "409"},
     ("/orders/{id}", "delete"): {"204", "400", "404"},
+    ("/reconciliations", "get"): {"200", "400"},
+    ("/reconciliations/{orderId}", "patch"): {"200", "400", "401", "404"},
     ("/health", "get"): {"200"},
     ("/health/ready", "get"): {"200", "503"},
 }
@@ -120,7 +123,8 @@ check("POST /orders 402 has an example body",
 for name in ["CreateOrderRequest", "CreateOrderItemRequest", "UpdateOrderRequest",
              "OrderResponse", "OrderItemResponse", "Address", "ErrorResponse",
              "PaymentDeclinedResponse", "PaymentFailure",
-             "InsufficientStockResponse", "ReservationFailureResponse"]:
+             "InsufficientStockResponse", "ReservationFailureResponse",
+             "ReconciliationResponse", "ResolveReconciliationRequest"]:
     props = schemas.get(name, {}).get("properties", {})
     # A field that only references another component is described by it
     # (tapir folds a single-use field's description into the component).

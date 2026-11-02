@@ -200,7 +200,15 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
             .toList
           assertEquals(
             columns,
-            List("order_id", "reason", "created_at")
+            List(
+              "order_id",
+              "reason",
+              "created_at",
+              "status",
+              "operator_id",
+              "note",
+              "resolved_at"
+            )
           )
         } finally conn.close()
       }

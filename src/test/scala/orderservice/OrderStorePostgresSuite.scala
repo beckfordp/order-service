@@ -11,6 +11,8 @@ import orderservice.domain.{
   OrderEvent,
   OrderId,
   OrderItemId,
+  ReconciliationStatus,
+  ResolveReconciliationOutcome,
   TransitionRejected
 }
 import orderservice.domain.{OrderId, OrderItemId}
@@ -1118,6 +1120,144 @@ class OrderStorePostgresSuite
             assertEquals(rows, Nil)
           }
         }
+    }
+  }
+
+  withStore("listAll applies status and customer filters") { store =>
+    for {
+      first <- seedAuthorized(store, "cust-all-1", oneItem)
+      second <- seedAuthorized(store, "cust-all-2", oneItem)
+      all <- store.listAll(None, None)
+      byCustomer <- store.listAll(None, Some("cust-all-2"))
+      authorized <- store.listAll(Some(OrderStatus.Authorized), None)
+      confirmed <- store.listAll(Some(OrderStatus.Confirmed), None)
+    } yield {
+      val allIds = all.map(_._1.id).toSet
+      assert(allIds.contains(first._1.id))
+      assert(allIds.contains(second._1.id))
+      assertEquals(byCustomer.map(_._1.id), List(second._1.id))
+      assert(authorized.map(_._1.id).toSet.contains(first._1.id))
+      assert(authorized.map(_._1.id).toSet.contains(second._1.id))
+      val confirmedIds = confirmed.map(_._1.id).toSet
+      assert(!confirmedIds.contains(first._1.id))
+      assert(!confirmedIds.contains(second._1.id))
+    }
+  }
+
+  withStore("listReconciliations filters by status and orderId") { store =>
+    val resolvedAt = java.time.Instant.parse("2026-11-02T10:00:00Z")
+    for {
+      first <- seedAuthorized(store, "cust-queue-1", oneItem)
+      second <- seedAuthorized(store, "cust-queue-2", oneItem)
+      _ <- store.flagReconciliation(first._1.id, "capture_after_void")
+      _ <- store.flagReconciliation(second._1.id, "dispatch_after_release")
+      _ <- store.resolveReconciliation(
+        first._1.id,
+        "op-1",
+        Some("refunded"),
+        resolvedAt
+      )
+      open <- store.listReconciliations(Some(ReconciliationStatus.Open), None)
+      resolved <- store.listReconciliations(
+        Some(ReconciliationStatus.Resolved),
+        None
+      )
+      byOrder <- store.listReconciliations(None, Some(second._1.id))
+    } yield {
+      assert(open.map(_.orderId).contains(second._1.id))
+      val resolvedRow = resolved.find(_.orderId == first._1.id)
+      assert(resolvedRow.isDefined)
+      assertEquals(resolvedRow.flatMap(_.operatorId), Some("op-1"))
+      assertEquals(resolvedRow.flatMap(_.resolvedAt), Some(resolvedAt))
+      assertEquals(byOrder.map(_.reason), List("dispatch_after_release"))
+    }
+  }
+
+  withStore("resolveReconciliation is idempotent and never overwrites") {
+    store =>
+      val at = java.time.Instant.parse("2026-11-02T10:00:00Z")
+      for {
+        order <- seedAuthorized(store, "cust-resolve", oneItem)
+        _ <- store.flagReconciliation(order._1.id, "capture_after_void")
+        first <- store.resolveReconciliation(
+          order._1.id,
+          "op-1",
+          Some("refunded"),
+          at
+        )
+        second <- store.resolveReconciliation(
+          order._1.id,
+          "op-2",
+          Some("later"),
+          at.plusSeconds(60)
+        )
+        stored <- store.listReconciliations(None, Some(order._1.id))
+        missing <- store.resolveReconciliation(
+          OrderId.fromUuid(java.util.UUID.randomUUID()),
+          "op-1",
+          None,
+          at
+        )
+      } yield {
+        first match {
+          case ResolveReconciliationOutcome.Resolved(row) =>
+            assertEquals(row.status, ReconciliationStatus.Resolved)
+            assertEquals(row.operatorId, Some("op-1"))
+            assertEquals(row.note, Some("refunded"))
+            assertEquals(row.resolvedAt, Some(at))
+          case other => fail(s"expected Resolved, got: $other")
+        }
+        second match {
+          case ResolveReconciliationOutcome.AlreadyResolved(row) =>
+            assertEquals(row.operatorId, Some("op-1"))
+            assertEquals(row.note, Some("refunded"))
+          case other => fail(s"expected AlreadyResolved, got: $other")
+        }
+        assertEquals(stored.map(_.operatorId), List(Some("op-1")))
+        assertEquals(missing, ResolveReconciliationOutcome.NotFound)
+      }
+  }
+
+  test("recording a flag increments reconciliation.flags.recorded once") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Metrics.test[IO]("order-recon-metric-test").use { testMeter =>
+        Migrations.run[IO](config) *> OrderStore
+          .postgres[IO](config, testMeter.meter)
+          .use { store =>
+            for {
+              order <- seedAuthorized(store, "cust-metric", oneItem)
+              first <- store.flagReconciliation(
+                order._1.id,
+                "capture_after_void"
+              )
+              duplicate <- store.flagReconciliation(
+                order._1.id,
+                "capture_after_void"
+              )
+              metrics <- testMeter.collectMetrics
+            } yield {
+              assert(first)
+              assert(!duplicate)
+              val data =
+                metrics.find(_.getName == "reconciliation.flags.recorded")
+              assert(
+                data.isDefined,
+                s"expected a reconciliation.flags.recorded series, got: $metrics"
+              )
+              val points = data.get.getLongSumData.getPoints.asScala
+              assertEquals(points.map(_.getValue).sum, 1L)
+              val reasonKey =
+                io.opentelemetry.api.common.AttributeKey.stringKey("reason")
+              assertEquals(
+                points
+                  .flatMap(point => Option(point.getAttributes.get(reasonKey)))
+                  .toSet,
+                Set("capture_after_void")
+              )
+            }
+          }
+      }
     }
   }
 }

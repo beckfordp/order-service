@@ -45,4 +45,23 @@ class OperatorAuthSuite extends FunSuite {
       Left(Unauthorized)
     )
   }
+
+  test("requireOperator rejects a missing header, unlike the cancel path") {
+    val auth = OperatorAuth(Some("secret"), "op-1")
+    assertEquals(auth.requireOperator(None), Left(Unauthorized))
+    assertEquals(auth.requireOperator(Some("Bearer wrong")), Left(Unauthorized))
+  }
+
+  test("requireOperator accepts the configured Bearer token") {
+    assertEquals(
+      OperatorAuth(Some("secret"), "op-1").requireOperator(
+        Some("Bearer secret")
+      ),
+      Right("op-1")
+    )
+    assertEquals(
+      OperatorAuth.disabled.requireOperator(Some("Bearer secret")),
+      Left(Unauthorized)
+    )
+  }
 }

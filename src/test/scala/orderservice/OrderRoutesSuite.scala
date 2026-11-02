@@ -3,7 +3,14 @@ package orderservice
 import cats.effect.IO
 import io.circe.syntax._
 import munit.CatsEffectSuite
-import orderservice.domain.OrderId
+import orderservice.domain.{
+  OrderId,
+  Reconciliation,
+  ReconciliationStatus,
+  ResolveReconciliationOutcome
+}
+
+import java.time.Instant
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.implicits._
 import org.http4s.{Method, Request, Status}
@@ -73,6 +80,20 @@ class OrderRoutesSuite extends CatsEffectSuite {
         IO.raiseError(error)
       def reconciliationReason(id: OrderId): IO[Option[String]] =
         IO.raiseError(error)
+      def listAll(
+          status: Option[OrderStatus],
+          customerId: Option[String]
+      ): IO[List[(Order, List[OrderItem])]] = IO.raiseError(error)
+      def listReconciliations(
+          status: Option[ReconciliationStatus],
+          orderId: Option[OrderId]
+      ): IO[List[Reconciliation]] = IO.raiseError(error)
+      def resolveReconciliation(
+          id: OrderId,
+          operatorId: String,
+          note: Option[String],
+          resolvedAt: Instant
+      ): IO[ResolveReconciliationOutcome] = IO.raiseError(error)
       def cancellationAudit(
           id: OrderId
       ): IO[Option[orderservice.domain.CancellationAudit]] =
@@ -1031,6 +1052,23 @@ class OrderRoutesSuite extends CatsEffectSuite {
           baseStore.flagReconciliation(id, reason)
         def reconciliationReason(id: OrderId): IO[Option[String]] =
           baseStore.reconciliationReason(id)
+        def listAll(
+            status: Option[OrderStatus],
+            customerId: Option[String]
+        ): IO[List[(Order, List[OrderItem])]] =
+          baseStore.listAll(status, customerId)
+        def listReconciliations(
+            status: Option[ReconciliationStatus],
+            orderId: Option[OrderId]
+        ): IO[List[Reconciliation]] =
+          baseStore.listReconciliations(status, orderId)
+        def resolveReconciliation(
+            id: OrderId,
+            operatorId: String,
+            note: Option[String],
+            resolvedAt: Instant
+        ): IO[ResolveReconciliationOutcome] =
+          baseStore.resolveReconciliation(id, operatorId, note, resolvedAt)
         def cancellationAudit(
             id: OrderId
         ): IO[Option[orderservice.domain.CancellationAudit]] =

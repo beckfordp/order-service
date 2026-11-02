@@ -492,19 +492,44 @@ object OrderRoutes {
       )
       .tag(tag)
 
+  private val adminListOrdersEndpoint: PublicEndpoint[
+    (Option[String], Option[String]),
+    OrderError,
+    List[OrderResponse],
+    Any
+  ] =
+    endpoint.get
+      .in("admin" / "orders")
+      .in(
+        query[Option[String]]("status")
+          .description("Only orders in this lifecycle status.")
+          .example(Some("authorized"))
+      )
+      .in(
+        query[Option[String]]("customerId")
+          .description("Only this customer's orders.")
+          .example(Some("7d1e4b2a-9c3f-4e8a-b5d6-1f2a3b4c5d6e"))
+      )
+      .out(jsonBody[List[OrderResponse]].example(List(exampleOrder)))
+      .errorOut(oneOf[OrderError](invalidStatusVariant))
+      .summary("List all orders (admin)")
+      .description(
+        "Every customer's orders, newest first, optionally filtered by status and customer. Served directly from Postgres (no history cache) and not paginated — a demo-scale admin read (ADM-4). Unknown status → 400."
+      )
+      .tag("admin")
+
   private val getOrderEndpoint: PublicEndpoint[
     OrderId,
     OrderError,
     OrderResponse,
     Any
-  ] =
-    endpoint.get
-      .in("orders" / idPath)
-      .out(jsonBody[OrderResponse].example(exampleOrder))
-      .errorOut(notFoundOutput)
-      .summary("Get an order")
-      .description("One order with its line items.")
-      .tag(tag)
+  ] = endpoint.get
+    .in("orders" / idPath)
+    .out(jsonBody[OrderResponse].example(exampleOrder))
+    .errorOut(notFoundOutput)
+    .summary("Get an order")
+    .description("One order with its line items.")
+    .tag(tag)
 
   private val updateOrderEndpoint: PublicEndpoint[
     (OrderId, Option[String], UpdateOrderRequest),
@@ -840,6 +865,40 @@ object OrderRoutes {
       } yield result
     }
 
+  def adminListOrdersServerEndpoint[F[_]: Monad](
+      store: OrderStore[F],
+      logger: StructuredLogger[F]
+  ): ServerEndpoint[Any, F] =
+    adminListOrdersEndpoint.serverLogic[F] { case (statusRaw, customerIdRaw) =>
+      val status = statusRaw.map(_.trim).filter(_.nonEmpty)
+      val customerId = customerIdRaw.map(_.trim).filter(_.nonEmpty)
+      status.traverse(OrderStatus.fromString) match {
+        case Left(_) =>
+          logger
+            .warn(
+              Map("method" -> "GET", "path" -> "/admin/orders")
+            )("Invalid order status filter")
+            .as(Left(InvalidStatus(status.getOrElse(""))))
+        case Right(parsedStatus) =>
+          for {
+            _ <- logger.info(
+              Map(
+                "method" -> "GET",
+                "path" -> "/admin/orders",
+                "status" -> status.getOrElse(""),
+                "customer_id" -> customerId.getOrElse("")
+              )
+            )("Received request")
+            rows <- store.listAll(parsedStatus, customerId)
+            _ <- logger.info(
+              Map("path" -> "/admin/orders", "orders" -> rows.size.toString)
+            )("Request completed")
+          } yield Right(rows.map { case (order, items) =>
+            OrderResponse(order, items)
+          })
+      }
+    }
+
   def getOrderServerEndpoint[F[_]: Monad](
       store: OrderStore[F],
       logger: StructuredLogger[F]
@@ -1056,7 +1115,10 @@ object OrderRoutes {
       List(
         serverEndpoint(store, logger, inventoryClient, paymentClient),
         listOrdersServerEndpoint(store, logger, historyCache),
+        adminListOrdersServerEndpoint(store, logger),
         getOrderServerEndpoint(store, logger),
+        ReconciliationRoutes.listServerEndpoint(store, logger),
+        ReconciliationRoutes.resolveServerEndpoint(store, operatorAuth, logger),
         updateOrderServerEndpoint(store, logger, operatorAuth),
         replaceOrderServerEndpoint(store, logger, operatorAuth),
         deleteOrderServerEndpoint(store, logger)

@@ -83,6 +83,28 @@ class OrderDocsSuite extends CatsEffectSuite {
       )
       assertEquals(errorStatuses(list), Nil)
       assertEquals(
+        errorStatuses(
+          OrderRoutes.adminListOrdersServerEndpoint[IO](store, logger)
+        ),
+        List(400)
+      )
+      assertEquals(
+        errorStatuses(
+          ReconciliationRoutes.listServerEndpoint[IO](store, logger)
+        ),
+        List(400)
+      )
+      assertEquals(
+        errorStatuses(
+          ReconciliationRoutes.resolveServerEndpoint[IO](
+            store,
+            OperatorAuth.disabled,
+            logger
+          )
+        ),
+        List(400, 401, 404)
+      )
+      assertEquals(
         errorStatuses(OrderRoutes.getOrderServerEndpoint[IO](store, logger)),
         List(404)
       )
@@ -117,7 +139,14 @@ class OrderDocsSuite extends CatsEffectSuite {
           CheckoutFixtures.alwaysAuthorizes
         ),
         OrderRoutes.listOrdersServerEndpoint[IO](store, logger, cache),
+        OrderRoutes.adminListOrdersServerEndpoint[IO](store, logger),
         OrderRoutes.getOrderServerEndpoint[IO](store, logger),
+        ReconciliationRoutes.listServerEndpoint[IO](store, logger),
+        ReconciliationRoutes.resolveServerEndpoint[IO](
+          store,
+          OperatorAuth.disabled,
+          logger
+        ),
         OrderRoutes.updateOrderServerEndpoint[IO](store, logger),
         OrderRoutes.replaceOrderServerEndpoint[IO](store, logger),
         OrderRoutes.deleteOrderServerEndpoint[IO](store, logger),

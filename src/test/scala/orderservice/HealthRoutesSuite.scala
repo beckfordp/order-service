@@ -2,7 +2,14 @@ package orderservice
 
 import cats.effect.IO
 import munit.CatsEffectSuite
-import orderservice.domain.OrderId
+import orderservice.domain.{
+  OrderId,
+  Reconciliation,
+  ReconciliationStatus,
+  ResolveReconciliationOutcome
+}
+
+import java.time.Instant
 import org.http4s.implicits._
 import org.http4s.{Method, Request, Status}
 
@@ -32,6 +39,21 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def flagReconciliation(id: OrderId, reason: String): IO[Boolean] =
         IO.pure(false)
       def reconciliationReason(id: OrderId): IO[Option[String]] = IO.pure(None)
+      def listAll(
+          status: Option[OrderStatus],
+          customerId: Option[String]
+      ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
+      def listReconciliations(
+          status: Option[ReconciliationStatus],
+          orderId: Option[OrderId]
+      ): IO[List[Reconciliation]] = IO.pure(Nil)
+      def resolveReconciliation(
+          id: OrderId,
+          operatorId: String,
+          note: Option[String],
+          resolvedAt: Instant
+      ): IO[ResolveReconciliationOutcome] =
+        IO.pure(ResolveReconciliationOutcome.NotFound)
       def cancellationAudit(
           id: OrderId
       ): IO[Option[orderservice.domain.CancellationAudit]] = IO.pure(None)
@@ -63,6 +85,21 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def flagReconciliation(id: OrderId, reason: String): IO[Boolean] =
         IO.pure(false)
       def reconciliationReason(id: OrderId): IO[Option[String]] = IO.pure(None)
+      def listAll(
+          status: Option[OrderStatus],
+          customerId: Option[String]
+      ): IO[List[(Order, List[OrderItem])]] = IO.pure(Nil)
+      def listReconciliations(
+          status: Option[ReconciliationStatus],
+          orderId: Option[OrderId]
+      ): IO[List[Reconciliation]] = IO.pure(Nil)
+      def resolveReconciliation(
+          id: OrderId,
+          operatorId: String,
+          note: Option[String],
+          resolvedAt: Instant
+      ): IO[ResolveReconciliationOutcome] =
+        IO.pure(ResolveReconciliationOutcome.NotFound)
       def cancellationAudit(
           id: OrderId
       ): IO[Option[orderservice.domain.CancellationAudit]] = IO.pure(None)

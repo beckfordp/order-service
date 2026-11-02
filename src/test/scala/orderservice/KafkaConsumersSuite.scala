@@ -7,7 +7,12 @@ import fs2.kafka._
 import io.circe.Json
 import io.circe.syntax._
 import munit.CatsEffectSuite
-import orderservice.domain.OrderId
+import orderservice.domain.{
+  OrderId,
+  Reconciliation,
+  ReconciliationStatus,
+  ResolveReconciliationOutcome
+}
 import org.typelevel.log4cats.noop.NoOpLogger
 import purerest.metrics.Metrics
 
@@ -289,6 +294,20 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
     def flagReconciliation(id: OrderId, reason: String) =
       base.flagReconciliation(id, reason)
     def reconciliationReason(id: OrderId) = base.reconciliationReason(id)
+    def listAll(
+        status: Option[OrderStatus],
+        customerId: Option[String]
+    ) = base.listAll(status, customerId)
+    def listReconciliations(
+        status: Option[ReconciliationStatus],
+        orderId: Option[OrderId]
+    ) = base.listReconciliations(status, orderId)
+    def resolveReconciliation(
+        id: OrderId,
+        operatorId: String,
+        note: Option[String],
+        resolvedAt: Instant
+    ) = base.resolveReconciliation(id, operatorId, note, resolvedAt)
     def cancellationAudit(id: OrderId) = base.cancellationAudit(id)
     def delete(id: OrderId) = base.delete(id)
     def ping = base.ping

@@ -6,6 +6,9 @@ case object OrderNotFound extends OrderError
 
 final case class InvalidStatus(raw: String) extends OrderError
 
+/** ADM-4: the resolve request asked for something other than `resolved`. */
+final case class InvalidReconciliationStatus(raw: String) extends OrderError
+
 /** A syntactically valid status that the lifecycle does not allow next (409).
   */
 final case class IllegalTransition(to: String) extends OrderError

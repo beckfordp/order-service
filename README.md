@@ -47,6 +47,16 @@ curl -X PUT http://localhost:8080/orders/<id> \
 # Delete it
 curl -X DELETE http://localhost:8080/orders/<id>
 
+# Admin-wide order list (ADM-4); optional status/customerId filters
+curl "http://localhost:8080/admin/orders?status=authorized"
+
+# Reconciliation queue (ADM-4); resolve one with the dev operator token
+curl "http://localhost:8080/reconciliations?status=open"
+curl -X PATCH http://localhost:8080/reconciliations/<orderId> \
+  -H "Authorization: Bearer dev-operator-token" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"resolved","note":"refunded manually"}'
+
 # Liveness / readiness
 curl http://localhost:8080/health
 curl http://localhost:8080/health/ready

@@ -25,6 +25,22 @@ final case class OperatorAuth(token: Option[String], operatorId: String) {
         }
     }
 
+  /** The stricter gate for operator-only actions (ADM-4 reconciliation
+    * resolve): a missing header is also unauthorized, not the customer path.
+    */
+  def requireOperator(
+      authorization: Option[String]
+  ): Either[OrderError, String] =
+    authorization match {
+      case Some(raw) =>
+        token match {
+          case Some(expected) if bearerMatches(raw, expected) =>
+            Right(operatorId)
+          case _ => Left(Unauthorized)
+        }
+      case None => Left(Unauthorized)
+    }
+
   private def bearerMatches(raw: String, expected: String): Boolean = {
     val scheme = "bearer "
     if (raw.length <= scheme.length) false

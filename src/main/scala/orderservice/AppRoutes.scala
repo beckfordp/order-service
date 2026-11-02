@@ -53,6 +53,19 @@ object AppRoutes {
           historyCache
         ),
         OrderRoutes.getOrderServerEndpoint[F](store, telemetry.logger),
+        OrderRoutes.adminListOrdersServerEndpoint[F](
+          store,
+          telemetry.logger
+        ),
+        ReconciliationRoutes.listServerEndpoint[F](
+          store,
+          telemetry.logger
+        ),
+        ReconciliationRoutes.resolveServerEndpoint[F](
+          store,
+          operatorAuth,
+          telemetry.logger
+        ),
         OrderRoutes.updateOrderServerEndpoint[F](
           store,
           telemetry.logger,
