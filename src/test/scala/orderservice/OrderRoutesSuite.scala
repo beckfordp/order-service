@@ -343,6 +343,37 @@ class OrderRoutesSuite extends CatsEffectSuite {
   }
 
   test(
+    "PATCH /orders/{id} publishes OrderCancelled with reason=customer"
+  ) {
+    for {
+      storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+      (store, outbox) = storeAndOutbox
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
+        noOpHistoryCache
+      )
+      postResponse <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      created <- postResponse.as[OrderResponse]
+      _ <- routes.orNotFound.run(
+        Request[IO](Method.PATCH, uri"/orders" / created.id)
+          .withEntity(UpdateOrderRequest("cancelled"))
+      )
+      events <- outbox.get
+    } yield {
+      val cancelled = events.filter(_._2.eventType == "OrderCancelled")
+      assertEquals(cancelled.size, 1)
+      val event =
+        cancelled.head._2.payload.as[OrderCancelledEvent].toOption.get
+      assertEquals(event.reason, Some("customer"))
+    }
+  }
+
+  test(
     "PATCH /orders/{id} returns 404 with a JSON error body for an unknown id"
   ) {
     for {

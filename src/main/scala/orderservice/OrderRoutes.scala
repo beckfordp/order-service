@@ -915,7 +915,8 @@ object OrderRoutes {
                       OrderCancelledEvent(
                         OrderId.render(ref.orderId),
                         ref.customerId,
-                        now
+                        now,
+                        reason = Some("customer")
                       ).asJson
                   )
                 )

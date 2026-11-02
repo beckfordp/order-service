@@ -66,11 +66,17 @@ object OrderPaymentFailedEvent {
   implicit val schema: Schema[OrderPaymentFailedEvent] = Schema.derived
 }
 
-/** Emitted when order-service consumes `PaymentAuthorizationExpired` and moves
-  * the order to `cancelled` (Journey 5).
+/** Emitted when order-service moves an order to `cancelled`: a customer
+  * `PATCH`/`PUT` (`reason = customer`) or a consumed
+  * `PaymentAuthorizationExpired` (`reason = auth_expired`). `stale` and
+  * `operator` are reserved for US-10/US-22.
+  *
+  * `reason` is optional in the wire schema so the registry's
+  * `BACKWARD_TRANSITIVE` rule accepts the addition; this producer always sends
+  * it, and consumers fall back for old reason-less messages.
   */
 @description(
-  "Order cancelled: order-service consumed PaymentAuthorizationExpired and moved the order to cancelled."
+  "Order cancelled: a customer cancel or a consumed PaymentAuthorizationExpired moved the order to cancelled."
 )
 final case class OrderCancelledEvent(
     @description("Order UUID (order-service's order id).")
@@ -81,7 +87,12 @@ final case class OrderCancelledEvent(
     customerId: String,
     @description("When the order was cancelled (ISO-8601 instant).")
     @encodedExample("2026-10-31T10:15:30Z")
-    timestamp: Instant
+    timestamp: Instant,
+    @description(
+      "Cancellation trigger: customer | auth_expired | stale | operator. Always sent by the producer."
+    )
+    @encodedExample("customer")
+    reason: Option[String] = None
 )
 
 object OrderCancelledEvent {

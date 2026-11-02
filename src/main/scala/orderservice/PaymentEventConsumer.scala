@@ -243,7 +243,8 @@ object PaymentEventConsumer {
                         OrderCancelledEvent(
                           OrderId.render(ref.orderId),
                           ref.customerId,
-                          now
+                          now,
+                          reason = Some("auth_expired")
                         ).asJson
                     )
                   )

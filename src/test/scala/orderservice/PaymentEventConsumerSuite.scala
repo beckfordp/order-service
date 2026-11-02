@@ -683,6 +683,7 @@ class PaymentEventConsumerSuite
             case Right(event) =>
               assertEquals(event.orderId, OrderId.render(order.id))
               assertEquals(event.customerId, "cust-123")
+              assertEquals(event.reason, Some("auth_expired"))
           }
       }
     }

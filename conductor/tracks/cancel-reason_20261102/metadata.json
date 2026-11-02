@@ -1,0 +1,8 @@
+{
+  "track_id": "cancel-reason_20261102",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-11-02T00:00:00Z",
+  "updated_at": "2026-11-02T00:00:00Z",
+  "description": "US-9.2: add reason to OrderCancelled (Journey 5 prerequisite)"
+}
