@@ -38,7 +38,9 @@ final case class Order(
     createdAt: java.time.Instant,
     updatedAt: java.time.Instant,
     // None only for orders created before US-11.1.
-    shippingAddress: Option[Address] = None
+    shippingAddress: Option[Address] = None,
+    // ADM-10: the guest checkout's address (no user-service account).
+    guestEmail: Option[String] = None
 )
 
 final case class NewOrderItem(
@@ -193,6 +195,8 @@ object OrderStore {
     text.opt.eimap(
       _.traverse(raw => decode[Address](raw).leftMap(_.getMessage))
     )(_.map(_.asJson.noSpaces))
+
+  private val guestEmail: Codec[Option[String]] = text.opt
 
   private val instant: Codec[Instant] =
     timestamptz.eimap(odt => Right(odt.toInstant))(instant =>
@@ -416,12 +420,12 @@ object OrderStore {
     }
 
   private val insertAuthorizedOrder: skunk.Query[
-    (UUID, String, Int, OrderStatus, Option[Address]),
+    (UUID, String, Int, OrderStatus, Option[Address], Option[String]),
     (OffsetDateTime, OffsetDateTime)
   ] =
     sql"""
-      INSERT INTO "order" (id, customer_id, total_cents, status, shipping_address)
-      VALUES ($uuid, $text, $int4, $orderStatus, $shippingAddress::jsonb)
+      INSERT INTO "order" (id, customer_id, total_cents, status, shipping_address, guest_email)
+      VALUES ($uuid, $text, $int4, $orderStatus, $shippingAddress::jsonb, $guestEmail)
       RETURNING created_at, updated_at
     """.query(timestamptz *: timestamptz)
 
@@ -433,28 +437,41 @@ object OrderStore {
         OrderStatus,
         OffsetDateTime,
         OffsetDateTime,
-        Option[Address]
+        Option[Address],
+        Option[String]
     )
   ] =
     sql"""
-      SELECT customer_id, total_cents, status, created_at, updated_at, shipping_address::text
+      SELECT customer_id, total_cents, status, created_at, updated_at, shipping_address::text,
+             guest_email
       FROM "order"
       WHERE id = $uuid
     """.query(
-      text *: int4 *: orderStatus *: timestamptz *: timestamptz *: shippingAddress
+      text *: int4 *: orderStatus *: timestamptz *: timestamptz *:
+        shippingAddress *: guestEmail
     )
 
   private val selectOrdersByCustomer: skunk.Query[
     String,
-    (UUID, Int, OrderStatus, OffsetDateTime, OffsetDateTime, Option[Address])
+    (
+        UUID,
+        Int,
+        OrderStatus,
+        OffsetDateTime,
+        OffsetDateTime,
+        Option[Address],
+        Option[String]
+    )
   ] =
     sql"""
-      SELECT id, total_cents, status, created_at, updated_at, shipping_address::text
+      SELECT id, total_cents, status, created_at, updated_at, shipping_address::text,
+             guest_email
       FROM "order"
       WHERE customer_id = $text
       ORDER BY created_at DESC
     """.query(
-      uuid *: int4 *: orderStatus *: timestamptz *: timestamptz *: shippingAddress
+      uuid *: int4 *: orderStatus *: timestamptz *: timestamptz *:
+        shippingAddress *: guestEmail
     )
 
   private val optionalOrderStatus: Codec[Option[OrderStatus]] =
@@ -473,19 +490,20 @@ object OrderStore {
         OrderStatus,
         OffsetDateTime,
         OffsetDateTime,
-        Option[Address]
+        Option[Address],
+        Option[String]
     )
   ] =
     sql"""
       SELECT id, customer_id, total_cents, status, created_at, updated_at,
-             shipping_address::text
+             shipping_address::text, guest_email
       FROM "order"
       WHERE ($optionalOrderStatus IS NULL OR status = $optionalOrderStatus)
         AND ($optionalText IS NULL OR customer_id = $optionalText)
       ORDER BY created_at DESC, id
     """.query(
       uuid *: text *: int4 *: orderStatus *: timestamptz *: timestamptz *:
-        shippingAddress
+        shippingAddress *: guestEmail
     )
 
   // Atomic guarded transition keyed by the order's own id - payment events
@@ -822,7 +840,8 @@ object OrderStore {
                         OrderStatus,
                         OffsetDateTime,
                         OffsetDateTime,
-                        Option[Address]
+                        Option[Address],
+                        Option[String]
                     )
                 ): Order = {
                   val (
@@ -831,7 +850,8 @@ object OrderStore {
                     status,
                     createdAt,
                     updatedAt,
-                    address
+                    address,
+                    email
                   ) =
                     row
                   Order(
@@ -841,7 +861,8 @@ object OrderStore {
                     status,
                     createdAt.toInstant,
                     updatedAt.toInstant,
-                    address
+                    address,
+                    email
                   )
                 }
 
@@ -864,7 +885,8 @@ object OrderStore {
                                     order.customerId,
                                     order.totalCents,
                                     order.status,
-                                    order.shippingAddress
+                                    order.shippingAddress,
+                                    order.guestEmail
                                   )
                                 )
                               )
@@ -956,7 +978,8 @@ object OrderStore {
                                   status,
                                   created,
                                   updated,
-                                  address
+                                  address,
+                                  email
                                 ) =>
                               (
                                 Order(
@@ -966,7 +989,8 @@ object OrderStore {
                                   status,
                                   created.toInstant,
                                   updated.toInstant,
-                                  address
+                                  address,
+                                  email
                                 ),
                                 grouped.getOrElse(id, Nil)
                               )
@@ -1170,7 +1194,8 @@ object OrderStore {
                                   rowStatus,
                                   created,
                                   updated,
-                                  address
+                                  address,
+                                  email
                                 ) =>
                               (
                                 Order(
@@ -1180,7 +1205,8 @@ object OrderStore {
                                   rowStatus,
                                   created.toInstant,
                                   updated.toInstant,
-                                  address
+                                  address,
+                                  email
                                 ),
                                 grouped.getOrElse(id, Nil)
                               )

@@ -7,6 +7,7 @@ import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.syntax._
 import orderservice.domain.{
+  GuestEmail,
   OrderCancellation,
   OrderEvent,
   OrderId,
@@ -51,7 +52,12 @@ final case class CreateOrderRequest(
     shippingAddress: Address,
     @description("Saved payment method (UUID) to authorize against.")
     @encodedExample("9b2e4c7a-1f3d-4a6b-8c5e-2d7f0a1b3c4e")
-    paymentMethodId: String
+    paymentMethodId: String,
+    @description(
+      "Guest checkout email (ADM-10): where order emails go when the customerId has no account. Optional; blank means absent."
+    )
+    @encodedExample("guest@example.com")
+    email: Option[String] = None
 )
 
 object CreateOrderRequest {
@@ -118,7 +124,12 @@ final case class OrderResponse(
     @encodedExample("2026-11-01T09:45:00Z")
     updatedAt: java.time.Instant,
     @description("Where to ship; absent on orders placed before US-11.1.")
-    shippingAddress: Option[Address]
+    shippingAddress: Option[Address],
+    @description(
+      "Guest checkout email (ADM-10); absent for signed-in customers."
+    )
+    @encodedExample("guest@example.com")
+    guestEmail: Option[String] = None
 )
 
 object OrderResponse {
@@ -133,7 +144,8 @@ object OrderResponse {
       items.map(OrderItemResponse(_)),
       entity.createdAt,
       entity.updatedAt,
-      entity.shippingAddress
+      entity.shippingAddress,
+      entity.guestEmail
     )
 }
 
@@ -626,7 +638,7 @@ object OrderRoutes {
     */
   private def validateCheckout(
       req: CreateOrderRequest
-  ): Either[OrderError, List[NewOrderItem]] =
+  ): Either[OrderError, (List[NewOrderItem], Option[String])] =
     for {
       items <- validateItems(req.items)
       _ <- Address.validate(req.shippingAddress).leftMap(InvalidCheckout(_))
@@ -635,7 +647,8 @@ object OrderRoutes {
           java.util.UUID.fromString(req.paymentMethodId)
         )
         .leftMap(_ => InvalidCheckout("paymentMethodId must be a UUID"))
-    } yield items
+      email <- GuestEmail.normalize(req.email).leftMap(InvalidCheckout(_))
+    } yield (items, email)
 
   /** ADR 0018 checkout: validate → mint ids → bulk reserve → authorize →
     * persist as `authorized`. Nothing is written unless every step succeeds;
@@ -666,19 +679,22 @@ object OrderRoutes {
         log *> release(orderId).whenA(releaseFirst).as(Left(error))
 
       def place(
-          items: List[NewOrderItem]
+          items: List[NewOrderItem],
+          guestEmail: Option[String]
       ): F[Either[OrderError, OrderResponse]] = {
         val lines =
           items.map(i => Pricing.Line(i.unitPriceCents, i.quantity))
         Pricing.totalCents(lines) match {
           case Left(error)       => Sync[F].pure(Left(InvalidCheckout(error)))
-          case Right(totalCents) => placeWithTotal(items, totalCents)
+          case Right(totalCents) =>
+            placeWithTotal(items, totalCents, guestEmail)
         }
       }
 
       def placeWithTotal(
           items: List[NewOrderItem],
-          totalCents: Int
+          totalCents: Int,
+          guestEmail: Option[String]
       ): F[Either[OrderError, OrderResponse]] =
         for {
           orderId <- Sync[F].delay(
@@ -706,7 +722,8 @@ object OrderRoutes {
             OrderStatus.Authorized,
             now,
             now,
-            Some(req.shippingAddress)
+            Some(req.shippingAddress),
+            guestEmail
           )
           renderedOrderId = OrderId.render(orderId)
           context = Map(
@@ -802,7 +819,7 @@ object OrderRoutes {
                 )
               )("Invalid checkout request")
               .as(Left(error): Either[OrderError, OrderResponse])
-          case Right(items) => place(items)
+          case Right((items, email)) => place(items, email)
         }
       } yield result
     }

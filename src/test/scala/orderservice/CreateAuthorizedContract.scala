@@ -90,6 +90,30 @@ trait CreateAuthorizedContract { self: CatsEffectSuite =>
       }
   }
 
+  withStore("the guest email round-trips through every read") { store =>
+    val customerId = s"guest-${UUID.randomUUID()}"
+    val (base, items) = authorizedOrder(customerId)
+    val order = base.copy(guestEmail = Some("guest@example.com"))
+    for {
+      _ <- store.createAuthorized(order, items)
+      found <- store.get(order.id)
+      listed <- store.listByCustomer(customerId)
+      all <- store.listAll(None, Some(customerId))
+    } yield {
+      assertEquals(found.flatMap(_._1.guestEmail), Some("guest@example.com"))
+      assertEquals(listed.map(_._1.guestEmail), List(Some("guest@example.com")))
+      assertEquals(all.map(_._1.guestEmail), List(Some("guest@example.com")))
+    }
+  }
+
+  withStore("a signed-in order has no guest email") { store =>
+    val (order, items) = authorizedOrder(s"cust-${UUID.randomUUID()}")
+    for {
+      _ <- store.createAuthorized(order, items)
+      found <- store.get(order.id)
+    } yield assertEquals(found.map(_._1.guestEmail), Some(None))
+  }
+
   withStore("orders created without an address read back as None") { store =>
     val now = Instant.now()
     val orderId = OrderId.fromUuid(UUID.randomUUID())

@@ -130,6 +130,65 @@ class OrderRoutesSuite extends CatsEffectSuite {
     }
   }
 
+  test("POST /orders stores a normalized guest email and returns it") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
+        noOpHistoryCache
+      )
+      response <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(
+          createRequest.copy(email = Some(" Guest@Example.com "))
+        )
+      )
+      entity <- response.as[OrderResponse]
+      fetched <- routes.orNotFound
+        .run(Request[IO](Method.GET, uri"/orders" / entity.id))
+        .flatMap(_.as[OrderResponse])
+    } yield {
+      assertEquals(response.status, Status.Created)
+      assertEquals(entity.guestEmail, Some("guest@example.com"))
+      assertEquals(fetched.guestEmail, Some("guest@example.com"))
+    }
+  }
+
+  test("POST /orders rejects a malformed guest email before reserving") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      reserved <- cats.effect.Ref.of[IO, Int](0)
+      inventory = new InventoryClient[IO] {
+        def reserveOrder(
+            orderId: String,
+            items: List[OrderReservationLine]
+        ): IO[OrderReservationResult] =
+          reserved.update(_ + 1).as(OrderReservationResult.Reserved)
+        def release(orderId: String): IO[Unit] = IO.unit
+      }
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        inventory,
+        alwaysAuthorizesPaymentClient,
+        noOpHistoryCache
+      )
+      response <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(
+          createRequest.copy(email = Some("not-an-email"))
+        )
+      )
+      body <- response.as[ErrorResponse]
+      calls <- reserved.get
+    } yield {
+      assertEquals(response.status, Status.BadRequest)
+      assertEquals(body.error, "email must be a valid email address")
+      assertEquals(calls, 0)
+    }
+  }
+
   test("GET /orders/{id} returns 200 with the persisted entity") {
     for {
       store <- OrderStore.inMemory[IO]

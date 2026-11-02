@@ -51,7 +51,8 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
               "status",
               "created_at",
               "updated_at",
-              "shipping_address"
+              "shipping_address",
+              "guest_email"
             )
           )
         } finally conn.close()
