@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [~] **Track: Checkout Journey 7 — order-service race reconciliation (US-21.4)**
-  *Link: [./tracks/j7-race-reconciliation_20261102/](./tracks/j7-race-reconciliation_20261102/)*
-
 ---
 
 ---
