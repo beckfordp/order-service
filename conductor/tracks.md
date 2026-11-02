@@ -2,6 +2,9 @@
 
 This file tracks all major tracks for the project.
 
+- [~] **Track: Checkout Journey 8 — operator-initiated cancellation (US-22)**
+  *Link: [./tracks/j8-operator-cancel_20261102/](./tracks/j8-operator-cancel_20261102/)*
+
 ---
 
 ---
