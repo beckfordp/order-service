@@ -260,7 +260,10 @@ object OrderStore {
               case Right(ref) =>
                 writeOutboxIfPresent(ref, outboxEvent) *>
                   reconciliationReason.traverse_(reason =>
-                    reconciliationRef.update(_ + (id -> reason))
+                    reconciliationRef.update(reasons =>
+                      if (reasons.contains(id)) reasons
+                      else reasons + (id -> reason)
+                    )
                   )
             }
           } yield updated
@@ -268,7 +271,12 @@ object OrderStore {
         def flagReconciliation(id: OrderId, reason: String): F[Boolean] =
           ordersRef.get.map(_.contains(id)).flatMap {
             case true =>
-              reconciliationRef.update(_ + (id -> reason)).as(true)
+              reconciliationRef
+                .update(reasons =>
+                  if (reasons.contains(id)) reasons
+                  else reasons + (id -> reason)
+                )
+                .as(true)
             case false => Sync[F].pure(false)
           }
 

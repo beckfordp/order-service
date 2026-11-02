@@ -429,6 +429,38 @@ class OrderRoutesSuite extends CatsEffectSuite {
   }
 
   test(
+    "PATCH /orders/{id} returns 409 when the order has already dispatched"
+  ) {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
+        noOpHistoryCache
+      )
+      postResponse <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      created <- postResponse.as[OrderResponse]
+      orderId = orderservice.domain.OrderId.parse(created.id).toOption.get
+      _ <- store.transition(
+        orderId,
+        orderservice.domain.OrderEvent.DispatchConfirmed
+      )
+      patchResponse <- routes.orNotFound.run(
+        Request[IO](Method.PATCH, uri"/orders" / created.id)
+          .withEntity(UpdateOrderRequest("cancelled"))
+      )
+      found <- store.get(orderId)
+    } yield {
+      assertEquals(patchResponse.status, Status.Conflict)
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Dispatched))
+    }
+  }
+
+  test(
     "PATCH /orders/{id} returns 400 with a JSON error body for an invalid status, and persists nothing"
   ) {
     for {

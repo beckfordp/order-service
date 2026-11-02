@@ -1,5 +1,6 @@
 package orderservice
 
+import cats.Monad
 import cats.effect.Async
 import cats.effect.kernel.MonadCancelThrow
 import cats.syntax.all._
@@ -100,6 +101,25 @@ object FulfilmentEventConsumer {
       .withGroupId("order-service-fulfilment-events")
       .withAutoOffsetReset(AutoOffsetReset.Earliest)
 
+  /** US-21.4: a rejected outcome that is not a duplicate (`from == to`) lost a
+    * race and needs manual reconciliation; a duplicate is a benign no-op.
+    */
+  private def reconcileIfContradiction[F[_]: Monad](
+      store: OrderStore[F],
+      orderId: OrderId,
+      from: OrderStatus,
+      to: OrderStatus,
+      label: String
+  ): F[Unit] =
+    if (from == to) Monad[F].unit
+    else
+      store
+        .flagReconciliation(
+          orderId,
+          s"$label rejected from ${from.asString}"
+        )
+        .void
+
   def run[F[_]: Async](
       config: KafkaConfig,
       store: OrderStore[F],
@@ -146,6 +166,12 @@ object FulfilmentEventConsumer {
                       )
                     )(
                       "DispatchConfirmed rejected for the order's current status"
+                    ) *> reconcileIfContradiction(
+                      store,
+                      orderId,
+                      from,
+                      to,
+                      "DispatchConfirmed"
                     )
                 }
           }
@@ -207,7 +233,15 @@ object FulfilmentEventConsumer {
                         "from" -> from.asString,
                         "to" -> to.asString
                       )
-                    )("DispatchFailed rejected for the order's current status")
+                    )(
+                      "DispatchFailed rejected for the order's current status"
+                    ) *> reconcileIfContradiction(
+                      store,
+                      orderId,
+                      from,
+                      to,
+                      "DispatchFailed"
+                    )
                 }
           }
 

@@ -132,8 +132,9 @@ object PaymentEventConsumer {
       .withAutoOffsetReset(AutoOffsetReset.Earliest)
 
   private def logOutcome[F[_]: Monad](
+      store: OrderStore[F],
       logger: StructuredLogger[F],
-      orderId: String,
+      orderId: OrderId,
       eventLabel: String,
       updated: Either[TransitionRejected, UpdatedOrderRef]
   ): F[Unit] =
@@ -141,23 +142,31 @@ object PaymentEventConsumer {
       case Right(_) =>
         logger.info(
           Map(
-            "order_id" -> orderId,
+            "order_id" -> OrderId.render(orderId),
             "event" -> eventLabel
           )
         )("Order status updated from payment event")
       case Left(TransitionRejected.UnknownOrder) =>
         logger.info(
-          Map("order_id" -> orderId, "event" -> eventLabel)
+          Map("order_id" -> OrderId.render(orderId), "event" -> eventLabel)
         )("Unknown orderId - ignoring")
       case Left(TransitionRejected.IllegalTransition(from, to)) =>
         logger.info(
           Map(
-            "order_id" -> orderId,
+            "order_id" -> OrderId.render(orderId),
             "event" -> eventLabel,
             "from" -> from.asString,
             "to" -> to.asString
           )
-        )("Order not awaiting this transition - ignoring")
+        )("Order not awaiting this transition - ignoring") *>
+          (if (from == to) Monad[F].unit
+           else
+             store
+               .flagReconciliation(
+                 orderId,
+                 s"$eventLabel rejected from ${from.asString}"
+               )
+               .void)
     }
 
   private def handleCaptured[F[_]: Monad: Clock](
@@ -200,8 +209,9 @@ object PaymentEventConsumer {
                 )
                 .flatMap(
                   logOutcome(
+                    store,
                     logger,
-                    event.orderId,
+                    orderId,
                     "PaymentCaptured",
                     _
                   )
@@ -251,8 +261,9 @@ object PaymentEventConsumer {
                 )
                 .flatMap(
                   logOutcome(
+                    store,
                     logger,
-                    event.orderId,
+                    orderId,
                     "PaymentAuthorizationExpired",
                     _
                   )
@@ -305,8 +316,9 @@ object PaymentEventConsumer {
                 )
                 .flatMap(
                   logOutcome(
+                    store,
                     logger,
-                    event.orderId,
+                    orderId,
                     "PaymentFailed",
                     _
                   )

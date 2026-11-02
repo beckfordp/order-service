@@ -213,6 +213,31 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
     }
   }
 
+  test("reconciliation flags are first-wins") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (created, _) <- seeded(store, OrderStatus.Authorized, items = oneItem)
+      _ <- store.flagReconciliation(created.id, "first")
+      _ <- store.flagReconciliation(created.id, "second")
+      flagged <- store.reconciliationReason(created.id)
+      (transitioned, _) <- seeded(
+        store,
+        OrderStatus.Authorized,
+        items = oneItem
+      )
+      _ <- store.transition(
+        transitioned.id,
+        OrderEvent.PaymentCaptured,
+        reconciliationReason = Some("transition-first")
+      )
+      _ <- store.flagReconciliation(transitioned.id, "later")
+      transitionReason <- store.reconciliationReason(transitioned.id)
+    } yield {
+      assertEquals(flagged, Some("first"))
+      assertEquals(transitionReason, Some("transition-first"))
+    }
+  }
+
   test("reconciliationReason is None for a normal or unknown order") {
     for {
       store <- OrderStore.inMemory[IO]

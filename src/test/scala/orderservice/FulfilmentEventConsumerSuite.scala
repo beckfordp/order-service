@@ -180,7 +180,14 @@ class FulfilmentEventConsumerSuite
           .background
           .use(_ => IO.sleep(3.seconds))
         status <- statusOf(store, order.id)
-      } yield assertEquals(status, OrderStatus.Cancelled)
+        reason <- store.reconciliationReason(order.id)
+      } yield {
+        assertEquals(status, OrderStatus.Cancelled)
+        assertEquals(
+          reason,
+          Some("DispatchConfirmed rejected from cancelled")
+        )
+      }
     }
   }
 

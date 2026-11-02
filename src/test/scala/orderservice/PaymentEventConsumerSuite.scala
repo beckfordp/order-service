@@ -228,6 +228,52 @@ class PaymentEventConsumerSuite
   }
 
   test(
+    "PaymentAuthorizationExpired for a Dispatched order flags reconciliation"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      for {
+        deadLetter <- noOpDeadLetter
+        store <- OrderStore.inMemory[IO]
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Dispatched
+        )
+        event = PaymentAuthorizationExpiredEvent(
+          OrderId.render(order.id),
+          Instant.parse("2026-01-01T00:00:00Z")
+        )
+        _ <- produce(
+          config,
+          PaymentEventConsumer.topic,
+          OrderId.render(order.id),
+          envelopeJson(
+            "PaymentAuthorizationExpired",
+            OrderId.render(order.id),
+            event.asJson
+          )
+        )
+        _ <- PaymentEventConsumer
+          .run[IO](config, store, NoOpLogger[IO], deadLetter)
+          .compile
+          .drain
+          .background
+          .use(_ => IO.sleep(3.seconds))
+        status <- statusOf(store, order.id)
+        reason <- store.reconciliationReason(order.id)
+      } yield {
+        assertEquals(status, OrderStatus.Dispatched)
+        assertEquals(
+          reason,
+          Some("PaymentAuthorizationExpired rejected from dispatched")
+        )
+      }
+    }
+  }
+
+  test(
     "a synthetic PaymentFailed envelope flips a Dispatched order's status to PaymentFailed"
   ) {
     withContainers { kafka =>
@@ -390,9 +436,14 @@ class PaymentEventConsumerSuite
           pollForStatus(store, liveOrder.id, OrderStatus.Confirmed)
         )
         staleCancelledStatus <- statusOf(store, staleCancelledOrder.id)
+        staleReason <- store.reconciliationReason(staleCancelledOrder.id)
       } yield {
         assertEquals(finalStatus, Right(OrderStatus.Confirmed))
         assertEquals(staleCancelledStatus, OrderStatus.Cancelled)
+        assertEquals(
+          staleReason,
+          Some("PaymentCaptured rejected from cancelled")
+        )
       }
     }
   }
