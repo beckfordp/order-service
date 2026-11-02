@@ -736,6 +736,38 @@ class OrderStorePostgresSuite
       } finally conn.close()
     }
 
+  private def auditRowsFor(
+      postgres: PostgreSQLContainer,
+      orderId: String
+  ): IO[List[(String, String, String)]] =
+    IO {
+      val conn = DriverManager.getConnection(
+        postgres.jdbcUrl,
+        postgres.username,
+        postgres.password
+      )
+      try {
+        val rs = conn
+          .createStatement()
+          .executeQuery(
+            s"select actor_type, actor_id, reason from order_cancellation_audit where order_id = '$orderId'"
+          )
+        Iterator
+          .unfold(())(_ =>
+            if (rs.next())
+              Some(
+                (
+                  rs.getString("actor_type"),
+                  rs.getString("actor_id"),
+                  rs.getString("reason")
+                ) -> ()
+              )
+            else None
+          )
+          .toList
+      } finally conn.close()
+    }
+
   private def captureOutboxEvent(status: OrderStatus): PendingOutboxEvent =
     status match {
       case OrderStatus.Confirmed =>
@@ -757,6 +789,18 @@ class OrderStorePostgresSuite
               ref.customerId,
               "capture_failed",
               java.time.Instant.EPOCH
+            ).asJson
+        )
+      case OrderStatus.Cancelled =>
+        PendingOutboxEvent(
+          "OrderCancelled",
+          ref =>
+            OrderCancelledEvent(
+              OrderId.render(ref.orderId),
+              ref.customerId,
+              java.time.Instant.EPOCH,
+              reason = Some("customer"),
+              actor = Some(OrderActor.customer(ref.customerId))
             ).asJson
         )
       case other =>
@@ -910,6 +954,104 @@ class OrderStorePostgresSuite
             val payload =
               envelope.flatMap(_.payload.as[OrderPaymentFailedEvent])
             assertEquals(payload.map(_.reason), Right("capture_failed"))
+          }
+        }
+    }
+  }
+
+  test("a cancellation writes the audit actor in the transition transaction") {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- seedAuthorized(
+              store,
+              "cust-123",
+              oneItem,
+              OrderStatus.Authorized
+            )
+            updated <- store.transition(
+              created.id,
+              OrderEvent.OperatorCancelled("op-9"),
+              Some(captureOutboxEvent(OrderStatus.Cancelled))
+            )
+            found <- store.cancellationAudit(created.id)
+            rows <- auditRowsFor(postgres, OrderId.render(created.id))
+          } yield {
+            assert(updated.isRight)
+            assertEquals(
+              found.map(a => (a.actorType, a.actorId, a.reason)),
+              Some(("operator", "op-9", "operator"))
+            )
+            assertEquals(
+              rows,
+              List(("operator", "op-9", "operator"))
+            )
+          }
+        }
+    }
+  }
+
+  test(
+    "a cancellation rolls back the status, outbox and audit row when the outbox write fails"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- seedAuthorized(
+              store,
+              "cust-123",
+              oneItem,
+              OrderStatus.Authorized
+            )
+            _ <- IO.blocking {
+              val conn = DriverManager.getConnection(
+                postgres.jdbcUrl,
+                postgres.username,
+                postgres.password
+              )
+              try
+                conn
+                  .createStatement()
+                  .execute(
+                    "alter table outbox_events add constraint reject_all check (false) not valid"
+                  )
+              finally conn.close()
+            }
+            result <- store
+              .transition(
+                created.id,
+                OrderEvent.CustomerCancelled,
+                Some(captureOutboxEvent(OrderStatus.Cancelled))
+              )
+              .attempt
+            _ <- IO.blocking {
+              val conn = DriverManager.getConnection(
+                postgres.jdbcUrl,
+                postgres.username,
+                postgres.password
+              )
+              try
+                conn
+                  .createStatement()
+                  .execute(
+                    "alter table outbox_events drop constraint reject_all"
+                  )
+              finally conn.close()
+            }
+            found <- store.get(created.id)
+            audits <- auditRowsFor(postgres, OrderId.render(created.id))
+            rows <- outboxRowsFor(postgres, OrderId.render(created.id))
+          } yield {
+            assert(result.isLeft)
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Authorized))
+            assertEquals(audits, Nil)
+            assertEquals(rows, Nil)
           }
         }
     }

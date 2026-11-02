@@ -44,6 +44,9 @@ class CorsSuite extends CatsEffectSuite {
       assert(
         allowHeaders.exists(_.head.value.toLowerCase.contains("content-type"))
       )
+      assert(
+        allowHeaders.exists(_.head.value.toLowerCase.contains("authorization"))
+      )
     }
   }
 

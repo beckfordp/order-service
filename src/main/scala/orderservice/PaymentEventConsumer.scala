@@ -254,7 +254,8 @@ object PaymentEventConsumer {
                           OrderId.render(ref.orderId),
                           ref.customerId,
                           now,
-                          reason = Some("auth_expired")
+                          reason = Some("auth_expired"),
+                          actor = Some(OrderActor.system("payment-service"))
                         ).asJson
                     )
                   )

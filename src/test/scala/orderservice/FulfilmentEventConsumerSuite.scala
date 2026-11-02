@@ -82,6 +82,16 @@ class FulfilmentEventConsumerSuite
       released.update(_ :+ orderId)
   }
 
+  private val failingInventory: InventoryClient[IO] = new InventoryClient[IO] {
+    def reserveOrder(
+        orderId: String,
+        items: List[OrderReservationLine]
+    ): IO[OrderReservationResult] =
+      IO.raiseError(new NotImplementedError())
+    def release(orderId: String): IO[Unit] =
+      IO.raiseError(new RuntimeException("inventory down"))
+  }
+
   private val oneItem = List(NewOrderItem("sku-1", "Widget", 999, 2))
 
   private def statusOf(
@@ -229,6 +239,50 @@ class FulfilmentEventConsumerSuite
       } yield {
         assertEquals(finalStatus, Right(OrderStatus.DispatchFailed))
         assertEquals(releases, List(OrderId.render(order.id)))
+      }
+    }
+  }
+
+  test(
+    "a failed inventory release after DispatchFailed flags reconciliation (US-9.6)"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      for {
+        deadLetter <- noOpDeadLetter
+        store <- OrderStore.inMemory[IO]
+        (order, _) <- StoreFixtures.seeded(
+          store,
+          "cust-123",
+          oneItem,
+          OrderStatus.Authorized
+        )
+        event = DispatchFailedEvent(OrderId.render(order.id), "damaged")
+        _ <- produce(
+          config,
+          OrderId.render(order.id),
+          envelopeJson("DispatchFailed", event.asJson)
+        )
+        _ <- FulfilmentEventConsumer
+          .run[IO](
+            config,
+            store,
+            failingInventory,
+            NoOpLogger[IO],
+            deadLetter
+          )
+          .compile
+          .drain
+          .background
+          .use(_ => IO.sleep(3.seconds))
+        status <- statusOf(store, order.id)
+        reason <- store.reconciliationReason(order.id)
+      } yield {
+        assertEquals(status, OrderStatus.DispatchFailed)
+        assert(
+          clue(reason).exists(_.contains("inventory release failed")),
+          reason
+        )
       }
     }
   }

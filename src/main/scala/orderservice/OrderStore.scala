@@ -8,6 +8,8 @@ import io.circe.Json
 import io.circe.parser.decode
 import io.circe.syntax._
 import orderservice.domain.{
+  CancellationAudit,
+  OrderCancellation,
   OrderEvent,
   OrderId,
   OrderItemId,
@@ -21,7 +23,7 @@ import skunk.{Codec, Session}
 import skunk.codec.all._
 import skunk.implicits._
 
-import java.time.OffsetDateTime
+import java.time.{Instant, OffsetDateTime, ZoneOffset}
 import java.util.UUID
 import scala.concurrent.duration.SECONDS
 
@@ -115,6 +117,9 @@ trait OrderStore[F[_]] {
     */
   def reconciliationReason(id: OrderId): F[Option[String]]
 
+  /** The cancellation actor/reason recorded for an order, if any (US-22). */
+  def cancellationAudit(id: OrderId): F[Option[CancellationAudit]]
+
   def delete(id: OrderId): F[Boolean]
   def ping: F[Boolean]
 }
@@ -159,6 +164,11 @@ object OrderStore {
       _.traverse(raw => decode[Address](raw).leftMap(_.getMessage))
     )(_.map(_.asJson.noSpaces))
 
+  private val instant: Codec[Instant] =
+    timestamptz.eimap(odt => Right(odt.toInstant))(instant =>
+      OffsetDateTime.ofInstant(instant, ZoneOffset.UTC)
+    )
+
   def inMemory[F[_]: Sync]: F[OrderStore[F]] = inMemoryWithOutbox[F].map(_._1)
 
   /** Same as `inMemory`, but also returns a `Ref` capturing every outbox write
@@ -176,6 +186,7 @@ object OrderStore {
       itemsRef <- Ref.of[F, Map[OrderId, List[OrderItem]]](Map.empty)
       outboxRef <- Ref.of[F, List[(String, EventEnvelope)]](Nil)
       reconciliationRef <- Ref.of[F, Map[OrderId, String]](Map.empty)
+      auditRef <- Ref.of[F, Map[OrderId, CancellationAudit]](Map.empty)
     } yield {
       def writeOutboxIfPresent(
           ref: UpdatedOrderRef,
@@ -264,7 +275,12 @@ object OrderStore {
                       if (reasons.contains(id)) reasons
                       else reasons + (id -> reason)
                     )
-                  )
+                  ) *>
+                  OrderCancellation
+                    .auditFor(event, ref, now)
+                    .traverse_(audit =>
+                      auditRef.update(audits => audits + (id -> audit))
+                    )
             }
           } yield updated
 
@@ -282,6 +298,9 @@ object OrderStore {
 
         def reconciliationReason(id: OrderId): F[Option[String]] =
           reconciliationRef.get.map(_.get(id))
+
+        def cancellationAudit(id: OrderId): F[Option[CancellationAudit]] =
+          auditRef.get.map(_.get(id))
 
         def delete(id: OrderId): F[Boolean] =
           for {
@@ -394,6 +413,22 @@ object OrderStore {
     sql"""
       SELECT reason FROM order_reconciliation WHERE order_id = $uuid
     """.query(text)
+
+  private val insertCancellationAudit
+      : skunk.Command[(UUID, String, String, String)] =
+    sql"""
+      INSERT INTO order_cancellation_audit (order_id, actor_type, actor_id, reason)
+      VALUES ($uuid, $text, $text, $text)
+      ON CONFLICT (order_id) DO NOTHING
+    """.command
+
+  private val selectCancellationAudit
+      : skunk.Query[UUID, (String, String, String, Instant)] =
+    sql"""
+      SELECT actor_type, actor_id, reason, created_at
+      FROM order_cancellation_audit
+      WHERE order_id = $uuid
+    """.query(text *: text *: text *: instant)
 
   // `payload` is bound as `$text` then cast `::jsonb` in-SQL - avoids adding
   // a skunk-circe dependency just for one write path that nothing in this
@@ -709,63 +744,81 @@ object OrderStore {
                   )
                 }
                 timed("transition") {
-                  pool.use { session =>
-                    session.transaction.use { _ =>
-                      val updatedF: F[Option[UpdatedOrderRef]] =
-                        allowed.toList.sortBy(_.asString) match {
-                          case only :: Nil =>
-                            session
-                              .prepare(updateOrderStatusIfCurrent)
-                              .flatMap(_.option((target, uuid, only)))
-                              .map(_.map(ref))
-                          case first :: second :: Nil =>
-                            session
-                              .prepare(updateOrderStatusIfAwaitingCapture)
-                              .flatMap(
-                                _.option((target, uuid, first, second))
+                  Sync[F].realTimeInstant.flatMap { now =>
+                    pool.use { session =>
+                      session.transaction.use { _ =>
+                        val updatedF: F[Option[UpdatedOrderRef]] =
+                          allowed.toList.sortBy(_.asString) match {
+                            case only :: Nil =>
+                              session
+                                .prepare(updateOrderStatusIfCurrent)
+                                .flatMap(_.option((target, uuid, only)))
+                                .map(_.map(ref))
+                            case first :: second :: Nil =>
+                              session
+                                .prepare(updateOrderStatusIfAwaitingCapture)
+                                .flatMap(
+                                  _.option((target, uuid, first, second))
+                                )
+                                .map(_.map(ref))
+                            case unsupported =>
+                              Sync[F].raiseError(
+                                new IllegalStateException(
+                                  s"Unsupported transition rule for event ${event.label}: $unsupported"
+                                )
                               )
-                              .map(_.map(ref))
-                          case unsupported =>
-                            Sync[F].raiseError(
-                              new IllegalStateException(
-                                s"Unsupported transition rule for event ${event.label}: $unsupported"
-                              )
-                            )
-                        }
-                      for {
-                        updated <- updatedF
-                        result <- updated match {
-                          case Some(updatedRef) =>
-                            outboxEvent.traverse_(event =>
-                              insertOutboxRow(session, updatedRef, event)
-                            ) *>
-                              reconciliationReason.traverse_(reason =>
-                                session
-                                  .prepare(insertReconciliation)
-                                  .flatMap(_.execute((uuid, reason)))
+                          }
+                        for {
+                          updated <- updatedF
+                          result <- updated match {
+                            case Some(updatedRef) =>
+                              outboxEvent.traverse_(event =>
+                                insertOutboxRow(session, updatedRef, event)
                               ) *>
-                              Sync[F].pure(
-                                Right(
-                                  updatedRef
-                                ): Either[TransitionRejected, UpdatedOrderRef]
-                              )
-                          case None =>
-                            session
-                              .prepare(selectStatus)
-                              .flatMap(_.option(uuid))
-                              .map {
-                                case None =>
-                                  Left(TransitionRejected.UnknownOrder)
-                                case Some(current) =>
-                                  Left(
-                                    TransitionRejected.IllegalTransition(
-                                      current,
-                                      target
+                                reconciliationReason.traverse_(reason =>
+                                  session
+                                    .prepare(insertReconciliation)
+                                    .flatMap(_.execute((uuid, reason)))
+                                ) *>
+                                OrderCancellation
+                                  .auditFor(event, updatedRef, now)
+                                  .traverse_(audit =>
+                                    session
+                                      .prepare(insertCancellationAudit)
+                                      .flatMap(
+                                        _.execute(
+                                          (
+                                            uuid,
+                                            audit.actorType,
+                                            audit.actorId,
+                                            audit.reason
+                                          )
+                                        )
+                                      )
+                                  ) *>
+                                Sync[F].pure(
+                                  Right(
+                                    updatedRef
+                                  ): Either[TransitionRejected, UpdatedOrderRef]
+                                )
+                            case None =>
+                              session
+                                .prepare(selectStatus)
+                                .flatMap(_.option(uuid))
+                                .map {
+                                  case None =>
+                                    Left(TransitionRejected.UnknownOrder)
+                                  case Some(current) =>
+                                    Left(
+                                      TransitionRejected.IllegalTransition(
+                                        current,
+                                        target
+                                      )
                                     )
-                                  )
-                              }
-                        }
-                      } yield result
+                                }
+                          }
+                        } yield result
+                      }
                     }
                   }
                 }
@@ -793,6 +846,21 @@ object OrderStore {
                       .prepare(selectReconciliationReason)
                       .flatMap(_.option(OrderId.uuid(id)))
                   }
+                }
+
+              def cancellationAudit(
+                  id: OrderId
+              ): F[Option[CancellationAudit]] =
+                timed("select_cancellation_audit") {
+                  pool
+                    .use { session =>
+                      session
+                        .prepare(selectCancellationAudit)
+                        .flatMap(_.option(OrderId.uuid(id)))
+                    }
+                    .map(_.map { case (actorType, actorId, reason, createdAt) =>
+                      CancellationAudit(actorType, actorId, reason, createdAt)
+                    })
                 }
 
               def delete(id: OrderId): F[Boolean] =

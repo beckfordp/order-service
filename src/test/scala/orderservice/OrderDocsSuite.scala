@@ -88,13 +88,13 @@ class OrderDocsSuite extends CatsEffectSuite {
       )
       assertEquals(
         errorStatuses(OrderRoutes.updateOrderServerEndpoint[IO](store, logger)),
-        List(400, 404, 409)
+        List(400, 401, 404, 409)
       )
       assertEquals(
         errorStatuses(
           OrderRoutes.replaceOrderServerEndpoint[IO](store, logger)
         ),
-        List(400, 404, 409)
+        List(400, 401, 404, 409)
       )
       assertEquals(
         errorStatuses(OrderRoutes.deleteOrderServerEndpoint[IO](store, logger)),

@@ -289,6 +289,7 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
     def flagReconciliation(id: OrderId, reason: String) =
       base.flagReconciliation(id, reason)
     def reconciliationReason(id: OrderId) = base.reconciliationReason(id)
+    def cancellationAudit(id: OrderId) = base.cancellationAudit(id)
     def delete(id: OrderId) = base.delete(id)
     def ping = base.ping
   }

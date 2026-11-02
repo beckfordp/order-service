@@ -18,7 +18,7 @@ object Cors {
       .withAllowMethodsIn(
         Set(Method.GET, Method.POST, Method.PATCH, Method.PUT, Method.DELETE)
       )
-      .withAllowHeadersIn(Set(ci"Content-Type"))
+      .withAllowHeadersIn(Set(ci"Content-Type", ci"Authorization"))
       .withAllowCredentials(false)
       .apply(routes)
 }

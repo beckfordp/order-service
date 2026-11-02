@@ -7,6 +7,7 @@ import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.syntax._
 import orderservice.domain.{
+  OrderCancellation,
   OrderEvent,
   OrderId,
   OrderItemId,
@@ -306,6 +307,19 @@ object OrderRoutes {
         .map(e => InvalidCheckout(e.error))(e => ErrorResponse(e.message))
     )
 
+  private val unauthorizedVariant
+      : EndpointOutput.OneOfVariant[Unauthorized.type] =
+    oneOfVariant(
+      statusCode(StatusCode.Unauthorized)
+        .and(
+          errorBody(
+            "The presented operator token is malformed or does not match (US-22 dev token).",
+            ErrorResponse("Invalid operator token")
+          )
+        )
+        .map(_ => Unauthorized)(_ => ErrorResponse("Invalid operator token"))
+    )
+
   private val illegalTransitionVariant
       : EndpointOutput.OneOfVariant[IllegalTransition] =
     oneOfVariant(
@@ -424,6 +438,7 @@ object OrderRoutes {
     oneOf[OrderError](
       notFoundVariant,
       invalidStatusVariant,
+      unauthorizedVariant,
       illegalTransitionVariant
     )
 
@@ -492,30 +507,42 @@ object OrderRoutes {
       .tag(tag)
 
   private val updateOrderEndpoint: PublicEndpoint[
-    (OrderId, UpdateOrderRequest),
+    (OrderId, Option[String], UpdateOrderRequest),
     OrderError,
     OrderResponse,
     Any
   ] =
     endpoint.patch
       .in("orders" / idPath)
+      .in(
+        header[Option[String]]("Authorization")
+          .description(
+            "Optional dev operator token (`Bearer <token>`, US-22). Absent means customer cancel."
+          )
+      )
       .in(cancelBody)
       .out(jsonBody[OrderResponse].example(exampleOrder))
       .errorOut(updateOrderErrorOutput)
       .summary("Cancel an order")
       .description(
-        "Only `cancelled` is accepted; cancelling publishes `OrderCancelled`. Any other known status returns 409."
+        "Only `cancelled` is accepted; cancelling publishes `OrderCancelled`. Any other known status returns 409. A configured operator Bearer token records an operator actor; an invalid one returns 401."
       )
       .tag(tag)
 
   private val replaceOrderEndpoint: PublicEndpoint[
-    (OrderId, UpdateOrderRequest),
+    (OrderId, Option[String], UpdateOrderRequest),
     OrderError,
     OrderResponse,
     Any
   ] =
     endpoint.put
       .in("orders" / idPath)
+      .in(
+        header[Option[String]]("Authorization")
+          .description(
+            "Optional dev operator token (`Bearer <token>`, US-22). Absent means customer cancel."
+          )
+      )
       .in(cancelBody)
       .out(jsonBody[OrderResponse].example(exampleOrder))
       .errorOut(updateOrderErrorOutput)
@@ -849,9 +876,11 @@ object OrderRoutes {
   private def updateLogic[F[_]: Monad: Clock](
       store: OrderStore[F],
       logger: StructuredLogger[F],
+      operatorAuth: OperatorAuth,
       httpMethod: String
   )(
       id: OrderId,
+      authorization: Option[String],
       req: UpdateOrderRequest
   ): F[Either[OrderError, OrderResponse]] = {
     val renderedId = OrderId.render(id)
@@ -876,15 +905,60 @@ object OrderRoutes {
             .warn(Map("order_id" -> renderedId))("Order not found")
             .as(Left(OrderNotFound))
         case Left(TransitionRejected.IllegalTransition(from, to)) =>
-          logger
-            .warn(
-              Map(
-                "order_id" -> renderedId,
-                "from" -> from.asString,
-                "to" -> to.asString
+          if (from == to) {
+            // US-9.7: a repeat cancel (or a cancel losing to an already-applied
+            // cancellation) is idempotent: return the order, no new transition,
+            // no new OrderCancelled event.
+            logger
+              .info(
+                Map(
+                  "order_id" -> renderedId,
+                  "status" -> from.asString
+                )
+              )("Order already in the requested state - idempotent no-op") *>
+              store.get(id).flatMap {
+                case Some((order, items)) =>
+                  logger
+                    .info(Map("order_id" -> renderedId))("Request completed")
+                    .as(Right(OrderResponse(order, items)))
+                case None =>
+                  logger
+                    .warn(Map("order_id" -> renderedId))("Order not found")
+                    .as(Left(OrderNotFound))
+              }
+          } else
+            logger
+              .warn(
+                Map(
+                  "order_id" -> renderedId,
+                  "from" -> from.asString,
+                  "to" -> to.asString
+                )
+              )("Illegal status transition")
+              .as(Left(IllegalTransition(to.asString)))
+      }
+
+    def cancel(event: OrderEvent): F[Either[OrderError, OrderResponse]] =
+      Clock[F].realTimeInstant.flatMap { now =>
+        store
+          .transition(
+            id,
+            event,
+            Some(
+              PendingOutboxEvent(
+                "OrderCancelled",
+                ref =>
+                  OrderCancelledEvent(
+                    OrderId.render(ref.orderId),
+                    ref.customerId,
+                    now,
+                    reason = OrderCancellation.reasonFor(event),
+                    actor = OrderCancellation.actorFor(event, ref)
+                  ).asJson
               )
-            )("Illegal status transition")
-            .as(Left(IllegalTransition(to.asString)))
+            )
+          )
+          .flatMap(respond)
       }
 
     for {
@@ -895,58 +969,52 @@ object OrderRoutes {
           "order_id" -> renderedId
         )
       )("Received request")
-      result <- OrderStatus.fromString(req.status) match {
-        case Left(_) =>
+      result <- operatorAuth.authenticate(authorization) match {
+        case Left(error) =>
           logger
-            .warn(Map("order_id" -> renderedId, "status" -> req.status))(
-              "Invalid status"
-            )
-            .as(Left(InvalidStatus(req.status)))
-        case Right(OrderStatus.Cancelled) =>
-          Clock[F].realTimeInstant.flatMap { now =>
-            store
-              .transition(
-                id,
-                OrderEvent.CustomerCancelled,
-                Some(
-                  PendingOutboxEvent(
-                    "OrderCancelled",
-                    ref =>
-                      OrderCancelledEvent(
-                        OrderId.render(ref.orderId),
-                        ref.customerId,
-                        now,
-                        reason = Some("customer")
-                      ).asJson
-                  )
+            .warn(Map("order_id" -> renderedId))("Invalid operator token")
+            .as(Left(error))
+        case Right(operatorId) =>
+          OrderStatus.fromString(req.status) match {
+            case Left(_) =>
+              logger
+                .warn(Map("order_id" -> renderedId, "status" -> req.status))(
+                  "Invalid status"
                 )
+                .as(Left(InvalidStatus(req.status)))
+            case Right(OrderStatus.Cancelled) =>
+              cancel(
+                operatorId
+                  .map(OrderEvent.OperatorCancelled.apply)
+                  .getOrElse(OrderEvent.CustomerCancelled)
               )
-              .flatMap(respond)
+            case Right(other) =>
+              logger
+                .warn(
+                  Map("order_id" -> renderedId, "status" -> other.asString)
+                )("Status is not reachable through PATCH/PUT")
+                .as(Left(IllegalTransition(other.asString)))
           }
-        case Right(other) =>
-          logger
-            .warn(Map("order_id" -> renderedId, "status" -> other.asString))(
-              "Status is not reachable through PATCH/PUT"
-            )
-            .as(Left(IllegalTransition(other.asString)))
       }
     } yield result
   }
 
   def updateOrderServerEndpoint[F[_]: Monad: Clock](
       store: OrderStore[F],
-      logger: StructuredLogger[F]
+      logger: StructuredLogger[F],
+      operatorAuth: OperatorAuth = OperatorAuth.disabled
   ): ServerEndpoint[Any, F] =
-    updateOrderEndpoint.serverLogic[F] { case (id, req) =>
-      updateLogic(store, logger, "PATCH")(id, req)
+    updateOrderEndpoint.serverLogic[F] { case (id, authorization, req) =>
+      updateLogic(store, logger, operatorAuth, "PATCH")(id, authorization, req)
     }
 
   def replaceOrderServerEndpoint[F[_]: Monad: Clock](
       store: OrderStore[F],
-      logger: StructuredLogger[F]
+      logger: StructuredLogger[F],
+      operatorAuth: OperatorAuth = OperatorAuth.disabled
   ): ServerEndpoint[Any, F] =
-    replaceOrderEndpoint.serverLogic[F] { case (id, req) =>
-      updateLogic(store, logger, "PUT")(id, req)
+    replaceOrderEndpoint.serverLogic[F] { case (id, authorization, req) =>
+      updateLogic(store, logger, operatorAuth, "PUT")(id, authorization, req)
     }
 
   def deleteOrderServerEndpoint[F[_]: Monad](
@@ -981,15 +1049,16 @@ object OrderRoutes {
       logger: StructuredLogger[F],
       inventoryClient: InventoryClient[F],
       paymentClient: PaymentClient[F],
-      historyCache: OrderHistoryCache[F]
+      historyCache: OrderHistoryCache[F],
+      operatorAuth: OperatorAuth = OperatorAuth.disabled
   ): HttpRoutes[F] =
     Http4sServerInterpreter[F]().toRoutes(
       List(
         serverEndpoint(store, logger, inventoryClient, paymentClient),
         listOrdersServerEndpoint(store, logger, historyCache),
         getOrderServerEndpoint(store, logger),
-        updateOrderServerEndpoint(store, logger),
-        replaceOrderServerEndpoint(store, logger),
+        updateOrderServerEndpoint(store, logger, operatorAuth),
+        replaceOrderServerEndpoint(store, logger, operatorAuth),
         deleteOrderServerEndpoint(store, logger)
       )
     )

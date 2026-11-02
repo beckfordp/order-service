@@ -66,17 +66,42 @@ object OrderPaymentFailedEvent {
   implicit val schema: Schema[OrderPaymentFailedEvent] = Schema.derived
 }
 
-/** Emitted when order-service moves an order to `cancelled`: a customer
-  * `PATCH`/`PUT` (`reason = customer`) or a consumed
-  * `PaymentAuthorizationExpired` (`reason = auth_expired`). `stale` and
-  * `operator` are reserved for US-10/US-22.
+/** Who triggered a cancellation, carried on `OrderCancelled` (US-22). */
+@description("Cancellation actor: customer, operator or system.")
+final case class OrderActor(
+    @description("Actor type: customer | operator | system.")
+    @encodedExample("operator")
+    `type`: String,
+    @description("Actor id: the customerId, operator id, or system component.")
+    @encodedExample("dev-operator")
+    id: String
+)
+
+object OrderActor {
+  val CustomerType: String = "customer"
+  val OperatorType: String = "operator"
+  val SystemType: String = "system"
+
+  def customer(id: String): OrderActor = OrderActor(CustomerType, id)
+  def operator(id: String): OrderActor = OrderActor(OperatorType, id)
+  def system(id: String): OrderActor = OrderActor(SystemType, id)
+
+  implicit val codec: Codec[OrderActor] = deriveCodec
+  implicit val schema: Schema[OrderActor] =
+    Schema.derived[OrderActor].copy(name = None)
+}
+
+/** Emitted when order-service moves an order to `cancelled`: a customer or
+  * operator `PATCH`/`PUT` (`reason = customer`/`operator`) or a consumed
+  * `PaymentAuthorizationExpired` (`reason = auth_expired`). `stale` is reserved
+  * for US-10.
   *
-  * `reason` is optional in the wire schema so the registry's
-  * `BACKWARD_TRANSITIVE` rule accepts the addition; this producer always sends
-  * it, and consumers fall back for old reason-less messages.
+  * `reason` and `actor` are optional in the wire schema so the registry's
+  * `BACKWARD_TRANSITIVE` rule accepts the additions; this producer always sends
+  * both, and consumers fall back for old messages.
   */
 @description(
-  "Order cancelled: a customer cancel or a consumed PaymentAuthorizationExpired moved the order to cancelled."
+  "Order cancelled: a customer/operator cancel or a consumed PaymentAuthorizationExpired moved the order to cancelled."
 )
 final case class OrderCancelledEvent(
     @description("Order UUID (order-service's order id).")
@@ -92,7 +117,11 @@ final case class OrderCancelledEvent(
       "Cancellation trigger: customer | auth_expired | stale | operator. Always sent by the producer."
     )
     @encodedExample("customer")
-    reason: Option[String] = None
+    reason: Option[String] = None,
+    @description(
+      "Who cancelled. Always sent by the producer; absent on old messages."
+    )
+    actor: Option[OrderActor] = None
 )
 
 object OrderCancelledEvent {

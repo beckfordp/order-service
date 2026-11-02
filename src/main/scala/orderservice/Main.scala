@@ -62,6 +62,7 @@ object Main extends IOApp.Simple {
       paymentClient,
       historyCache,
       telemetry,
+      OperatorAuth.fromConfig(config.operatorAuth),
       AsyncApiChannels.channels,
       config.asyncApiHtmlDir
     )

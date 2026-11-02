@@ -74,6 +74,10 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       |  uri = "redis://localhost:6379"
       |  history-ttl-seconds = 60
       |}
+      |operator-auth {
+      |  token = "dev-operator-token"
+      |  operator-id = "dev-operator"
+      |}
       |""".stripMargin
 
   test("loads a fully-specified config") {
@@ -118,6 +122,10 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
           redis = RedisConfig(
             uri = "redis://localhost:6379",
             historyTtlSeconds = 60
+          ),
+          operatorAuth = OperatorAuthConfig(
+            token = Some("dev-operator-token"),
+            operatorId = "dev-operator"
           )
         )
       )
@@ -217,6 +225,13 @@ class OrderServiceConfigSuite extends CatsEffectSuite {
       assertEquals(
         config.redis,
         RedisConfig(uri = "redis://localhost:6379", historyTtlSeconds = 60)
+      )
+      assertEquals(
+        config.operatorAuth,
+        OperatorAuthConfig(
+          token = Some("dev-operator-token"),
+          operatorId = "dev-operator"
+        )
       )
     }
   }

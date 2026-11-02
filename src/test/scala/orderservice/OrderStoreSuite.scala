@@ -213,6 +213,101 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
     }
   }
 
+  test("cancellation transitions write the audit actor and reason") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      (customerOrder, _) <- seeded(
+        store,
+        OrderStatus.Authorized,
+        items = oneItem
+      )
+      _ <- store.transition(
+        customerOrder.id,
+        OrderEvent.CustomerCancelled
+      )
+      customerAudit <- store.cancellationAudit(customerOrder.id)
+      (operatorOrder, _) <- seeded(
+        store,
+        OrderStatus.Authorized,
+        items = oneItem
+      )
+      _ <- store.transition(
+        operatorOrder.id,
+        OrderEvent.OperatorCancelled("op-7")
+      )
+      operatorAudit <- store.cancellationAudit(operatorOrder.id)
+      (expiredOrder, _) <- seeded(
+        store,
+        OrderStatus.Authorized,
+        items = oneItem
+      )
+      _ <- store.transition(
+        expiredOrder.id,
+        OrderEvent.AuthorizationExpired
+      )
+      systemAudit <- store.cancellationAudit(expiredOrder.id)
+    } yield {
+      assertEquals(
+        customerAudit.map(a => (a.actorType, a.actorId, a.reason)),
+        Some(("customer", customerOrder.customerId, "customer"))
+      )
+      assertEquals(
+        operatorAudit.map(a => (a.actorType, a.actorId, a.reason)),
+        Some(("operator", "op-7", "operator"))
+      )
+      assertEquals(
+        systemAudit.map(a => (a.actorType, a.actorId, a.reason)),
+        Some(("system", "payment-service", "auth_expired"))
+      )
+    }
+  }
+
+  test(
+    "cancel racing authorization expiry produces one transition and one event"
+  ) {
+    def cancellationOutbox(reason: String): PendingOutboxEvent =
+      PendingOutboxEvent(
+        "OrderCancelled",
+        ref =>
+          OrderCancelledEvent(
+            OrderId.render(ref.orderId),
+            ref.customerId,
+            Instant.EPOCH,
+            reason = Some(reason),
+            actor =
+              if (reason == "customer")
+                Some(OrderActor.customer(ref.customerId))
+              else Some(OrderActor.system("payment-service"))
+          ).asJson
+      )
+
+    for {
+      storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+      (store, outbox) = storeAndOutbox
+      (order, _) <- seeded(store, OrderStatus.Authorized, items = oneItem)
+      results <- IO.both(
+        store.transition(
+          order.id,
+          OrderEvent.CustomerCancelled,
+          Some(cancellationOutbox("customer"))
+        ),
+        store.transition(
+          order.id,
+          OrderEvent.AuthorizationExpired,
+          Some(cancellationOutbox("auth_expired"))
+        )
+      )
+      events <- outbox.get
+      audit <- store.cancellationAudit(order.id)
+    } yield {
+      val winners =
+        List(results._1.isRight, results._2.isRight).count(identity)
+      assertEquals(winners, 1)
+      assertEquals(events.size, 1)
+      assert(audit.isDefined)
+    }
+  }
+
   test("reconciliation flags are first-wins") {
     for {
       store <- OrderStore.inMemory[IO]

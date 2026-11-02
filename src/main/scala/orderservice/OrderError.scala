@@ -12,6 +12,9 @@ final case class IllegalTransition(to: String) extends OrderError
 
 case object EmptyOrderItems extends OrderError
 
+/** A presented operator token is malformed or does not match (401). */
+case object Unauthorized extends OrderError
+
 final case class InvalidOrderItem(reason: String) extends OrderError
 
 /** A checkout request the client must fix (ADR 0018 `400`): bad shipping

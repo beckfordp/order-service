@@ -32,6 +32,9 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def flagReconciliation(id: OrderId, reason: String): IO[Boolean] =
         IO.pure(false)
       def reconciliationReason(id: OrderId): IO[Option[String]] = IO.pure(None)
+      def cancellationAudit(
+          id: OrderId
+      ): IO[Option[orderservice.domain.CancellationAudit]] = IO.pure(None)
       def delete(id: OrderId): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(true)
     }
@@ -60,6 +63,9 @@ class HealthRoutesSuite extends CatsEffectSuite {
       def flagReconciliation(id: OrderId, reason: String): IO[Boolean] =
         IO.pure(false)
       def reconciliationReason(id: OrderId): IO[Option[String]] = IO.pure(None)
+      def cancellationAudit(
+          id: OrderId
+      ): IO[Option[orderservice.domain.CancellationAudit]] = IO.pure(None)
       def delete(id: OrderId): IO[Boolean] = IO.pure(false)
       def ping: IO[Boolean] = IO.pure(false)
     }

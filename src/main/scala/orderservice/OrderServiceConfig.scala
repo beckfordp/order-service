@@ -92,6 +92,11 @@ final case class RedisConfig(
     historyTtlSeconds: Int
 ) derives ConfigReader
 
+final case class OperatorAuthConfig(
+    token: Option[String],
+    operatorId: String
+) derives ConfigReader
+
 final case class OrderServiceConfig(
     port: Int,
     metricsPort: Int,
@@ -101,7 +106,8 @@ final case class OrderServiceConfig(
     inventoryClient: InventoryClientConfig,
     paymentClient: PaymentClientConfig,
     kafka: KafkaConfig,
-    redis: RedisConfig
+    redis: RedisConfig,
+    operatorAuth: OperatorAuthConfig
 ) derives ConfigReader
 
 object OrderServiceConfig {
@@ -120,5 +126,13 @@ object OrderServiceConfig {
           s"Invalid order-service port: ${config.port}"
         )
       )
+      _ <-
+        if (config.operatorAuth.operatorId.trim.nonEmpty) Sync[F].unit
+        else
+          Sync[F].raiseError[Unit](
+            new IllegalArgumentException(
+              "operator-auth.operator-id must not be blank"
+            )
+          )
     } yield (config, port)
 }

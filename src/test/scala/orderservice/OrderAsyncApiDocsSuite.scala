@@ -34,6 +34,14 @@ class OrderAsyncApiDocsSuite extends CatsEffectSuite {
       assert(clue(body).contains("OrderPaymentFailed"))
       assert(clue(body).contains("OrderCancelled"))
       assert(
+        clue(body).contains("\"actor\""),
+        "OrderCancelled must document the US-22 actor field"
+      )
+      assert(
+        clue(body).contains("dev-operator"),
+        "the actor example should be inlined in the AsyncAPI docs"
+      )
+      assert(
         clue(body).contains("Debezium"),
         "expected the CDC description note on order-events' sent messages"
       )

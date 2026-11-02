@@ -26,6 +26,9 @@ object OrderEvent {
   case object CustomerCancelled extends OrderEvent {
     val label = "CustomerCancelled"
   }
+  final case class OperatorCancelled(operatorId: String) extends OrderEvent {
+    val label = "OperatorCancelled"
+  }
 }
 
 sealed trait TransitionRejected
@@ -59,6 +62,8 @@ object OrderLifecycle {
       case OrderEvent.DispatchFailed => Set[OrderStatus](OrderStatus.Authorized)
       case OrderEvent.CustomerCancelled =>
         Set[OrderStatus](OrderStatus.Authorized)
+      case OrderEvent.OperatorCancelled(_) =>
+        Set[OrderStatus](OrderStatus.Authorized)
     }
 
   def target(event: OrderEvent): OrderStatus =
@@ -69,6 +74,7 @@ object OrderLifecycle {
       case OrderEvent.DispatchConfirmed    => OrderStatus.Dispatched
       case OrderEvent.DispatchFailed       => OrderStatus.DispatchFailed
       case OrderEvent.CustomerCancelled    => OrderStatus.Cancelled
+      case OrderEvent.OperatorCancelled(_) => OrderStatus.Cancelled
     }
 
   def transition(

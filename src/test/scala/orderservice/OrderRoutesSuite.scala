@@ -73,6 +73,10 @@ class OrderRoutesSuite extends CatsEffectSuite {
         IO.raiseError(error)
       def reconciliationReason(id: OrderId): IO[Option[String]] =
         IO.raiseError(error)
+      def cancellationAudit(
+          id: OrderId
+      ): IO[Option[orderservice.domain.CancellationAudit]] =
+        IO.raiseError(error)
       def delete(id: OrderId): IO[Boolean] = IO.raiseError(error)
       def ping: IO[Boolean] = IO.raiseError(error)
     }
@@ -363,13 +367,113 @@ class OrderRoutesSuite extends CatsEffectSuite {
         Request[IO](Method.PATCH, uri"/orders" / created.id)
           .withEntity(UpdateOrderRequest("cancelled"))
       )
+      repeat <- routes.orNotFound.run(
+        Request[IO](Method.PATCH, uri"/orders" / created.id)
+          .withEntity(UpdateOrderRequest("cancelled"))
+      )
       events <- outbox.get
+      audit <- store.cancellationAudit(
+        orderservice.domain.OrderId.parse(created.id).toOption.get
+      )
     } yield {
+      assertEquals(repeat.status, Status.Ok)
       val cancelled = events.filter(_._2.eventType == "OrderCancelled")
       assertEquals(cancelled.size, 1)
       val event =
         cancelled.head._2.payload.as[OrderCancelledEvent].toOption.get
       assertEquals(event.reason, Some("customer"))
+      assertEquals(
+        event.actor,
+        Some(OrderActor.customer(createRequest.customerId))
+      )
+      assertEquals(
+        audit.map(a => (a.actorType, a.actorId, a.reason)),
+        Some(("customer", createRequest.customerId, "customer"))
+      )
+    }
+  }
+
+  test("PATCH /orders/{id} with a valid operator token records the operator") {
+    for {
+      storeAndOutbox <- OrderStore.inMemoryWithOutbox[IO]
+      (store, outbox) = storeAndOutbox
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
+        noOpHistoryCache,
+        OperatorAuth(Some("secret"), "op-7")
+      )
+      postResponse <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      created <- postResponse.as[OrderResponse]
+      patchResponse <- routes.orNotFound.run(
+        Request[IO](Method.PATCH, uri"/orders" / created.id)
+          .putHeaders(
+            org.http4s.headers.Authorization(
+              org.http4s.Credentials.Token(
+                org.http4s.AuthScheme.Bearer,
+                "secret"
+              )
+            )
+          )
+          .withEntity(UpdateOrderRequest("cancelled"))
+      )
+      events <- outbox.get
+      audit <- store.cancellationAudit(
+        orderservice.domain.OrderId.parse(created.id).toOption.get
+      )
+    } yield {
+      assertEquals(patchResponse.status, Status.Ok)
+      val event =
+        events
+          .find(_._2.eventType == "OrderCancelled")
+          .flatMap(_._2.payload.as[OrderCancelledEvent].toOption)
+          .get
+      assertEquals(event.reason, Some("operator"))
+      assertEquals(event.actor, Some(OrderActor.operator("op-7")))
+      assertEquals(
+        audit.map(a => (a.actorType, a.actorId, a.reason)),
+        Some(("operator", "op-7", "operator"))
+      )
+    }
+  }
+
+  test("PATCH /orders/{id} with an invalid operator token returns 401") {
+    for {
+      store <- OrderStore.inMemory[IO]
+      routes = OrderRoutes.routes[IO](
+        store,
+        NoOpLogger[IO],
+        alwaysSucceedsInventoryClient,
+        alwaysAuthorizesPaymentClient,
+        noOpHistoryCache,
+        OperatorAuth(Some("secret"), "op-7")
+      )
+      postResponse <- routes.orNotFound.run(
+        Request[IO](Method.POST, uri"/orders").withEntity(createRequest)
+      )
+      created <- postResponse.as[OrderResponse]
+      patchResponse <- routes.orNotFound.run(
+        Request[IO](Method.PATCH, uri"/orders" / created.id)
+          .putHeaders(
+            org.http4s.headers.Authorization(
+              org.http4s.Credentials.Token(
+                org.http4s.AuthScheme.Bearer,
+                "wrong"
+              )
+            )
+          )
+          .withEntity(UpdateOrderRequest("cancelled"))
+      )
+      found <- store.get(
+        orderservice.domain.OrderId.parse(created.id).toOption.get
+      )
+    } yield {
+      assertEquals(patchResponse.status, Status.Unauthorized)
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Authorized))
     }
   }
 
@@ -927,6 +1031,10 @@ class OrderRoutesSuite extends CatsEffectSuite {
           baseStore.flagReconciliation(id, reason)
         def reconciliationReason(id: OrderId): IO[Option[String]] =
           baseStore.reconciliationReason(id)
+        def cancellationAudit(
+            id: OrderId
+        ): IO[Option[orderservice.domain.CancellationAudit]] =
+          baseStore.cancellationAudit(id)
         def delete(id: OrderId): IO[Boolean] = baseStore.delete(id)
         def ping: IO[Boolean] = baseStore.ping
       }

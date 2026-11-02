@@ -27,6 +27,7 @@ object AppRoutes {
       paymentClient: PaymentClient[F],
       historyCache: OrderHistoryCache[F],
       telemetry: Telemetry[F],
+      operatorAuth: OperatorAuth,
       channels: List[AsyncApiChannel[?]],
       staticAsyncApiDocsDir: String
   ): HttpRoutes[F] = {
@@ -52,8 +53,16 @@ object AppRoutes {
           historyCache
         ),
         OrderRoutes.getOrderServerEndpoint[F](store, telemetry.logger),
-        OrderRoutes.updateOrderServerEndpoint[F](store, telemetry.logger),
-        OrderRoutes.replaceOrderServerEndpoint[F](store, telemetry.logger),
+        OrderRoutes.updateOrderServerEndpoint[F](
+          store,
+          telemetry.logger,
+          operatorAuth
+        ),
+        OrderRoutes.replaceOrderServerEndpoint[F](
+          store,
+          telemetry.logger,
+          operatorAuth
+        ),
         OrderRoutes.deleteOrderServerEndpoint[F](store, telemetry.logger),
         HealthRoutes.healthServerEndpoint[F],
         HealthRoutes.readyServerEndpoint[F](store)
