@@ -33,6 +33,13 @@ object Main extends IOApp.Simple {
         )
       )("order-service starting")
     )
+    _ <- Resource.eval(
+      if (OperatorAuth.fromConfig(config.operatorAuth).token.isDefined)
+        telemetry.logger.warn(Map.empty)(
+          "Dev operator token is enabled - local/demo only, never production auth (ADR 0024)"
+        )
+      else telemetry.logger.info(Map.empty)("Operator token disabled")
+    )
     store <- OrderStore.postgres[IO](config.postgres, telemetry.meter)
     httpClient <- EmberClientBuilder.default[IO].build
     inventoryClient = InventoryClient.resilient[IO](

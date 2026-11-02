@@ -33,6 +33,13 @@ The gshop operator UI is deferred to ADM-7.
   transaction as the status change and outbox row; `OrderStore` exposes a read
   method. In-memory writes it after the state update (test interpreter only).
 - Add `Authorization` to the CORS allow-headers.
+- **US-9.7 folded in**: a repeat cancellation (customer or operator) is
+  idempotent — `200` with the already-cancelled order, no new transition and no
+  second `OrderCancelled`; a customer cancel racing `PaymentAuthorizationExpired`
+  produces exactly one transition and one event.
+- **US-9.6 order-service part folded in**: a failed inventory release after
+  `DispatchFailed` records a reconciliation flag (existing behaviour, now
+  covered by a test).
 - ADR 0024, `system-design.md`, US-22 and registry v3 are updated; registry is
   exported and pushed before service repos.
 
@@ -41,7 +48,10 @@ The gshop operator UI is deferred to ADM-7.
 - Customer/system/operator cancellations produce the expected actor in the
   event, the audit row and logs; customer copy/behaviour is unchanged.
 - Operator token accepted/rejected/absent tests; 401 persists nothing; 409 for
-  ineligible statuses.
+  ineligible statuses; repeat cancel is a 200 no-op with one event; cancel vs
+  expiry yields one transition/event.
+- A failed inventory release after `DispatchFailed` sets the reconciliation
+  flag.
 - Audit row rolls back with the transaction when the outbox write fails.
 - `OrderCancelled` schema registers v3 with the optional actor; AsyncAPI docs
   include it (inline nested schema).

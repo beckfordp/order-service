@@ -735,6 +735,10 @@ class PaymentEventConsumerSuite
               assertEquals(event.orderId, OrderId.render(order.id))
               assertEquals(event.customerId, "cust-123")
               assertEquals(event.reason, Some("auth_expired"))
+              assertEquals(
+                event.actor,
+                Some(OrderActor.system("payment-service"))
+              )
           }
       }
     }
