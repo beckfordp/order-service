@@ -2,8 +2,8 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: Retire legacy order statuses (TD-21)**
-  *Link: [./tracks/retire-legacy-statuses_20261102/](./tracks/retire-legacy-statuses_20261102/)*
+- [ ] **Track: Checkout Journey 7 — order-service race reconciliation (US-21.4)**
+  *Link: [./tracks/j7-race-reconciliation_20261102/](./tracks/j7-race-reconciliation_20261102/)*
 
 ---
 

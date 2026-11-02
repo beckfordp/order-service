@@ -1,0 +1,8 @@
+{
+  "track_id": "j7-race-reconciliation_20261102",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-11-02T00:00:00Z",
+  "updated_at": "2026-11-02T00:00:00Z",
+  "description": "Checkout Journey 7: reconcile order-service when payment/dispatch outcomes lose to cancellation (US-21.4)"
+}
