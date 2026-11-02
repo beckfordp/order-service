@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [x] **Track: ADM-4 — admin order list + reconciliation workflow**
-  *Link: [./tracks/admin-orders_20261102/](./tracks/admin-orders_20261102/)*
-
 ---
 
 ---
