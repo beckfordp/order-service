@@ -340,11 +340,11 @@ class PaymentEventConsumerSuite
       for {
         deadLetter <- noOpDeadLetter
         store <- OrderStore.inMemory[IO]
-        (stalePendingOrder, _) <- StoreFixtures.seeded(
+        (staleCancelledOrder, _) <- StoreFixtures.seeded(
           store,
           "cust-123",
           oneItem,
-          OrderStatus.Pending
+          OrderStatus.Cancelled
         )
         (liveOrder, _) <- StoreFixtures.seeded(
           store,
@@ -353,8 +353,8 @@ class PaymentEventConsumerSuite
           OrderStatus.Authorized
         )
         staleEvent = PaymentCapturedEvent(
-          OrderId.render(stalePendingOrder.id),
-          stalePendingOrder.totalCents,
+          OrderId.render(staleCancelledOrder.id),
+          staleCancelledOrder.totalCents,
           Instant.parse("2026-01-01T00:00:00Z")
         )
         liveEvent = PaymentCapturedEvent(
@@ -365,10 +365,10 @@ class PaymentEventConsumerSuite
         _ <- produce(
           config,
           PaymentEventConsumer.topic,
-          OrderId.render(stalePendingOrder.id),
+          OrderId.render(staleCancelledOrder.id),
           envelopeJson(
             "PaymentCaptured",
-            OrderId.render(stalePendingOrder.id),
+            OrderId.render(staleCancelledOrder.id),
             staleEvent.asJson
           )
         )
@@ -389,10 +389,10 @@ class PaymentEventConsumerSuite
             .drain,
           pollForStatus(store, liveOrder.id, OrderStatus.Confirmed)
         )
-        stalePendingStatus <- statusOf(store, stalePendingOrder.id)
+        staleCancelledStatus <- statusOf(store, staleCancelledOrder.id)
       } yield {
         assertEquals(finalStatus, Right(OrderStatus.Confirmed))
-        assertEquals(stalePendingStatus, OrderStatus.Pending)
+        assertEquals(staleCancelledStatus, OrderStatus.Cancelled)
       }
     }
   }

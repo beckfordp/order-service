@@ -52,11 +52,11 @@ psql_exec() {
 }
 
 echo
-echo "2. Applying this repo's real Flyway migrations (V1-V6) directly..."
-for f in src/main/resources/db/migration/V*.sql; do
+echo "2. Applying this repo's real Flyway migrations (V1-V13) directly..."
+for f in $(ls src/main/resources/db/migration/V*.sql | sort -t'V' -k2,2n); do
   docker exec -i "$CONTAINER_NAME" psql -U order -d order -v ON_ERROR_STOP=1 < "$f" >/dev/null
 done
-echo "   OK: schema migrated (V6 widens order_status_check to 5 values)"
+echo "   OK: schema migrated (V13 retires the legacy statuses)"
 
 check() {
   local label="$1" expected="$2" actual="$3"
@@ -71,31 +71,33 @@ check() {
 ORDER_ID="33333333-3333-3333-3333-333333333333"
 
 echo
-echo "3. The CHECK constraint accepts both new status values directly..."
-psql_exec "INSERT INTO \"order\" (id, customer_id, total_cents, status) VALUES ('${ORDER_ID}', 'cust-verify-2', 4242, 'reserved');" >/dev/null
+echo "3. The CHECK constraint accepts the live status values directly..."
+psql_exec "INSERT INTO \"order\" (id, customer_id, total_cents, status) VALUES ('${ORDER_ID}', 'cust-verify-2', 4242, 'authorized');" >/dev/null
 CONFIRMED_INSERT_OK="$(psql_exec "UPDATE \"order\" SET status = 'confirmed' WHERE id = '${ORDER_ID}' RETURNING status;")"
 check "CHECK constraint accepts 'confirmed'" "confirmed" "$CONFIRMED_INSERT_OK"
 PAYMENT_FAILED_INSERT_OK="$(psql_exec "UPDATE \"order\" SET status = 'payment_failed' WHERE id = '${ORDER_ID}' RETURNING status;")"
 check "CHECK constraint accepts 'payment_failed'" "payment_failed" "$PAYMENT_FAILED_INSERT_OK"
 
 echo
-echo "4. A value outside the closed set is still rejected (CHECK constraint intact)..."
-set +e
-BAD_INSERT_ERR="$(docker exec -i "$CONTAINER_NAME" psql -U order -d order -c "UPDATE \"order\" SET status = 'bogus' WHERE id = '${ORDER_ID}';" 2>&1)"
-set -e
-if echo "$BAD_INSERT_ERR" | grep -q "order_status_check"; then
-  echo "   OK: rejected an out-of-set status value (constraint violation raised)"
-else
-  echo "   FAIL: expected a order_status_check violation, got: ${BAD_INSERT_ERR}" >&2
-  FAILED=1
-fi
+echo "4. The retired and out-of-set values are rejected (CHECK constraint intact)..."
+for retired in pending reserved reservation_failed bogus; do
+  set +e
+  BAD_INSERT_ERR="$(docker exec -i "$CONTAINER_NAME" psql -U order -d order -c "UPDATE \"order\" SET status = '${retired}' WHERE id = '${ORDER_ID}';" 2>&1)"
+  set -e
+  if echo "$BAD_INSERT_ERR" | grep -q "order_status_check"; then
+    echo "   OK: rejected '${retired}' (constraint violation raised)"
+  else
+    echo "   FAIL: expected an order_status_check violation for '${retired}', got: ${BAD_INSERT_ERR}" >&2
+    FAILED=1
+  fi
+done
 
 echo
 echo "5. Running the exact updateOrderStatusIfCurrent SQL from OrderStore.scala by hand,"
-echo "   resetting the order to 'reserved' first..."
-psql_exec "UPDATE \"order\" SET status = 'reserved' WHERE id = '${ORDER_ID}';" >/dev/null
+echo "   resetting the order to 'authorized' first..."
+psql_exec "UPDATE \"order\" SET status = 'authorized' WHERE id = '${ORDER_ID}';" >/dev/null
 
-RESULT="$(psql_exec "UPDATE \"order\" SET status = 'confirmed', updated_at = now() WHERE id = '${ORDER_ID}' AND status = 'reserved' RETURNING id, customer_id, total_cents;")"
+RESULT="$(psql_exec "UPDATE \"order\" SET status = 'confirmed', updated_at = now() WHERE id = '${ORDER_ID}' AND status = 'authorized' RETURNING id, customer_id, total_cents;")"
 echo "   Raw result: ${RESULT}"
 
 RESULT_ID="$(echo "$RESULT" | cut -d'|' -f1)"
@@ -110,10 +112,10 @@ NEW_STATUS="$(psql_exec "SELECT status FROM \"order\" WHERE id = '${ORDER_ID}';"
 check "order actually transitioned to confirmed" "confirmed" "$NEW_STATUS"
 
 echo
-echo "6. Re-running the same guarded UPDATE (still expecting 'reserved') is a no-op (0 rows),"
+echo "6. Re-running the same guarded UPDATE (still expecting 'authorized') is a no-op (0 rows),"
 echo "   since the order is now 'confirmed' - proves a redelivered/out-of-order event can't"
 echo "   regress an already-settled order..."
-REPEAT_RESULT="$(psql_exec "UPDATE \"order\" SET status = 'confirmed', updated_at = now() WHERE id = '${ORDER_ID}' AND status = 'reserved' RETURNING id;")"
+REPEAT_RESULT="$(psql_exec "UPDATE \"order\" SET status = 'confirmed', updated_at = now() WHERE id = '${ORDER_ID}' AND status = 'authorized' RETURNING id;")"
 check "no-op when current status no longer matches expected (empty result)" "" "$REPEAT_RESULT"
 
 STILL_CONFIRMED="$(psql_exec "SELECT status FROM \"order\" WHERE id = '${ORDER_ID}';")"

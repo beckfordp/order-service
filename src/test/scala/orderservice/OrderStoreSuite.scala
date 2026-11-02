@@ -109,7 +109,7 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
   test("transition rejects an illegal current status and changes nothing") {
     for {
       store <- OrderStore.inMemory[IO]
-      (created, _) <- seeded(store, OrderStatus.Pending, items = oneItem)
+      (created, _) <- seeded(store, OrderStatus.Cancelled, items = oneItem)
       updated <- store.transition(created.id, OrderEvent.PaymentCaptured)
       found <- store.get(created.id)
     } yield {
@@ -117,12 +117,12 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
         updated,
         Left(
           TransitionRejected.IllegalTransition(
-            OrderStatus.Pending,
+            OrderStatus.Cancelled,
             OrderStatus.Confirmed
           )
         )
       )
-      assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
+      assertEquals(found.map(_._1.status), Some(OrderStatus.Cancelled))
     }
   }
 

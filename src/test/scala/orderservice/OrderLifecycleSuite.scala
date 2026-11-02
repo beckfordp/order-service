@@ -64,7 +64,7 @@ class OrderLifecycleSuite extends ScalaCheckSuite {
     )
     assert(
       OrderLifecycle
-        .transition(OrderStatus.Pending, OrderEvent.DispatchConfirmed)
+        .transition(OrderStatus.Cancelled, OrderEvent.DispatchConfirmed)
         .isLeft
     )
   }
@@ -112,9 +112,6 @@ class OrderLifecycleSuite extends ScalaCheckSuite {
   }
 
   private val allStatuses = List(
-    OrderStatus.Pending,
-    OrderStatus.Reserved,
-    OrderStatus.ReservationFailed,
     OrderStatus.Authorized,
     OrderStatus.Dispatched,
     OrderStatus.Confirmed,

@@ -2,6 +2,9 @@
 
 This file tracks all major tracks for the project.
 
+- [ ] **Track: Retire legacy order statuses (TD-21)**
+  *Link: [./tracks/retire-legacy-statuses_20261102/](./tracks/retire-legacy-statuses_20261102/)*
+
 ---
 
 ---

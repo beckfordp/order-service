@@ -4,22 +4,10 @@ import munit.CatsEffectSuite
 
 class OrderStatusSuite extends CatsEffectSuite {
 
-  test("fromString parses \"pending\" as Pending") {
-    assertEquals(OrderStatus.fromString("pending"), Right(OrderStatus.Pending))
-  }
-
-  test("fromString parses \"reserved\" as Reserved") {
-    assertEquals(
-      OrderStatus.fromString("reserved"),
-      Right(OrderStatus.Reserved)
-    )
-  }
-
-  test("fromString parses \"reservation_failed\" as ReservationFailed") {
-    assertEquals(
-      OrderStatus.fromString("reservation_failed"),
-      Right(OrderStatus.ReservationFailed)
-    )
+  test("fromString rejects the retired legacy states") {
+    List("pending", "reserved", "reservation_failed").foreach { legacy =>
+      assert(OrderStatus.fromString(legacy).isLeft, legacy)
+    }
   }
 
   test("fromString parses \"confirmed\" as Confirmed") {
@@ -56,13 +44,12 @@ class OrderStatusSuite extends CatsEffectSuite {
 
   test("asString round-trips through fromString for every status") {
     List(
-      OrderStatus.Pending,
-      OrderStatus.Reserved,
-      OrderStatus.ReservationFailed,
       OrderStatus.Confirmed,
       OrderStatus.PaymentFailed,
       OrderStatus.Cancelled,
-      OrderStatus.Authorized
+      OrderStatus.Authorized,
+      OrderStatus.Dispatched,
+      OrderStatus.DispatchFailed
     ).foreach { status =>
       assertEquals(OrderStatus.fromString(status.asString), Right(status))
     }

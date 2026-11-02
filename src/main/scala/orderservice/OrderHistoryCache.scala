@@ -39,7 +39,12 @@ object OrderHistoryCache {
       }
     }
 
-  private def keyFor(customerId: String): String = s"order-history:$customerId"
+  /** `v2`: TD-21 retired the legacy order statuses, so pre-migration entries
+    * may contain values the current model no longer knows. Versioning the key
+    * makes them unreachable without a Redis flush.
+    */
+  private def keyFor(customerId: String): String =
+    s"order-history:v2:$customerId"
 
   def fromRedisCommands[F[_]: Monad](
       commands: RedisCommands[F, String, String],

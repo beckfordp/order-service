@@ -17,7 +17,7 @@ class OrderHistoryCacheSuite extends CatsEffectSuite with TestContainerForAll {
       id = "order-1",
       customerId = customerId,
       totalCents = 1998,
-      status = "pending",
+      status = "authorized",
       items = Nil,
       createdAt = java.time.Instant.parse("2026-01-01T00:00:00Z"),
       updatedAt = java.time.Instant.parse("2026-01-01T00:00:00Z"),

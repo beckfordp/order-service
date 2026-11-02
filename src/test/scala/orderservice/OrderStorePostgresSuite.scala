@@ -299,7 +299,7 @@ class OrderStorePostgresSuite
         .use { store =>
           for {
             (created, _) <-
-              seedAuthorized(store, "cust-123", oneItem, OrderStatus.Pending)
+              seedAuthorized(store, "cust-123", oneItem, OrderStatus.Cancelled)
             updated <- store.transition(
               created.id,
               OrderEvent.PaymentCaptured
@@ -310,12 +310,12 @@ class OrderStorePostgresSuite
               updated,
               Left(
                 TransitionRejected.IllegalTransition(
-                  OrderStatus.Pending,
+                  OrderStatus.Cancelled,
                   OrderStatus.Confirmed
                 )
               )
             )
-            assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Cancelled))
           }
         }
     }
@@ -846,7 +846,7 @@ class OrderStorePostgresSuite
               store,
               "cust-123",
               oneItem,
-              OrderStatus.Pending
+              OrderStatus.Cancelled
             )
             updated <- store.transition(
               created.id,
@@ -860,12 +860,12 @@ class OrderStorePostgresSuite
               updated,
               Left(
                 TransitionRejected.IllegalTransition(
-                  OrderStatus.Pending,
+                  OrderStatus.Cancelled,
                   OrderStatus.Confirmed
                 )
               )
             )
-            assertEquals(found.map(_._1.status), Some(OrderStatus.Pending))
+            assertEquals(found.map(_._1.status), Some(OrderStatus.Cancelled))
             assertEquals(rows, Nil)
           }
         }

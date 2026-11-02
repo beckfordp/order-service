@@ -111,13 +111,12 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
         try {
           val stmt = conn.createStatement()
           List(
-            "pending",
-            "reserved",
-            "reservation_failed",
             "confirmed",
             "payment_failed",
             "cancelled",
-            "authorized"
+            "authorized",
+            "dispatched",
+            "dispatch_failed"
           ).foreach { status =>
             stmt.executeUpdate(
               "insert into \"order\" (id, customer_id, total_cents, status) " +
@@ -282,6 +281,76 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
     }
   }
 
+  test("V13 deletes legacy rows before narrowing the constraint") {
+    withContainers { postgres =>
+      val config = PostgresConfig(
+        host = postgres.host,
+        port = postgres.mappedPort(5432),
+        database = postgres.databaseName,
+        user = postgres.username,
+        password = postgres.password
+      )
+      val database =
+        s"legacy_${java.util.UUID.randomUUID().toString.replace("-", "")}"
+      val jdbcUrl =
+        s"jdbc:postgresql://${postgres.host}:${postgres.mappedPort(5432)}/$database"
+      val legacyConfig = config.copy(database = database)
+
+      val seedLegacy: IO[Unit] = IO.blocking {
+        val admin = DriverManager.getConnection(
+          postgres.jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try admin.createStatement().executeUpdate(s"CREATE DATABASE $database")
+        finally admin.close()
+
+        org.flywaydb.core.Flyway
+          .configure()
+          .dataSource(jdbcUrl, postgres.username, postgres.password)
+          .target(org.flywaydb.core.api.MigrationVersion.fromVersion("12"))
+          .load()
+          .migrate()
+        val conn = DriverManager.getConnection(
+          jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val stmt = conn.createStatement()
+          List("pending", "reserved", "reservation_failed").foreach { status =>
+            stmt.executeUpdate(
+              "insert into \"order\" (id, customer_id, total_cents, status) " +
+                s"values (gen_random_uuid(), 'legacy-${status}', 100, '$status')"
+            )
+          }
+        } finally conn.close()
+      }
+
+      (seedLegacy *> Migrations.run[IO](legacyConfig)).map { _ =>
+        val conn = DriverManager.getConnection(
+          jdbcUrl,
+          postgres.username,
+          postgres.password
+        )
+        try {
+          val stmt = conn.createStatement()
+          val rs = stmt.executeQuery(
+            "select count(*) from \"order\" where status in ('pending', 'reserved', 'reservation_failed')"
+          )
+          rs.next()
+          assertEquals(rs.getInt(1), 0)
+          intercept[java.sql.SQLException] {
+            stmt.executeUpdate(
+              "insert into \"order\" (id, customer_id, total_cents, status) " +
+                "values (gen_random_uuid(), 'cust-1', 100, 'pending')"
+            )
+          }
+        } finally conn.close()
+      }
+    }
+  }
+
   test(
     "deleting an order cascades to delete its order_items rows"
   ) {
@@ -306,7 +375,7 @@ class MigrationsSuite extends CatsEffectSuite with TestContainerForAll {
           val itemId = java.util.UUID.randomUUID()
           stmt.executeUpdate(
             s"insert into \"order\" (id, customer_id, total_cents, status) " +
-              s"values ('$orderId', 'cust-1', 100, 'pending')"
+              s"values ('$orderId', 'cust-1', 100, 'authorized')"
           )
           stmt.executeUpdate(
             "insert into order_items (id, order_id, sku, product_name, unit_price_cents, quantity) " +

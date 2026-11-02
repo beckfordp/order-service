@@ -121,8 +121,7 @@ lazy val root = project
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % tapirVersion,
       // skunk: non-blocking, pure-FP Postgres access — this service's persistence layer.
       "org.tpolecat" %% "skunk-core" % skunkVersion,
-      // fs2-kafka: pure-FP, FS2-native Kafka consumer (US-5.2) - subscribes to
-      // inventory.stock-reserved/-reservation-failed to update order status.
+      // fs2-kafka: pure-FP, FS2-native Kafka consumer - payment/fulfilment events.
       "com.github.fd4s" %% "fs2-kafka" % fs2KafkaVersion,
       // redis4cats: cats-effect-native Redis client (US-8.1) - caches a
       // customer's order history. -log4cats wires its internal logging

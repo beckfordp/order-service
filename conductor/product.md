@@ -23,10 +23,11 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
   `shippingAddress` (`line1`, optional `line2`, `city`, `postalCode`,
   `country`; a JSONB column, null on pre-Journey-1 rows), `status` (born
   `authorized` at checkout; hardened to a closed `OrderStatus` ADT —
-  `Authorized`/`Confirmed`/`PaymentFailed`/`Cancelled`, plus legacy
-  `Pending`/`Reserved`/`ReservationFailed` kept readable for old rows — at
-  both the Scala and DB level: a `text.eimap`-based Skunk codec plus a
-  Postgres `CHECK` constraint. PATCH/PUT reject any other value with `400`)
+  `Authorized`/`Confirmed`/`PaymentFailed`/`Cancelled`/`Dispatched`/
+  `DispatchFailed` — at both the Scala and DB level: a `text.eimap`-based
+  Skunk codec plus a Postgres `CHECK` constraint. The pre-ADR-0018
+  `pending`/`reserved`/`reservation_failed` states were retired by TD-21.
+  PATCH/PUT reject any other value with `400`)
 - **OrderItem** (hand-added — not codegen'd) — `id`, `orderId`, `sku`,
   `productName`, `unitPriceCents`, `quantity`, all snapshotted at
   order-create time; `order_items.order_id` → `"order"(id)`
@@ -111,8 +112,7 @@ field-spec applied from `gluon/specs/order.yaml`, then hand-extended per
 - Publishes: `order-events` (eventType `OrderStatusChanged`, wrapped in the
   shared envelope — one topic per domain, ADR 0009; via the outbox + Debezium
   CDC). `OrderReserved` retired with ADR 0018 (registry artifact deleted);
-  `reservation_failed` stays in the status enum only for BACKWARD
-  compatibility
+  the legacy reservation-failure status was retired by TD-21
 - Consumes: `payment-events` (eventType `PaymentCaptured` /
   `PaymentAuthorizationExpired` / `PaymentFailed`; `PaymentAuthorized` is
   learned synchronously). `inventory-events` no longer consumed (ADR 0018)

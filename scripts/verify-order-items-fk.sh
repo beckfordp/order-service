@@ -85,7 +85,7 @@ echo
 echo "5. Confirming ON DELETE CASCADE actually removes order_items rows..."
 order_id="$(psql_exec "select gen_random_uuid()")"
 item_id="$(psql_exec "select gen_random_uuid()")"
-psql_exec "insert into \"order\" (id, customer_id, total_cents, status) values ('${order_id}', 'cust-1', 100, 'pending')" >/dev/null
+psql_exec "insert into \"order\" (id, customer_id, total_cents, status) values ('${order_id}', 'cust-1', 100, 'authorized')" >/dev/null
 psql_exec "insert into order_items (id, order_id, sku, product_name, unit_price_cents, quantity) values ('${item_id}', '${order_id}', 'sku-1', 'Widget', 999, 2)" >/dev/null
 psql_exec "delete from \"order\" where id = '${order_id}'" >/dev/null
 remaining="$(psql_exec "select count(*) from order_items where id = '${item_id}'")"
