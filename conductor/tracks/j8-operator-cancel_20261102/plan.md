@@ -46,4 +46,9 @@
 
 ## Review
 
-- Filled after `/conductor:review`.
+- Reviewed 2026-11-02: plan compliance yes; style pass; new tests cover the
+  operator token (accepted/rejected/absent), audit for all three actors,
+  same-transaction rollback, repeat-cancel idempotency, cancel-vs-expiry
+  single winner and the US-9.6 release-failure flag. Full suite 220 passed.
+  Accepted caveat: the fixed dev token is a local/demo actor selector, not an
+  authorization boundary (ADR 0024). No blocking findings.
