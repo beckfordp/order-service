@@ -15,3 +15,10 @@
 ## Risks
 
 - Required-in-schema addition would fail BACKWARD_TRANSITIVE; keep it optional.
+
+## Review (2026-11-02)
+
+- `sbt scalafmtCheck test` green (201 tests); `sbt schemaRegistryCheck` green.
+- Live path covered by `services/payment-service/scripts/verify-auth-expiry.sh`.
+- `OrderCancelled {reason: auth_expired}` observed end-to-end; `reason` optional
+  in registry v2 so BACKWARD_TRANSITIVE holds. No blocking findings.

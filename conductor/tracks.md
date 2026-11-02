@@ -2,9 +2,6 @@
 
 This file tracks all major tracks for the project.
 
-- [ ] **Track: Add reason to OrderCancelled (US-9.2, Journey 5)**
-  *Link: [./tracks/cancel-reason_20261102/](./tracks/cancel-reason_20261102/)*
-
 ---
 
 ---
