@@ -11,7 +11,7 @@ import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
 import orderservice.domain.{OrderEvent, OrderId, TransitionRejected}
 import org.typelevel.log4cats.StructuredLogger
-import purekafka.consumer.DeadLetter
+import purekafka.consumer.{DeadLetter, EventAge}
 import sttp.tapir.Schema
 import sttp.tapir.Schema.annotations.{description, encodedExample}
 
@@ -93,12 +93,14 @@ object FulfilmentEventConsumer {
 
   val topic: String = "fulfilment-events"
 
+  val groupId = "order-service-fulfilment-events"
+
   private def consumerSettings[F[_]: Async](
       config: KafkaConfig
   ): ConsumerSettings[F, Option[String], Option[String]] =
     ConsumerSettings[F, Option[String], Option[String]]
       .withBootstrapServers(config.bootstrapServers)
-      .withGroupId("order-service-fulfilment-events")
+      .withGroupId(groupId)
       .withAutoOffsetReset(AutoOffsetReset.Earliest)
 
   /** US-21.4: a rejected outcome that is not a duplicate (`from == to`) lost a
@@ -125,12 +127,18 @@ object FulfilmentEventConsumer {
       store: OrderStore[F],
       inventoryClient: InventoryClient[F],
       logger: StructuredLogger[F],
-      deadLetter: DeadLetter[F, String, String]
+      deadLetter: DeadLetter[F, String, String],
+      eventAge: EventAge[F]
   ): Stream[F, Unit] =
     KafkaConsumer
       .stream(consumerSettings[F](config))
       .subscribeTo(topic)
       .records
+      .evalTap(committable =>
+        committable.record.timestamp.createTime.traverse_(
+          eventAge.record(topic, groupId, _)
+        )
+      )
       .evalMap { committable =>
         def handleConfirmed(event: DispatchConfirmedEvent)(implicit
             F: MonadCancelThrow[F]

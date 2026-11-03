@@ -13,7 +13,7 @@ import org.typelevel.log4cats.noop.NoOpLogger
 import org.typelevel.log4cats.testing.StructuredTestingLogger
 import org.typelevel.log4cats.testing.StructuredTestingLogger.{ERROR, INFO}
 import org.typelevel.otel4s.metrics.Meter
-import purekafka.consumer.DeadLetter
+import purekafka.consumer.{DeadLetter, EventAge}
 import purekafka.resilience.{
   CircuitBreakerConfig,
   ResilienceConfig,
@@ -27,6 +27,8 @@ import scala.concurrent.duration._
 class PaymentEventConsumerSuite
     extends CatsEffectSuite
     with TestContainerForAll {
+
+  private val noEventAge: EventAge[IO] = (_, _, _) => IO.unit
 
   /** A `DeadLetter` whose `guard` never actually triggers in these tests -
     * every `handleCaptured`/`handleExpired`/`handleFailed` call here succeeds
@@ -179,7 +181,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -218,7 +220,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Cancelled)
@@ -256,7 +258,7 @@ class PaymentEventConsumerSuite
           )
         )
         _ <- PaymentEventConsumer
-          .run[IO](config, store, NoOpLogger[IO], deadLetter)
+          .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
           .compile
           .drain
           .background
@@ -302,7 +304,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.PaymentFailed)
@@ -357,7 +359,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, testLogger, deadLetter)
+            .run[IO](config, store, testLogger, deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -430,7 +432,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, liveOrder.id, OrderStatus.Confirmed)
@@ -494,7 +496,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -541,7 +543,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, testLogger, deadLetter)
+            .run[IO](config, store, testLogger, deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -619,7 +621,7 @@ class PaymentEventConsumerSuite
         )
         result <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           for {
@@ -666,7 +668,7 @@ class PaymentEventConsumerSuite
         )
         outboxed <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderConfirmed")
@@ -718,7 +720,7 @@ class PaymentEventConsumerSuite
         )
         outboxed <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderCancelled")
@@ -774,7 +776,7 @@ class PaymentEventConsumerSuite
         )
         outboxed <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForOutboxEvent(outboxRef, order.id, "OrderPaymentFailed")
@@ -832,7 +834,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -872,7 +874,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.Confirmed)
@@ -910,7 +912,7 @@ class PaymentEventConsumerSuite
         )
         finalStatus <- IO.race(
           PaymentEventConsumer
-            .run[IO](config, store, NoOpLogger[IO], deadLetter)
+            .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
             .compile
             .drain,
           pollForStatus(store, order.id, OrderStatus.PaymentFailed)
@@ -959,7 +961,7 @@ class PaymentEventConsumerSuite
           json
         )
         _ <- PaymentEventConsumer
-          .run[IO](config, store, NoOpLogger[IO], deadLetter)
+          .run[IO](config, store, NoOpLogger[IO], deadLetter, noEventAge)
           .compile
           .drain
           .background

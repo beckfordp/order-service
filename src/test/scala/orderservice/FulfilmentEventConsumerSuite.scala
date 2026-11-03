@@ -10,7 +10,7 @@ import munit.CatsEffectSuite
 import orderservice.domain.OrderId
 import org.typelevel.log4cats.noop.NoOpLogger
 import org.typelevel.otel4s.metrics.Meter
-import purekafka.consumer.DeadLetter
+import purekafka.consumer.{DeadLetter, EventAge}
 import purekafka.resilience.{
   CircuitBreakerConfig,
   ResilienceConfig,
@@ -24,6 +24,8 @@ import scala.concurrent.duration._
 class FulfilmentEventConsumerSuite
     extends CatsEffectSuite
     with TestContainerForAll {
+
+  private val noEventAge: EventAge[IO] = (_, _, _) => IO.unit
 
   override val containerDef: KafkaContainer.Def = KafkaContainer.Def()
 
@@ -144,7 +146,8 @@ class FulfilmentEventConsumerSuite
               store,
               inventory(released),
               NoOpLogger[IO],
-              deadLetter
+              deadLetter,
+              noEventAge
             )
             .compile
             .drain,
@@ -183,7 +186,8 @@ class FulfilmentEventConsumerSuite
             store,
             inventory(released),
             NoOpLogger[IO],
-            deadLetter
+            deadLetter,
+            noEventAge
           )
           .compile
           .drain
@@ -229,7 +233,8 @@ class FulfilmentEventConsumerSuite
               store,
               inventory(released),
               NoOpLogger[IO],
-              deadLetter
+              deadLetter,
+              noEventAge
             )
             .compile
             .drain,
@@ -269,7 +274,8 @@ class FulfilmentEventConsumerSuite
             store,
             failingInventory,
             NoOpLogger[IO],
-            deadLetter
+            deadLetter,
+            noEventAge
           )
           .compile
           .drain
@@ -314,7 +320,8 @@ class FulfilmentEventConsumerSuite
             store,
             inventory(released),
             NoOpLogger[IO],
-            deadLetter
+            deadLetter,
+            noEventAge
           )
           .compile
           .drain

@@ -1,6 +1,7 @@
 package orderservice
 
 import cats.effect.{Async, Resource, Sync}
+import cats.effect.unsafe.metrics.IORuntimeMetrics
 import org.typelevel.log4cats.StructuredLogger
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.oteljava.context.LocalContextProvider
@@ -46,16 +47,18 @@ object Telemetry {
     } yield Telemetry(tracer, meter, logger)
 
   /** Production constructor: a console-exporting tracer (`Tracing.console`) and
-    * a Prometheus-scrapeable meter (`Metrics.oteljava`, bound to
-    * `metricsPort`), composed via `fromResources`.
+    * a Prometheus-scrapeable meter (`Metrics.oteljava`, bound to `metricsPort`,
+    * with JVM and — given `ioRuntimeMetrics` — cats-effect runtime metrics),
+    * composed via `fromResources`.
     */
   def resource[F[_]: Async: LocalContextProvider](
       serviceName: String,
-      metricsPort: Int
+      metricsPort: Int,
+      ioRuntimeMetrics: Option[IORuntimeMetrics] = None
   ): Resource[F, Telemetry[F]] =
     fromResources[F](
       Tracing.console[F](serviceName),
-      Metrics.oteljava[F](serviceName, metricsPort),
+      Metrics.oteljava[F](serviceName, metricsPort, ioRuntimeMetrics),
       serviceName
     )
 }

@@ -11,7 +11,7 @@ import io.circe.parser.decode
 import io.circe.syntax._
 import orderservice.domain.{OrderEvent, OrderId, TransitionRejected}
 import org.typelevel.log4cats.StructuredLogger
-import purekafka.consumer.DeadLetter
+import purekafka.consumer.{DeadLetter, EventAge}
 import sttp.tapir.Schema
 import sttp.tapir.Schema.annotations.{description, encodedExample}
 
@@ -123,12 +123,14 @@ object PaymentEventConsumer {
   // Deserializer.option) rather than plain String: a plain String
   // deserializer throws on a null key or value, which kills this whole
   // background consumer stream silently - see TD-2.2, ADR 0010.
+  val groupId = "order-service-payment-events"
+
   private def consumerSettings[F[_]: Async](
       config: KafkaConfig
   ): ConsumerSettings[F, Option[String], Option[String]] =
     ConsumerSettings[F, Option[String], Option[String]]
       .withBootstrapServers(config.bootstrapServers)
-      .withGroupId("order-service-payment-events")
+      .withGroupId(groupId)
       .withAutoOffsetReset(AutoOffsetReset.Earliest)
 
   private def logOutcome[F[_]: Monad](
@@ -332,12 +334,18 @@ object PaymentEventConsumer {
       config: KafkaConfig,
       store: OrderStore[F],
       logger: StructuredLogger[F],
-      deadLetter: DeadLetter[F, String, String]
+      deadLetter: DeadLetter[F, String, String],
+      eventAge: EventAge[F]
   ): Stream[F, Unit] =
     KafkaConsumer
       .stream(consumerSettings[F](config))
       .subscribeTo(topic)
       .records
+      .evalTap(committable =>
+        committable.record.timestamp.createTime.traverse_(
+          eventAge.record(topic, groupId, _)
+        )
+      )
       .evalMap { committable =>
         val handled: F[Unit] = committable.record.value match {
           case None =>

@@ -7,7 +7,7 @@ import fs2.Stream
 import fs2.kafka.ProducerSettings
 import org.typelevel.log4cats.StructuredLogger
 import org.typelevel.otel4s.metrics.Meter
-import purekafka.consumer.{DeadLetter, StreamSupervisor}
+import purekafka.consumer.{DeadLetter, EventAge, StreamSupervisor}
 
 /** Wires `PaymentEventConsumer` (order-service's only consumer since
   * `StockEventConsumer` was retired, ADR 0018) in `purekafka`'s
@@ -33,6 +33,7 @@ object KafkaConsumers {
         .withBootstrapServers(config.bootstrapServers)
 
     for {
+      eventAge <- Stream.eval(EventAge.create[F](meter))
       paymentDeadLetter <- Stream.resource(
         DeadLetter.resource[F, String, String](
           config.dlqRetry,
@@ -54,7 +55,8 @@ object KafkaConsumers {
               config,
               store,
               logger,
-              paymentDeadLetter
+              paymentDeadLetter,
+              eventAge
             )
           )
         )
@@ -68,7 +70,8 @@ object KafkaConsumers {
                 store,
                 inventoryClient,
                 logger,
-                fulfilmentDeadLetter
+                fulfilmentDeadLetter,
+                eventAge
               )
             )
           )
