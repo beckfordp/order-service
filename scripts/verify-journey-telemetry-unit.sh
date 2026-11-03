@@ -5,7 +5,7 @@ set -euo pipefail
 # scalafmt + the full test suite, then coverage on the classes this track adds
 # or changes (> 80%, workflow target).
 #
-# Usage: ./scripts/verify-journey-telemetry-unit.sh
+# Usage: ./scripts/verify-journey-telemetry-unit.sh <class>...  (classes to gate)
 # Needs GITHUB_ACTOR/GITHUB_TOKEN (read:packages) for purerestlib, or a
 # logged-in `gh`.
 
