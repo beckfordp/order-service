@@ -48,6 +48,7 @@ class AppRoutesSuite extends CatsEffectSuite {
       CheckoutFixtures.alwaysAuthorizes,
       noOpHistoryCache,
       Telemetry(testTracer.tracer, testMeter.meter, NoOpLogger[IO]),
+      CheckoutOutcomes.noop[IO],
       OperatorAuth.disabled,
       demoChannels,
       "target/asyncapi-docs"

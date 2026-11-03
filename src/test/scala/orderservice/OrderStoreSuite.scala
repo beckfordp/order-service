@@ -102,7 +102,15 @@ class OrderStoreSuite extends CatsEffectSuite with CreateAuthorizedContract {
     } yield {
       assertEquals(
         updated,
-        Right(UpdatedOrderRef(created.id, "cust-123", created.totalCents))
+        Right(
+          UpdatedOrderRef(
+            created.id,
+            "cust-123",
+            created.totalCents,
+            OrderStatus.Authorized,
+            created.updatedAt
+          )
+        )
       )
       assertEquals(found.map(_._1.status), Some(OrderStatus.Confirmed))
     }

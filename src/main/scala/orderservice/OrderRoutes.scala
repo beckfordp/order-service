@@ -17,6 +17,8 @@ import orderservice.domain.{
 }
 import org.http4s.HttpRoutes
 import org.typelevel.log4cats.StructuredLogger
+import org.typelevel.otel4s.Attribute
+import org.typelevel.otel4s.trace.Tracer
 import sttp.model.StatusCode
 import sttp.tapir._
 import sttp.tapir.Schema.annotations.{description, encodedExample}
@@ -661,7 +663,9 @@ object OrderRoutes {
       store: OrderStore[F],
       logger: StructuredLogger[F],
       inventoryClient: InventoryClient[F],
-      paymentClient: PaymentClient[F]
+      paymentClient: PaymentClient[F],
+      checkoutOutcomes: CheckoutOutcomes[F],
+      tracer: Tracer[F]
   ): ServerEndpoint[Any, F] =
     createOrderEndpoint.serverLogic[F] { req =>
       def release(orderId: OrderId): F[Unit] = {
@@ -726,6 +730,9 @@ object OrderRoutes {
             guestEmail
           )
           renderedOrderId = OrderId.render(orderId)
+          _ <- tracer.currentSpanOrNoop.flatMap(
+            _.addAttribute(Attribute("order.id", renderedOrderId))
+          )
           context = Map(
             "order_id" -> renderedOrderId,
             "customer_id" -> req.customerId
@@ -802,26 +809,31 @@ object OrderRoutes {
               }
           }
 
-      for {
-        _ <- logger.info(
-          Map(
-            "method" -> "POST",
-            "path" -> "/orders"
-          )
-        )("Received request")
-        result <- validateCheckout(req) match {
-          case Left(error) =>
-            logger
-              .warn(
-                Map(
-                  "customer_id" -> req.customerId,
-                  "reason" -> error.toString
-                )
-              )("Invalid checkout request")
-              .as(Left(error): Either[OrderError, OrderResponse])
-          case Right((items, email)) => place(items, email)
-        }
-      } yield result
+      // One `checkout` span per request, tagged with `order.id` once minted
+      // (gluon PERF-4.10); the outcome counter sees every result (PERF-4.4).
+      tracer
+        .span("checkout")
+        .surround(for {
+          _ <- logger.info(
+            Map(
+              "method" -> "POST",
+              "path" -> "/orders"
+            )
+          )("Received request")
+          result <- validateCheckout(req) match {
+            case Left(error) =>
+              logger
+                .warn(
+                  Map(
+                    "customer_id" -> req.customerId,
+                    "reason" -> error.toString
+                  )
+                )("Invalid checkout request")
+                .as(Left(error): Either[OrderError, OrderResponse])
+            case Right((items, email)) => place(items, email)
+          }
+          _ <- checkoutOutcomes.record(result)
+        } yield result)
     }
 
   /** Cache-aside: a hit returns the cached history as-is; a miss queries the
@@ -1130,7 +1142,14 @@ object OrderRoutes {
   ): HttpRoutes[F] =
     Http4sServerInterpreter[F]().toRoutes(
       List(
-        serverEndpoint(store, logger, inventoryClient, paymentClient),
+        serverEndpoint(
+          store,
+          logger,
+          inventoryClient,
+          paymentClient,
+          CheckoutOutcomes.noop[F],
+          Tracer.noop[F]
+        ),
         listOrdersServerEndpoint(store, logger, historyCache),
         adminListOrdersServerEndpoint(store, logger),
         getOrderServerEndpoint(store, logger),

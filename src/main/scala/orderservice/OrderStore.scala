@@ -21,7 +21,7 @@ import orderservice.domain.{
 }
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.metrics.Meter
-import purerest.metrics.LatencyBuckets
+import purerest.metrics.{LatencyBuckets, PoolMetrics}
 import skunk.{Codec, Session}
 import skunk.codec.all._
 import skunk.implicits._
@@ -62,12 +62,16 @@ final case class OrderItem(
 /** Minimal projection of an order returned by `updateStatusIfCurrent` on a
   * successful transition - just the fields an outbox payload needs, fetched
   * atomically in the same query that does the update rather than a separate
-  * round-trip.
+  * round-trip. `from`/`enteredAt` are the status left and when it was entered
+  * (its `updated_at`), for the transition and time-in-state metrics
+  * (`JourneyMetrics`).
   */
 final case class UpdatedOrderRef(
     orderId: OrderId,
     customerId: String,
-    totalCents: Int
+    totalCents: Int,
+    from: OrderStatus,
+    enteredAt: java.time.Instant
 )
 
 /** Describes the outbox row a state-changing `OrderStore` call should write
@@ -293,7 +297,9 @@ object OrderStore {
                           UpdatedOrderRef(
                             next.id,
                             next.customerId,
-                            next.totalCents
+                            next.totalCents,
+                            existing.status,
+                            existing.updatedAt
                           )
                         )
                       )
@@ -509,33 +515,39 @@ object OrderStore {
   // Atomic guarded transition keyed by the order's own id - payment events
   // carry orderId.
   // Only transitions when the order's current status matches `expected`;
-  // any other current status or an unknown id both no-op (0 rows).
+  // any other current status or an unknown id both no-op (0 rows). The
+  // self-join on `prev` returns the pre-update status/updated_at (Postgres 16
+  // has no `RETURNING OLD`).
   private val updateOrderStatusIfCurrent: skunk.Query[
     (OrderStatus, UUID, OrderStatus),
-    (UUID, String, Int)
+    (UUID, String, Int, OrderStatus, OffsetDateTime)
   ] =
     sql"""
-      UPDATE "order"
+      UPDATE "order" o
       SET status = $orderStatus, updated_at = now()
-      WHERE id = $uuid
-        AND status = $orderStatus
-      RETURNING id, customer_id, total_cents
-    """.query(uuid *: text *: int4)
+      FROM "order" prev
+      WHERE o.id = $uuid
+        AND prev.id = o.id
+        AND o.status = $orderStatus
+      RETURNING o.id, o.customer_id, o.total_cents, prev.status, prev.updated_at
+    """.query(uuid *: text *: int4 *: orderStatus *: timestamptz)
 
   // US-19.2/19.3: a capture outcome may arrive before or after the order's own
   // DispatchConfirmed consumer applies `authorized -> dispatched`, so either
   // pre-capture state is accepted.
   private val updateOrderStatusIfAwaitingCapture: skunk.Query[
     (OrderStatus, UUID, OrderStatus, OrderStatus),
-    (UUID, String, Int)
+    (UUID, String, Int, OrderStatus, OffsetDateTime)
   ] =
     sql"""
-      UPDATE "order"
+      UPDATE "order" o
       SET status = $orderStatus, updated_at = now()
-      WHERE id = $uuid
-        AND status IN ($orderStatus, $orderStatus)
-      RETURNING id, customer_id, total_cents
-    """.query(uuid *: text *: int4)
+      FROM "order" prev
+      WHERE o.id = $uuid
+        AND prev.id = o.id
+        AND o.status IN ($orderStatus, $orderStatus)
+      RETURNING o.id, o.customer_id, o.total_cents, prev.status, prev.updated_at
+    """.query(uuid *: text *: int4 *: orderStatus *: timestamptz)
 
   private val selectStatus: skunk.Query[UUID, OrderStatus] =
     sql"""SELECT status FROM "order" WHERE id = $uuid""".query(orderStatus)
@@ -743,6 +755,7 @@ object OrderStore {
       .withUserAndPassword(config.user, config.password)
       .withDatabase(config.database)
       .pooled(max = 10)
+      .evalMap(PoolMetrics.instrument(meter, "order")(_))
       .evalMap { pool =>
         meter
           .histogram[Double]("db.client.operation.duration")
@@ -1008,13 +1021,16 @@ object OrderStore {
                     val target = OrderLifecycle.target(event)
                     val allowed = OrderLifecycle.allowedFrom(event)
                     def ref(
-                        row: (UUID, String, Int)
+                        row: (UUID, String, Int, OrderStatus, OffsetDateTime)
                     ): UpdatedOrderRef = {
-                      val (orderId, customerId, totalCents) = row
+                      val (orderId, customerId, totalCents, from, enteredAt) =
+                        row
                       UpdatedOrderRef(
                         OrderId.fromUuid(orderId),
                         customerId,
-                        totalCents
+                        totalCents,
+                        from,
+                        enteredAt.toInstant
                       )
                     }
                     timed("transition") {

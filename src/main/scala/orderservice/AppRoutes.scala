@@ -27,6 +27,7 @@ object AppRoutes {
       paymentClient: PaymentClient[F],
       historyCache: OrderHistoryCache[F],
       telemetry: Telemetry[F],
+      checkoutOutcomes: CheckoutOutcomes[F],
       operatorAuth: OperatorAuth,
       channels: List[AsyncApiChannel[?]],
       staticAsyncApiDocsDir: String
@@ -45,7 +46,9 @@ object AppRoutes {
           store,
           telemetry.logger,
           inventoryClient,
-          paymentClient
+          paymentClient,
+          checkoutOutcomes,
+          telemetry.tracer
         ),
         OrderRoutes.listOrdersServerEndpoint[F](
           store,

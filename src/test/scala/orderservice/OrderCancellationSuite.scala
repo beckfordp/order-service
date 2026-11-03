@@ -16,7 +16,9 @@ class OrderCancellationSuite extends FunSuite {
   private val ref = UpdatedOrderRef(
     orderservice.domain.OrderId.fromUuid(UUID.randomUUID()),
     "cust-1",
-    4999
+    4999,
+    OrderStatus.Authorized,
+    java.time.Instant.EPOCH
   )
   private val now = Instant.parse("2026-11-02T10:00:00Z")
 

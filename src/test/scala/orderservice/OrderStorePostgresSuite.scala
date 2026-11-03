@@ -250,6 +250,36 @@ class OrderStorePostgresSuite
     }
   }
 
+  test(
+    "single-state transition reports the status left and when it was entered"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      Migrations.run[IO](config) *> OrderStore
+        .postgres[IO](config, Meter.noop[IO])
+        .use { store =>
+          for {
+            (created, _) <- seedAuthorized(store, "cust-123", oneItem)
+            dispatched <- store.transition(
+              created.id,
+              OrderEvent.DispatchConfirmed
+            )
+            dispatchedAt <- store.get(created.id).map(_.get._1.updatedAt)
+            captured <- store.transition(created.id, OrderEvent.PaymentCaptured)
+          } yield {
+            assertEquals(
+              dispatched.map(r => (r.from, r.enteredAt)),
+              Right((OrderStatus.Authorized, created.updatedAt))
+            )
+            assertEquals(
+              captured.map(r => (r.from, r.enteredAt)),
+              Right((OrderStatus.Dispatched, dispatchedAt))
+            )
+          }
+        }
+    }
+  }
+
   test("transition applies an allowed event and preserves the items") {
     withContainers { postgres =>
       val config = configFor(postgres)
@@ -264,7 +294,14 @@ class OrderStorePostgresSuite
             assertEquals(
               updated,
               Right(
-                UpdatedOrderRef(created.id, "cust-123", created.totalCents)
+                UpdatedOrderRef(
+                  created.id,
+                  "cust-123",
+                  created.totalCents,
+                  // previous status + updated_at, from the self-join
+                  OrderStatus.Authorized,
+                  created.updatedAt
+                )
               )
             )
             assertEquals(found.map(_._2), Some(items))

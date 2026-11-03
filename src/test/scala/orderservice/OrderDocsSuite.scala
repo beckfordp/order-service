@@ -22,7 +22,9 @@ class OrderDocsSuite extends CatsEffectSuite {
         store,
         NoOpLogger[IO],
         inventoryClient,
-        CheckoutFixtures.alwaysAuthorizes
+        CheckoutFixtures.alwaysAuthorizes,
+        CheckoutOutcomes.noop[IO],
+        org.typelevel.otel4s.trace.Tracer.noop[IO]
       )
       routes = Docs.routes[IO]("Order Service", "1.0", List(endpoint))
       request = Request[IO](Method.POST, uri"/orders")
@@ -70,7 +72,9 @@ class OrderDocsSuite extends CatsEffectSuite {
         store,
         logger,
         CheckoutFixtures.alwaysReserves,
-        CheckoutFixtures.alwaysAuthorizes
+        CheckoutFixtures.alwaysAuthorizes,
+        CheckoutOutcomes.noop[IO],
+        org.typelevel.otel4s.trace.Tracer.noop[IO]
       )
       val list = OrderRoutes.listOrdersServerEndpoint[IO](
         store,
@@ -136,7 +140,9 @@ class OrderDocsSuite extends CatsEffectSuite {
           store,
           logger,
           CheckoutFixtures.alwaysReserves,
-          CheckoutFixtures.alwaysAuthorizes
+          CheckoutFixtures.alwaysAuthorizes,
+          CheckoutOutcomes.noop[IO],
+          org.typelevel.otel4s.trace.Tracer.noop[IO]
         ),
         OrderRoutes.listOrdersServerEndpoint[IO](store, logger, cache),
         OrderRoutes.adminListOrdersServerEndpoint[IO](store, logger),

@@ -24,7 +24,11 @@ object Main extends IOApp.Simple {
   val run: IO[Unit] = (for {
     (config, port) <- Resource.eval(OrderServiceConfig.loadValidated[IO])
     _ <- Migrations.resource[IO](config.postgres)
-    telemetry <- Telemetry.resource[IO](config.serviceName, config.metricsPort)
+    telemetry <- Telemetry.resource[IO](
+      config.serviceName,
+      config.metricsPort,
+      Some(runtime.metrics)
+    )
     _ <- Resource.eval(
       telemetry.logger.info(
         Map(
@@ -40,7 +44,14 @@ object Main extends IOApp.Simple {
         )
       else telemetry.logger.info(Map.empty)("Operator token disabled")
     )
-    store <- OrderStore.postgres[IO](config.postgres, telemetry.meter)
+    store <- OrderStore
+      .postgres[IO](config.postgres, telemetry.meter)
+      .evalMap(
+        JourneyMetrics.instrument[IO](_, telemetry.meter, telemetry.logger)
+      )
+    checkoutOutcomes <- Resource.eval(
+      CheckoutOutcomes.create[IO](telemetry.meter)
+    )
     httpClient <- EmberClientBuilder.default[IO].build
     inventoryClient = InventoryClient.resilient[IO](
       httpClient,
@@ -69,6 +80,7 @@ object Main extends IOApp.Simple {
       paymentClient,
       historyCache,
       telemetry,
+      checkoutOutcomes,
       OperatorAuth.fromConfig(config.operatorAuth),
       AsyncApiChannels.channels,
       config.asyncApiHtmlDir
