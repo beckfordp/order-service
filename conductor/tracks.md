@@ -4,9 +4,6 @@ This file tracks all major tracks for the project.
 
 ---
 
-- [ ] **Track: Journey telemetry (gluon PERF-4.1–4.4, 4.10, 4.11)**
-  *Link: [./tracks/journey-telemetry_20261103/](./tracks/journey-telemetry_20261103/)*
-
 ---
 
 ## Backlog
