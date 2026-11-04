@@ -77,6 +77,24 @@ class OrderCancellationSuite extends FunSuite {
     }
   }
 
+  test("every event has both a reason and an actor, or neither") {
+    List(
+      OrderEvent.PaymentCaptured,
+      OrderEvent.PaymentFailed("x"),
+      OrderEvent.AuthorizationExpired,
+      OrderEvent.DispatchConfirmed,
+      OrderEvent.DispatchFailed,
+      OrderEvent.CustomerCancelled,
+      OrderEvent.OperatorCancelled("op")
+    ).foreach { event =>
+      assertEquals(
+        OrderCancellation.reasonFor(event).isDefined,
+        OrderCancellation.actorFor(event, ref).isDefined,
+        event
+      )
+    }
+  }
+
   test(
     "operator cancellation is only legal from Authorized and targets Cancelled"
   ) {

@@ -22,7 +22,9 @@ object OrderCancellation {
       case OrderEvent.CustomerCancelled    => Some("customer")
       case OrderEvent.OperatorCancelled(_) => Some("operator")
       case OrderEvent.AuthorizationExpired => Some("auth_expired")
-      case _                               => None
+      case OrderEvent.PaymentCaptured | OrderEvent.PaymentFailed(_) |
+          OrderEvent.DispatchConfirmed | OrderEvent.DispatchFailed =>
+        None
     }
 
   def actorFor(
@@ -36,7 +38,9 @@ object OrderCancellation {
         Some(OrderActor.operator(operatorId))
       case OrderEvent.AuthorizationExpired =>
         Some(OrderActor.system("payment-service"))
-      case _ => None
+      case OrderEvent.PaymentCaptured | OrderEvent.PaymentFailed(_) |
+          OrderEvent.DispatchConfirmed | OrderEvent.DispatchFailed =>
+        None
     }
 
   def auditFor(
