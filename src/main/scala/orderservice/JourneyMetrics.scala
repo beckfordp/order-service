@@ -118,7 +118,14 @@ object CheckoutOutcomes {
     case Left(PaymentServiceUnavailable)   => "unavailable"
     case Left(InventoryServiceUnavailable) => "unavailable"
     case Left(OrderPersistFailed)          => "error"
-    case Left(_)                           => "invalid"
+    case Left(EmptyOrderItems | InvalidOrderItem(_) | InvalidCheckout(_)) =>
+      "invalid"
+    // Not raised by checkout; counted as `error` if that ever changes.
+    case Left(
+          OrderNotFound | InvalidStatus(_) | InvalidReconciliationStatus(_) |
+          IllegalTransition(_) | Unauthorized
+        ) =>
+      "error"
   }
 
   def create[F[_]: Sync](meter: Meter[F]): F[CheckoutOutcomes[F]] =

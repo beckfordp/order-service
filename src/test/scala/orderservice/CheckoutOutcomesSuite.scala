@@ -17,7 +17,9 @@ class CheckoutOutcomesSuite extends CatsEffectSuite {
       Left(InventoryServiceUnavailable) -> "unavailable",
       Left(OrderPersistFailed) -> "error",
       Left(InvalidCheckout("bad address")) -> "invalid",
-      Left(EmptyOrderItems) -> "invalid"
+      Left(EmptyOrderItems) -> "invalid",
+      Left(InvalidOrderItem("qty")) -> "invalid",
+      Left(OrderNotFound) -> "error"
     )
     cases.foreach { (result, expected) =>
       assertEquals(CheckoutOutcomes.classify(result), expected, result)

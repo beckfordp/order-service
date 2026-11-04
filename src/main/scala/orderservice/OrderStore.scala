@@ -516,18 +516,21 @@ object OrderStore {
   // carry orderId.
   // Only transitions when the order's current status matches `expected`;
   // any other current status or an unknown id both no-op (0 rows). The
-  // self-join on `prev` returns the pre-update status/updated_at (Postgres 16
-  // has no `RETURNING OLD`).
+  // `prev` CTE returns the pre-update status/updated_at (Postgres 16 has no
+  // `RETURNING OLD`); `FOR UPDATE` makes it read the latest committed row, not
+  // the statement snapshot, when a concurrent transition got there first.
   private val updateOrderStatusIfCurrent: skunk.Query[
-    (OrderStatus, UUID, OrderStatus),
+    (UUID, OrderStatus, OrderStatus),
     (UUID, String, Int, OrderStatus, OffsetDateTime)
   ] =
     sql"""
+      WITH prev AS (
+        SELECT id, status, updated_at FROM "order" WHERE id = $uuid FOR UPDATE
+      )
       UPDATE "order" o
       SET status = $orderStatus, updated_at = now()
-      FROM "order" prev
-      WHERE o.id = $uuid
-        AND prev.id = o.id
+      FROM prev
+      WHERE o.id = prev.id
         AND o.status = $orderStatus
       RETURNING o.id, o.customer_id, o.total_cents, prev.status, prev.updated_at
     """.query(uuid *: text *: int4 *: orderStatus *: timestamptz)
@@ -536,15 +539,17 @@ object OrderStore {
   // DispatchConfirmed consumer applies `authorized -> dispatched`, so either
   // pre-capture state is accepted.
   private val updateOrderStatusIfAwaitingCapture: skunk.Query[
-    (OrderStatus, UUID, OrderStatus, OrderStatus),
+    (UUID, OrderStatus, OrderStatus, OrderStatus),
     (UUID, String, Int, OrderStatus, OffsetDateTime)
   ] =
     sql"""
+      WITH prev AS (
+        SELECT id, status, updated_at FROM "order" WHERE id = $uuid FOR UPDATE
+      )
       UPDATE "order" o
       SET status = $orderStatus, updated_at = now()
-      FROM "order" prev
-      WHERE o.id = $uuid
-        AND prev.id = o.id
+      FROM prev
+      WHERE o.id = prev.id
         AND o.status IN ($orderStatus, $orderStatus)
       RETURNING o.id, o.customer_id, o.total_cents, prev.status, prev.updated_at
     """.query(uuid *: text *: int4 *: orderStatus *: timestamptz)
@@ -1042,13 +1047,13 @@ object OrderStore {
                                 case only :: Nil =>
                                   session
                                     .prepare(updateOrderStatusIfCurrent)
-                                    .flatMap(_.option((target, uuid, only)))
+                                    .flatMap(_.option((uuid, target, only)))
                                     .map(_.map(ref))
                                 case first :: second :: Nil =>
                                   session
                                     .prepare(updateOrderStatusIfAwaitingCapture)
                                     .flatMap(
-                                      _.option((target, uuid, first, second))
+                                      _.option((uuid, target, first, second))
                                     )
                                     .map(_.map(ref))
                                 case unsupported =>
