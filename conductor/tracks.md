@@ -4,6 +4,9 @@ This file tracks all major tracks for the project.
 
 ---
 
+- [ ] **Track: PERF-5.3 — OTLP trace export to Tempo**
+  *Link: [./tracks/otlp-tracing_20261104/](./tracks/otlp-tracing_20261104/)*
+
 ---
 
 ## Backlog
