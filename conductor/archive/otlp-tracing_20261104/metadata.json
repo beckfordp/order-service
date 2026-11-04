@@ -1,8 +1,8 @@
 {
   "track_id": "otlp-tracing_20261104",
   "type": "chore",
-  "status": "new",
+  "status": "completed",
   "created_at": "2026-11-04T00:00:00Z",
-  "updated_at": "2026-11-04T00:00:00Z",
+  "updated_at": "2026-11-04T21:30:00Z",
   "description": "PERF-5.3 \u2014 purerest 0.10.0, tracer exports OTLP/HTTP to Tempo per OTel env vars (gluon PLAN.md PERF-5.3)"
 }
