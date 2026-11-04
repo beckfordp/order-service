@@ -8,7 +8,7 @@ import org.typelevel.otel4s.oteljava.context.LocalContextProvider
 import org.typelevel.otel4s.trace.Tracer
 import purerest.logging.Logging
 import purerest.metrics.Metrics
-import purerest.tracing.Tracing
+import purerest.tracing.{Tracing, TracingConfig}
 
 /** Bundles the three dependencies this service always acquires and threads
   * together — `tracer`, `meter`, `logger` — into one module, per the
@@ -31,7 +31,7 @@ object Telemetry {
     * `Resource`s, builds the trace-correlated logger (`Logging.create`) and
     * bundles all three. Factored out from `resource` below so it's testable
     * against `Tracing.test`/`Metrics.test` — this codebase's own convention is
-    * that `Tracing.console`/`Metrics.oteljava` (real OpenTelemetry SDK + a
+    * that `Tracing.resource`/`Metrics.oteljava` (real OpenTelemetry SDK + a
     * bound Prometheus port) are only ever exercised from `Main`, never
     * unit-tested directly.
     */
@@ -46,10 +46,23 @@ object Telemetry {
       logger <- Resource.eval(Logging.create[F](tracer, serviceName))
     } yield Telemetry(tracer, meter, logger)
 
-  /** Production constructor: a console-exporting tracer (`Tracing.console`) and
-    * a Prometheus-scrapeable meter (`Metrics.oteljava`, bound to `metricsPort`,
-    * with JVM and — given `ioRuntimeMetrics` — cats-effect runtime metrics),
-    * composed via `fromResources`.
+  /** The tracer's exporter and sampling from the standard OTel env vars
+    * (`TracingConfig.fromEnv`, PERF-5.3): OTLP/HTTP to Tempo when
+    * `OTEL_EXPORTER_OTLP_ENDPOINT` is set, else the console. A malformed
+    * `OTEL_TRACES_SAMPLER_ARG` fails startup rather than defaulting.
+    */
+  def tracingConfig[F[_]: Sync]: F[TracingConfig] =
+    Sync[F].defer(
+      Sync[F].fromEither(
+        TracingConfig.fromEnv(sys.env).left.map(new IllegalArgumentException(_))
+      )
+    )
+
+  /** Production constructor: a tracer exporting per `tracingConfig`
+    * (`Tracing.resource`) and a Prometheus-scrapeable meter
+    * (`Metrics.oteljava`, bound to `metricsPort`, with JVM and — given
+    * `ioRuntimeMetrics` — cats-effect runtime metrics), composed via
+    * `fromResources`.
     */
   def resource[F[_]: Async: LocalContextProvider](
       serviceName: String,
@@ -57,7 +70,9 @@ object Telemetry {
       ioRuntimeMetrics: Option[IORuntimeMetrics] = None
   ): Resource[F, Telemetry[F]] =
     fromResources[F](
-      Tracing.console[F](serviceName),
+      Resource
+        .eval(tracingConfig[F])
+        .flatMap(Tracing.resource[F](serviceName, _)),
       Metrics.oteljava[F](serviceName, metricsPort, ioRuntimeMetrics),
       serviceName
     )

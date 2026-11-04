@@ -17,7 +17,7 @@ val fs2KafkaVersion = "3.6.0"
 val redis4catsVersion = "2.0.6"
 // Pinned to match the purerestlib version this service is built against — see
 // README's "Consuming purerest as a dependency" section.
-val purerestlibVersion = "0.8.2"
+val purerestlibVersion = "0.10.0"
 // Real GitHub Packages release (v0.6.1 - sends listed first, gluon TD-19.6;
 // v0.6.0 - AsyncAPI 3.0 send/receive docs,
 // gluon TD-19; v0.5.0 - producer-only, versionable schema
