@@ -4,9 +4,6 @@ This file tracks all major tracks for the project.
 
 ---
 
-- [ ] **Track: TD-29 — exhaustive OrderCancellation match**
-  *Link: [./tracks/td29-exhaustive-cancellation_20261104/](./tracks/td29-exhaustive-cancellation_20261104/)*
-
 ---
 
 ## Backlog
