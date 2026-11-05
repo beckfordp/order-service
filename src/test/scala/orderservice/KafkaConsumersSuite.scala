@@ -14,7 +14,9 @@ import orderservice.domain.{
   ResolveReconciliationOutcome
 }
 import org.typelevel.log4cats.noop.NoOpLogger
+import org.typelevel.otel4s.trace.Tracer
 import purerest.metrics.Metrics
+import purerest.tracing.Tracing
 
 import java.time.Instant
 import java.util.UUID
@@ -230,7 +232,8 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
                   def release(orderId: String): IO[Unit] = IO.unit
                 },
                 NoOpLogger[IO],
-                testMeter.meter
+                testMeter.meter,
+                Tracer.noop[IO]
               )
               .compile
               .drain
@@ -262,6 +265,89 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
             dlqPublished >= 1L,
             s"expected at least 1 purekafka.dlq.published, got $dlqPublished"
           )
+        }
+      }
+    }
+  }
+
+  test(
+    "PERF-5.5: a record's traceparent header becomes the parent of its payment-events process span"
+  ) {
+    withContainers { kafka =>
+      val config = configFor(kafka)
+      val traceId = "4bf92f3577b34da6a3ce929d0e0e4736"
+      val parentSpanId = "00f067aa0ba902b7"
+      (for {
+        testMeter <- Metrics.test[IO]("kafka-consumers-tracing")
+        testTracer <- Tracing.test[IO]("kafka-consumers-tracing")
+      } yield (testMeter, testTracer)).use { case (testMeter, testTracer) =>
+        for {
+          store <- OrderStore.inMemory[IO]
+          (order, _) <- StoreFixtures.seeded(
+            store,
+            "cust-traced",
+            oneItem,
+            OrderStatus.Authorized
+          )
+          orderId = OrderId.render(order.id)
+          _ <- KafkaProducer
+            .resource(
+              ProducerSettings[IO, String, String]
+                .withBootstrapServers(config.bootstrapServers)
+            )
+            .use(
+              _.produceOne_(
+                ProducerRecord(
+                  PaymentEventConsumer.topic,
+                  orderId,
+                  envelopeJson(
+                    "payment-service",
+                    "PaymentCaptured",
+                    orderId,
+                    PaymentCapturedEvent(
+                      orderId,
+                      1998,
+                      Instant.parse("2026-01-01T00:00:00Z")
+                    ).asJson
+                  )
+                ).withHeaders(
+                  Headers(
+                    Header("traceparent", s"00-$traceId-$parentSpanId-01")
+                  )
+                )
+              ).flatten.void
+            )
+          _ <- KafkaConsumers
+            .supervised[IO](
+              config,
+              store,
+              new InventoryClient[IO] {
+                def reserveOrder(
+                    orderId: String,
+                    items: List[OrderReservationLine]
+                ): IO[OrderReservationResult] =
+                  IO.raiseError(new NotImplementedError())
+                def release(orderId: String): IO[Unit] = IO.unit
+              },
+              NoOpLogger[IO],
+              testMeter.meter,
+              testTracer.tracer
+            )
+            .compile
+            .drain
+            .background
+            .use(_ => pollForStatus(store, order.id, OrderStatus.Confirmed))
+          spans <- testTracer.finishedSpans
+        } yield {
+          val consumed = spans.filter(_.getName == "payment-events process")
+          assertEquals(consumed.size, 1, s"spans: ${spans.map(_.getName)}")
+          val span = consumed.head
+          assertEquals(
+            span.getKind,
+            io.opentelemetry.api.trace.SpanKind.CONSUMER
+          )
+          assertEquals(span.getTraceId, traceId)
+          assertEquals(span.getParentSpanContext.getSpanId, parentSpanId)
         }
       }
     }

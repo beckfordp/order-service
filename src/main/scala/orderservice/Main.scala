@@ -63,7 +63,8 @@ object Main extends IOApp.Simple {
       store,
       inventoryClient,
       telemetry.logger,
-      telemetry.meter
+      telemetry.meter,
+      telemetry.tracer
     )
     paymentClient = PaymentClient.resilient[IO](
       httpClient,

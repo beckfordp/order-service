@@ -10,6 +10,7 @@ import munit.CatsEffectSuite
 import orderservice.domain.OrderId
 import org.typelevel.log4cats.noop.NoOpLogger
 import org.typelevel.otel4s.metrics.Meter
+import org.typelevel.otel4s.trace.Tracer
 import purekafka.consumer.{DeadLetter, EventAge}
 import purekafka.resilience.{
   CircuitBreakerConfig,
@@ -147,7 +148,8 @@ class FulfilmentEventConsumerSuite
               inventory(released),
               NoOpLogger[IO],
               deadLetter,
-              noEventAge
+              noEventAge,
+              Tracer.noop[IO]
             )
             .compile
             .drain,
@@ -187,7 +189,8 @@ class FulfilmentEventConsumerSuite
             inventory(released),
             NoOpLogger[IO],
             deadLetter,
-            noEventAge
+            noEventAge,
+            Tracer.noop[IO]
           )
           .compile
           .drain
@@ -234,7 +237,8 @@ class FulfilmentEventConsumerSuite
               inventory(released),
               NoOpLogger[IO],
               deadLetter,
-              noEventAge
+              noEventAge,
+              Tracer.noop[IO]
             )
             .compile
             .drain,
@@ -275,7 +279,8 @@ class FulfilmentEventConsumerSuite
             failingInventory,
             NoOpLogger[IO],
             deadLetter,
-            noEventAge
+            noEventAge,
+            Tracer.noop[IO]
           )
           .compile
           .drain
@@ -321,7 +326,8 @@ class FulfilmentEventConsumerSuite
             inventory(released),
             NoOpLogger[IO],
             deadLetter,
-            noEventAge
+            noEventAge,
+            Tracer.noop[IO]
           )
           .compile
           .drain

@@ -11,7 +11,9 @@ import io.circe.generic.semiauto.deriveCodec
 import io.circe.parser.decode
 import orderservice.domain.{OrderEvent, OrderId, TransitionRejected}
 import org.typelevel.log4cats.StructuredLogger
+import org.typelevel.otel4s.trace.Tracer
 import purekafka.consumer.{DeadLetter, EventAge}
+import purekafka.tracing.KafkaTracing
 import sttp.tapir.Schema
 import sttp.tapir.Schema.annotations.{description, encodedExample}
 
@@ -128,7 +130,8 @@ object FulfilmentEventConsumer {
       inventoryClient: InventoryClient[F],
       logger: StructuredLogger[F],
       deadLetter: DeadLetter[F, String, String],
-      eventAge: EventAge[F]
+      eventAge: EventAge[F],
+      tracer: Tracer[F]
   ): Stream[F, Unit] =
     KafkaConsumer
       .stream(consumerSettings[F](config))
@@ -306,6 +309,10 @@ object FulfilmentEventConsumer {
                 }
             }
         }
-        handled *> KafkaCommit.commit(committable)
+        KafkaTracing.traced(tracer)(
+          committable.record.headers,
+          s"$topic process",
+          topic
+        )(handled) *> KafkaCommit.commit(committable)
       }
 }
