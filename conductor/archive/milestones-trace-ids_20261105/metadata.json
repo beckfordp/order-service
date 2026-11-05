@@ -1,7 +1,7 @@
 {
   "track_id": "milestones-trace-ids_20261105",
   "type": "refactor",
-  "status": "new",
+  "status": "completed",
   "created_at": "2026-11-05T16:00:00Z",
   "updated_at": "2026-11-05T16:00:00Z",
   "description": "PERF-5.6 — milestone logs correlate by trace_id/span_id, no correlation_id (gluon PLAN.md PERF-5.6)"
