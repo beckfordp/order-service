@@ -49,6 +49,7 @@ object Main extends IOApp.Simple {
       .evalMap(
         JourneyMetrics.instrument[IO](_, telemetry.meter, telemetry.logger)
       )
+      .map(OrderStoreTracing.instrument[IO](_, telemetry.tracer))
     checkoutOutcomes <- Resource.eval(
       CheckoutOutcomes.create[IO](telemetry.meter)
     )

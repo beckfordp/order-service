@@ -711,18 +711,31 @@ object OrderStore {
       VALUES ($uuid, $text, $text::jsonb, $text, ${text.opt})
     """.command
 
-  /** Writes one outbox row in `session`'s transaction, stamped with the active
-    * trace context (`KafkaTracing.traceParent`).
+  /** Writes one outbox row in `session`'s transaction inside an `outbox.write`
+    * span (PERF-5.9), stamped with that span's trace context
+    * (`KafkaTracing.traceParent`) so consumers become its children.
     */
   private def insertOutbox[F[_]: FlatMap](
       tracer: Tracer[F],
       session: Session[F],
+      eventType: String,
       row: (UUID, String, String, String)
   ): F[Unit] =
-    KafkaTracing
-      .traceParent(tracer)
-      .flatMap(tp =>
-        session.prepare(insertOutboxEvent).flatMap(_.execute(row :* tp)).void
+    tracer
+      .span(
+        "outbox.write",
+        Attribute("outbox.event_type", eventType),
+        Attribute("outbox.aggregate_id", row._2)
+      )
+      .surround(
+        KafkaTracing
+          .traceParent(tracer)
+          .flatMap(tp =>
+            session
+              .prepare(insertOutboxEvent)
+              .flatMap(_.execute(row :* tp))
+              .void
+          )
       )
 
   private val deleteOrder: skunk.Query[UUID, UUID] =
@@ -839,6 +852,7 @@ object OrderStore {
                     _ <- insertOutbox(
                       tracer,
                       session,
+                      outboxEvent.eventType,
                       (
                         outboxId,
                         OrderId.render(ref.orderId),
