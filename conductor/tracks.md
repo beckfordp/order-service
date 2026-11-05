@@ -4,6 +4,9 @@ This file tracks all major tracks for the project.
 
 ---
 
+- [ ] **Track: PERF-5.6 — milestone logs without correlation_id**
+  *Link: [./tracks/milestones-trace-ids_20261105/](./tracks/milestones-trace-ids_20261105/)*
+
 ---
 
 ## Backlog
