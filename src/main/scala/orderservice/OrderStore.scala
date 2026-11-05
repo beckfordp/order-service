@@ -1,5 +1,6 @@
 package orderservice
 
+import cats.FlatMap
 import cats.effect.{Async, Ref, Resource, Sync}
 import cats.effect.std.Console
 import cats.syntax.all._
@@ -21,6 +22,8 @@ import orderservice.domain.{
 }
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.metrics.Meter
+import org.typelevel.otel4s.trace.Tracer
+import purekafka.tracing.KafkaTracing
 import purerest.metrics.{LatencyBuckets, PoolMetrics}
 import skunk.{Codec, Session}
 import skunk.codec.all._
@@ -699,17 +702,28 @@ object OrderStore {
       WHERE order_id = $uuid
     """.query(text *: text *: text *: instant)
 
-  // `payload` is bound as `$text` then cast `::jsonb` in-SQL - avoids adding
-  // a skunk-circe dependency just for one write path that nothing in this
-  // service ever reads back (only a future Debezium connector, TD-3.1,
-  // does). `trace_parent` isn't set by any column here - no code anywhere
-  // in this service propagates trace context into Kafka headers yet (see
-  // ADR 0010's own note); it stays NULL at its column default.
-  private val insertOutboxEvent: skunk.Command[(UUID, String, String, String)] =
+  // `trace_parent` is the active span's W3C traceparent (PERF-5.4); Debezium
+  // lifts it to a `traceparent` header. NULL when written outside a span.
+  private val insertOutboxEvent
+      : skunk.Command[(UUID, String, String, String, Option[String])] =
     sql"""
-      INSERT INTO outbox_events (id, aggregate_id, payload, correlation_id)
-      VALUES ($uuid, $text, $text::jsonb, $text)
+      INSERT INTO outbox_events (id, aggregate_id, payload, correlation_id, trace_parent)
+      VALUES ($uuid, $text, $text::jsonb, $text, ${text.opt})
     """.command
+
+  /** Writes one outbox row in `session`'s transaction, stamped with the active
+    * trace context (`KafkaTracing.traceParent`).
+    */
+  private def insertOutbox[F[_]: FlatMap](
+      tracer: Tracer[F],
+      session: Session[F],
+      row: (UUID, String, String, String)
+  ): F[Unit] =
+    KafkaTracing
+      .traceParent(tracer)
+      .flatMap(tp =>
+        session.prepare(insertOutboxEvent).flatMap(_.execute(row :* tp)).void
+      )
 
   private val deleteOrder: skunk.Query[UUID, UUID] =
     sql"""
@@ -749,7 +763,8 @@ object OrderStore {
 
   def postgres[F[_]: Async: Console: Network](
       config: PostgresConfig,
-      meter: Meter[F]
+      meter: Meter[F],
+      tracer: Tracer[F]
   ): Resource[F, OrderStore[F]] = {
     import org.typelevel.otel4s.trace.Tracer.Implicits.noop
     import org.typelevel.otel4s.metrics.Meter.Implicits.noop
@@ -821,18 +836,16 @@ object OrderStore {
                       outboxEvent.payloadFor(ref)
                     )
                     outboxId <- Sync[F].delay(UUID.randomUUID())
-                    _ <- session
-                      .prepare(insertOutboxEvent)
-                      .flatMap(
-                        _.execute(
-                          (
-                            outboxId,
-                            OrderId.render(ref.orderId),
-                            envelope.asJson.noSpaces,
-                            OrderId.render(ref.orderId)
-                          )
-                        )
+                    _ <- insertOutbox(
+                      tracer,
+                      session,
+                      (
+                        outboxId,
+                        OrderId.render(ref.orderId),
+                        envelope.asJson.noSpaces,
+                        OrderId.render(ref.orderId)
                       )
+                    )
                   } yield ()
 
                 def toItems(

@@ -18,7 +18,9 @@ import orderservice.domain.{
 import orderservice.domain.{OrderId, OrderItemId}
 import org.testcontainers.utility.DockerImageName
 import org.typelevel.otel4s.metrics.Meter
+import org.typelevel.otel4s.trace.Tracer
 import purerest.metrics.{LatencyBuckets, Metrics}
+import purerest.tracing.Tracing
 
 import java.sql.DriverManager
 import scala.concurrent.duration._
@@ -34,7 +36,7 @@ class OrderStorePostgresSuite
       withContainers { postgres =>
         val config = configFor(postgres)
         Migrations.run[IO](config) *> OrderStore
-          .postgres[IO](config, Meter.noop[IO])
+          .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
           .use(body)
       }
     }
@@ -87,6 +89,33 @@ class OrderStorePostgresSuite
     )
   }
 
+  /** `trace_parent` of every outbox row for `aggregateId` (PERF-5.4). */
+  private def traceParentsFor(
+      postgres: PostgreSQLContainer,
+      aggregateId: String
+  ): IO[List[Option[String]]] =
+    IO {
+      val conn = DriverManager.getConnection(
+        postgres.jdbcUrl,
+        postgres.username,
+        postgres.password
+      )
+      try {
+        val rs = conn
+          .createStatement()
+          .executeQuery(
+            "select trace_parent from outbox_events " +
+              s"where aggregate_id = '$aggregateId'"
+          )
+        Iterator
+          .unfold(())(_ =>
+            if (rs.next()) Some((Option(rs.getString("trace_parent")), ()))
+            else None
+          )
+          .toList
+      } finally conn.close()
+    }
+
   /** Raw-JDBC read of outbox_events for a given aggregate_id - mirrors
     * MigrationsSuite's own raw-JDBC pattern; this track's production code never
     * reads this table back (only a future Debezium connector does), so there's
@@ -132,7 +161,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           seedAuthorized(store, "cust-123", oneItem).map { case (order, _) =>
             assert(OrderId.render(order.id).nonEmpty)
@@ -145,7 +174,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           seedAuthorized(store, "cust-123", twoItems).map { case (order, _) =>
             assertEquals(order.totalCents, 999 * 2 + 500 * 3)
@@ -158,7 +187,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           seedAuthorized(store, "cust-123", twoItems).map {
             case (order, items) =>
@@ -175,7 +204,7 @@ class OrderStorePostgresSuite
       val config = configFor(postgres)
       Migrations
         .run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (first, _) <- seedAuthorized(store, "cust-123", oneItem)
@@ -195,7 +224,7 @@ class OrderStorePostgresSuite
         NewOrderItem("sku-2", "Bad Item", 500, -1) // violates quantity > 0
       )
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           seedAuthorized(store, "cust-rollback", badItems).attempt.map {
             result =>
@@ -227,7 +256,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             created <- seedAuthorized(store, "cust-123", twoItems)
@@ -241,7 +270,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           store
             .get(OrderId.fromUuid(java.util.UUID.randomUUID()))
@@ -256,7 +285,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(store, "cust-123", oneItem)
@@ -284,7 +313,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, items) <- seedAuthorized(store, "cust-123", twoItems)
@@ -318,7 +347,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           store
             .transition(
@@ -334,7 +363,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <-
@@ -368,7 +397,7 @@ class OrderStorePostgresSuite
       // unrelated orders created by other tests.
       val customerId = java.util.UUID.randomUUID().toString
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (first, _) <- seedAuthorized(store, customerId, oneItem)
@@ -387,7 +416,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           store
             .listByCustomer(java.util.UUID.randomUUID().toString)
@@ -402,7 +431,7 @@ class OrderStorePostgresSuite
       val customerA = java.util.UUID.randomUUID().toString
       val customerB = java.util.UUID.randomUUID().toString
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             _ <- seedAuthorized(store, customerA, oneItem)
@@ -419,7 +448,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(store, "cust-123", twoItems)
@@ -437,7 +466,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           store
             .delete(OrderId.fromUuid(java.util.UUID.randomUUID()))
@@ -450,7 +479,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           store.ping.map(assert(_))
         }
@@ -461,7 +490,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val unreachableConfig = configFor(postgres).copy(port = 1)
       OrderStore
-        .postgres[IO](unreachableConfig, Meter.noop[IO])
+        .postgres[IO](unreachableConfig, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           store.ping.map(ready => assert(!ready))
         }
@@ -475,7 +504,7 @@ class OrderStorePostgresSuite
       val config = configFor(postgres)
       Metrics.test[IO]("order-store-postgres-metrics-test").use { testMeter =>
         Migrations.run[IO](config) *> OrderStore
-          .postgres[IO](config, testMeter.meter)
+          .postgres[IO](config, testMeter.meter, Tracer.noop[IO])
           .use { store =>
             for {
               created <- seedAuthorized(store, "cust-123", oneItem)
@@ -523,7 +552,7 @@ class OrderStorePostgresSuite
       val unreachableConfig = configFor(postgres).copy(port = 1)
       Metrics.test[IO]("order-store-postgres-metrics-test").use { testMeter =>
         OrderStore
-          .postgres[IO](unreachableConfig, testMeter.meter)
+          .postgres[IO](unreachableConfig, testMeter.meter, Tracer.noop[IO])
           .use { store =>
             for {
               result <- seedAuthorized(store, "cust-123", oneItem).attempt
@@ -564,7 +593,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             ready <- store.ping
@@ -604,7 +633,7 @@ class OrderStorePostgresSuite
           ).asJson
       )
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(store, "cust-123", oneItem)
@@ -651,7 +680,7 @@ class OrderStorePostgresSuite
           ).asJson
       )
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             updated <- store.transition(
@@ -683,7 +712,7 @@ class OrderStorePostgresSuite
           ).asJson
       )
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(store, "cust-123", oneItem)
@@ -724,7 +753,7 @@ class OrderStorePostgresSuite
           ).asJson
       )
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <-
@@ -854,7 +883,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(
@@ -893,7 +922,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(
@@ -922,7 +951,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(
@@ -961,7 +990,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(
@@ -1002,7 +1031,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(
@@ -1039,7 +1068,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(
@@ -1102,7 +1131,7 @@ class OrderStorePostgresSuite
     withContainers { postgres =>
       val config = configFor(postgres)
       Migrations.run[IO](config) *> OrderStore
-        .postgres[IO](config, Meter.noop[IO])
+        .postgres[IO](config, Meter.noop[IO], Tracer.noop[IO])
         .use { store =>
           for {
             (created, _) <- seedAuthorized(
@@ -1260,7 +1289,7 @@ class OrderStorePostgresSuite
       val config = configFor(postgres)
       Metrics.test[IO]("order-recon-metric-test").use { testMeter =>
         Migrations.run[IO](config) *> OrderStore
-          .postgres[IO](config, testMeter.meter)
+          .postgres[IO](config, testMeter.meter, Tracer.noop[IO])
           .use { store =>
             for {
               order <- seedAuthorized(store, "cust-metric", oneItem)
@@ -1294,6 +1323,62 @@ class OrderStorePostgresSuite
               )
             }
           }
+      }
+    }
+  }
+
+  test(
+    "PERF-5.4: an outbox row written inside a span carries its W3C traceparent; outside a span, NULL"
+  ) {
+    withContainers { postgres =>
+      val config = configFor(postgres)
+      val outboxEvent = PendingOutboxEvent(
+        "OrderConfirmed",
+        ref =>
+          OrderConfirmedEvent(
+            OrderId.render(ref.orderId),
+            ref.customerId,
+            java.time.Instant.EPOCH
+          ).asJson
+      )
+      (for {
+        testTracer <- Tracing.test[IO]("outbox-traceparent")
+        store <- OrderStore.postgres[IO](
+          config,
+          Meter.noop[IO],
+          testTracer.tracer
+        )
+      } yield (testTracer.tracer, store)).use { case (tracer, store) =>
+        for {
+          _ <- Migrations.run[IO](config)
+          (inSpan, _) <- seedAuthorized(store, "cust-123", oneItem)
+          (outside, _) <- seedAuthorized(store, "cust-123", oneItem)
+          traceId <- tracer.span("checkout").use { span =>
+            store
+              .transition(
+                inSpan.id,
+                OrderEvent.PaymentCaptured,
+                Some(outboxEvent)
+              )
+              .as(span.context.traceIdHex)
+          }
+          _ <- store.transition(
+            outside.id,
+            OrderEvent.PaymentCaptured,
+            Some(outboxEvent)
+          )
+          inSpanRows <- traceParentsFor(postgres, OrderId.render(inSpan.id))
+          outsideRows <- traceParentsFor(postgres, OrderId.render(outside.id))
+        } yield {
+          assertEquals(inSpanRows.size, 1)
+          assert(
+            inSpanRows.head.exists(
+              _.matches(s"00-$traceId-[0-9a-f]{16}-[0-9a-f]{2}")
+            ),
+            s"expected 00-$traceId-<span>-<flags>, got: $inSpanRows"
+          )
+          assertEquals(outsideRows, List(None))
+        }
       }
     }
   }

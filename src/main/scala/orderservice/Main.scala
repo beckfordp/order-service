@@ -45,7 +45,7 @@ object Main extends IOApp.Simple {
       else telemetry.logger.info(Map.empty)("Operator token disabled")
     )
     store <- OrderStore
-      .postgres[IO](config.postgres, telemetry.meter)
+      .postgres[IO](config.postgres, telemetry.meter, telemetry.tracer)
       .evalMap(
         JourneyMetrics.instrument[IO](_, telemetry.meter, telemetry.logger)
       )
