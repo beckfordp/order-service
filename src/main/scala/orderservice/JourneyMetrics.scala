@@ -60,7 +60,6 @@ object JourneyMetrics {
               Milestones.log(logger)(
                 "order_placed",
                 OrderId.render(order.id),
-                None,
                 Map("total_cents" -> order.totalCents.toString)
               )
           }
@@ -94,7 +93,6 @@ object JourneyMetrics {
                     Milestones.log(logger)(
                       s"order_$to",
                       OrderId.render(id),
-                      None,
                       Map("from" -> from)
                     )
                 }
