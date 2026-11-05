@@ -339,14 +339,17 @@ class KafkaConsumersSuite extends CatsEffectSuite with TestContainerForAll {
             .use(_ => pollForStatus(store, order.id, OrderStatus.Confirmed))
           spans <- testTracer.finishedSpans
         } yield {
-          val consumed = spans.filter(_.getName == "payment-events process")
+          // The topic is shared with other tests, so the consumer may also
+          // process their records; select this record's span by trace id.
+          val consumed = spans.filter(s =>
+            s.getName == "payment-events process" && s.getTraceId == traceId
+          )
           assertEquals(consumed.size, 1, s"spans: ${spans.map(_.getName)}")
           val span = consumed.head
           assertEquals(
             span.getKind,
             io.opentelemetry.api.trace.SpanKind.CONSUMER
           )
-          assertEquals(span.getTraceId, traceId)
           assertEquals(span.getParentSpanContext.getSpanId, parentSpanId)
         }
       }

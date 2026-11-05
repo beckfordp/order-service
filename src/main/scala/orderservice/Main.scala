@@ -4,6 +4,7 @@ import cats.effect.{IO, IOApp, Resource}
 import com.comcast.ip4s._
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
+import purerest.tracing.ClientTracing
 
 /** Acquires every dependency order-service needs, builds the routes, and serves
   * them — a single flat `Resource` for-comprehension, one `<-` per dependency,
@@ -53,7 +54,12 @@ object Main extends IOApp.Simple {
     checkoutOutcomes <- Resource.eval(
       CheckoutOutcomes.create[IO](telemetry.meter)
     )
-    httpClient <- EmberClientBuilder.default[IO].build
+    // Client-kind span per call; its traceparent makes the callee join this
+    // trace (PERF-5.10).
+    httpClient <- EmberClientBuilder
+      .default[IO]
+      .build
+      .map(ClientTracing.middleware[IO](telemetry.tracer))
     inventoryClient = InventoryClient.resilient[IO](
       httpClient,
       config.inventoryClient,
