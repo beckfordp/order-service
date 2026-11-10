@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package orderservice.domain
 
 import orderservice.{OrderActor, UpdatedOrderRef}

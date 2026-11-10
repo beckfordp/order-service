@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Transactional outbox (ADR 0008, TD-3.2): the Kafka-bound event is written
 -- here in the same transaction as the state change it announces, instead of
 -- a separate direct Kafka publish call. `payload` holds the complete

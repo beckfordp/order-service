@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package orderservice.domain
 
 /** ADM-10: the optional checkout email for a guest (no user-service account).

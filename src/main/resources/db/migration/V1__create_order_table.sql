@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Table name is quoted throughout as a defensive habit: several plausible domain
 -- names (e.g. "user", "group", "order") are reserved PostgreSQL keywords.
 CREATE TABLE "order" (

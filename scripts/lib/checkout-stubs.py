@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Stand-in for inventory-service and payment-service on one port, for verify
 scripts that drive POST /orders (ADR 0018) without the real peers.
 

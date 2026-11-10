@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- TD-21: `pending`/`reserved`/`reservation_failed` predate ADR 0018 and are
 -- never written now. There is no production data; delete the test-only legacy
 -- rows (order_items cascade) rather than invent terminal outcomes for them.

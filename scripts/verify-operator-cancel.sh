@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Live verification for Checkout Journey 8 (US-22, ADR 0024).
 #
 # Starts throwaway Postgres, Kafka and Redis containers plus order-service

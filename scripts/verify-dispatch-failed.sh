@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Live verification for track dispatch-failed_20261028 (US-18.3).
 # 1) authorized order forced to fail in fulfilment -> order dispatch_failed and
 #    its reserved inventory returns to available;

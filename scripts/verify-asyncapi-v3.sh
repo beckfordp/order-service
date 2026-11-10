@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Verifies asyncapi-v3_20261101 (gluon TD-19.3/19.4): with purekafka 0.6.0
 # the generated AsyncAPI document is 3.0.0 and passes `asyncapi validate`,
 # each topic's operation has the right send/receive action and shows in the

@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- US-22: who cancelled an order, persisted with the cancellation transition.
 -- One row per cancelled order; written in the same transaction as the status
 -- update and OrderCancelled outbox row.

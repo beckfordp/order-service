@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package orderservice
 
 import java.nio.charset.StandardCharsets

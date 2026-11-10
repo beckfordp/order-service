@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- US-17.4: fulfillment-service's DispatchConfirmed moves authorized orders
 -- to dispatched.
 ALTER TABLE "order"

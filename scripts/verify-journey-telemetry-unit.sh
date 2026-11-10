@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+
 set -euo pipefail
 
 # Phases 1-2 verification for journey-telemetry_20261103 (gluon PERF-4):

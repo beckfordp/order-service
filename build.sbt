@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+
+ThisBuild / licenses := Seq(License.MIT)
+
 val scala3Version = "3.9.0"
 
 val catsEffectVersion = "3.7.0"

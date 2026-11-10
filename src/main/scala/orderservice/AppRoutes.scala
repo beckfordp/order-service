@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package orderservice
 
 import cats.effect.Async

@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- US-18.3: a fulfilment DispatchFailed moves an authorized order to dispatch_failed.
 ALTER TABLE "order"
     DROP CONSTRAINT order_status_check;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.4.4")
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.5.2")
 // Packages order-service as a Docker image (JavaAppPackaging + DockerPlugin).

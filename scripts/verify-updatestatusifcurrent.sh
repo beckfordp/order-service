@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+
 set -euo pipefail
 
 # Verifies Phase 1 of US-6.3 (OrderStatus.Confirmed/PaymentFailed +

@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Defense-in-depth, matching the order.status pattern (Scala-side validation
 -- plus a DB-level CHECK): checkout's HTTP layer rejects non-positive
 -- quantity/unit_price_cents before ever reaching the store, but these

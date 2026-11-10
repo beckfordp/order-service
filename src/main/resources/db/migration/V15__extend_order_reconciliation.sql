@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- ADM-4/ADR 0026: the reconciliation queue's open/resolved workflow.
 -- Existing first-wins flags become `open`; the recording path is unchanged.
 ALTER TABLE order_reconciliation

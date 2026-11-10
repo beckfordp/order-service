@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Nested/collection fields aren't codegen-able, so order line items sit
 -- outside the codegen'd "order" entity entirely. No FK on order_id yet
 -- (that's a separate migration) - sku/product_name/unit_price_cents are

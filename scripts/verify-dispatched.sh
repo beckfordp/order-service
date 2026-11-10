@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Live verification for track dispatch-confirmed_20261028 (US-17.4).
 # Authorized order -> fulfilment simulate dispatch -> order status dispatched.
 # A forced fulfilment failure must leave the order authorized (US-18.3 not

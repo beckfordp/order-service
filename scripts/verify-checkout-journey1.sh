@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+
 set -euo pipefail
 
 # Verifies Checkout Journey 1 (checkout-journey1_20261027; US-11.1, US-14.2,

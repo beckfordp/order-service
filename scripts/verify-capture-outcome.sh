@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Live verification for track capture-outcome_20261028 (US-19.2 + US-19.3).
 # 1) dispatched order, normal card -> order `confirmed`; duplicate
 #    PaymentCaptured is harmless (one OrderConfirmed row);
